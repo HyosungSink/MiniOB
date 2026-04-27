@@ -1,0 +1,20 @@
+-- echo miniob2025 21 complex sub query setup
+create table complex_user(id int, dept int, score int, name char);
+create table complex_order(uid int, amount int);
+insert into complex_user values(1, 10, 80, 'a');
+insert into complex_user values(2, 10, 90, 'b');
+insert into complex_user values(3, 20, 70, 'c');
+insert into complex_user values(4, 20, 95, 'd');
+insert into complex_order values(1, 100);
+insert into complex_order values(1, 200);
+insert into complex_order values(3, 300);
+
+-- echo complex sub query checks
+-- sort select u.id, u.name from complex_user u where exists (select 1 from complex_order o where o.uid=u.id and o.amount>150);
+-- sort select id, name from complex_user outer_u where score>(select avg(score) from complex_user inner_u where inner_u.dept=outer_u.dept);
+-- sort select id from complex_user where dept in (select dept from complex_user where id in (select uid from complex_order where amount>=300));
+select id from complex_user where score=(select max(score) from complex_user where dept=20);
+
+-- echo complex sub query boundary errors
+select id from complex_user where score=(select amount from complex_order where uid=1);
+select id from complex_user where exists (select missing_col from complex_order where complex_order.uid=complex_user.id);

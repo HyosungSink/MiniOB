@@ -1,0 +1,16 @@
+-- echo miniob2025 10 group by setup
+create table group_t(dept int, category char, score float);
+insert into group_t values(1, 'a', 10.0);
+insert into group_t values(1, 'a', 20.0);
+insert into group_t values(1, 'b', 30.0);
+insert into group_t values(2, 'a', 40.0);
+insert into group_t values(2, null, null);
+
+-- echo group by checks
+-- sort select dept, count(*), count(score), sum(score), avg(score), min(score), max(score) from group_t group by dept;
+-- sort select dept, category, count(*), sum(score) from group_t group by dept, category;
+select count(*), count(score), sum(score), avg(score) from group_t;
+
+-- echo group by boundary errors
+select dept, score from group_t group by dept;
+select missing_col, count(*) from group_t group by missing_col;

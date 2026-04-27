@@ -1,0 +1,18 @@
+-- echo miniob2025 03 drop table setup
+create table drop_t(id int, value int);
+create index idx_drop_id on drop_t(id);
+insert into drop_t values(1, 10);
+insert into drop_t values(2, 20);
+
+-- echo drop table checks
+-- sort select * from drop_t;
+drop table drop_t;
+select * from drop_t;
+create table drop_t(id int);
+insert into drop_t values(3);
+select * from drop_t;
+
+-- echo drop table boundary errors
+drop table missing_drop_t;
+drop table drop_t;
+drop table drop_t;

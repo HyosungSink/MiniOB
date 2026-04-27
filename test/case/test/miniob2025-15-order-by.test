@@ -1,0 +1,16 @@
+-- echo miniob2025 15 order by setup
+create table order_t(id int, age int, score float, tag char);
+insert into order_t values(1, 20, 2.5, 'b');
+insert into order_t values(2, 20, 3.5, 'a');
+insert into order_t values(3, 10, null, 'c');
+insert into order_t values(4, 30, 1.5, 'd');
+
+-- echo order by checks
+select id, age from order_t order by age asc, id desc;
+select id, score from order_t order by score desc, id asc;
+select id, tag from order_t order by tag asc limit 3;
+select id, age + 1 as next_age from order_t order by age + 1 desc, id asc;
+
+-- echo order by boundary errors
+select id from order_t order by missing_col;
+select id from order_t order by;

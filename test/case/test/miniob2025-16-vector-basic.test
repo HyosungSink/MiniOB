@@ -1,0 +1,16 @@
+-- echo miniob2025 16 vector basic setup
+create table vector_basic_t(id int, emb vector(3));
+insert into vector_basic_t values(1, string_to_vector('[1, 2, 3]'));
+insert into vector_basic_t values(2, string_to_vector('[0, 0, 0]'));
+insert into vector_basic_t values(3, string_to_vector('[-1, 2.5, 4]'));
+
+-- echo vector basic checks
+select id, vector_to_string(emb) as emb_text from vector_basic_t where id=1;
+select distance(string_to_vector('[1, 0, 0]'), string_to_vector('[0, 1, 0]'), 'EUCLIDEAN') as dist_euc;
+select distance(string_to_vector('[1, 0, 0]'), string_to_vector('[0, 1, 0]'), 'COSINE') as dist_cos;
+select distance(string_to_vector('[1, 0, 0]'), string_to_vector('[0, 1, 0]'), 'DOT') as dist_dot;
+
+-- echo vector basic boundary checks
+insert into vector_basic_t values(4, string_to_vector('[1, x, 3]'));
+select vector_to_string(string_to_vector('[1, 2]')) as short_vector;
+select distance(string_to_vector('[1, 2]'), string_to_vector('[1, 2, 3]'), 'EUCLIDEAN') as bad_distance;

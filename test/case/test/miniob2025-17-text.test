@@ -1,0 +1,17 @@
+-- echo miniob2025 17 text setup
+create table text_t(id int, content text, tag char);
+insert into text_t values(1, 'hello miniob database', 'a');
+insert into text_t values(2, 'long text value with spaces and symbols 12345', 'b');
+insert into text_t values(3, '', 'c');
+insert into text_t values(4, null, 'd');
+
+-- echo text checks
+select id, content from text_t where id=1;
+select id, length(content) as content_len from text_t where id in (2, 3, 4) order by id;
+update text_t set content='updated text' where id=3;
+select content from text_t where id=3;
+-- sort select id from text_t where content='hello miniob database' or content='';
+
+-- echo text boundary errors
+insert into text_t values(5);
+select missing_col from text_t;

@@ -1,0 +1,17 @@
+-- echo miniob2025 13 null setup
+create table null_t(id int not null, age int null, score float null, tag char);
+insert into null_t values(1, 18, 1.5, 'a');
+insert into null_t values(2, null, 2.5, 'b');
+insert into null_t values(3, 30, null, null);
+
+-- echo null checks
+-- sort select id from null_t where age is null;
+-- sort select id from null_t where score is not null;
+select id, age + 1 as age_plus from null_t where id=2;
+select count(*), count(age), count(score) from null_t;
+update null_t set age=null where id=1;
+-- sort select id, age from null_t;
+
+-- echo null boundary errors
+insert into null_t values(null, 1, 1.0, 'x');
+select id from null_t where missing_col is null;

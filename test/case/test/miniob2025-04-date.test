@@ -1,0 +1,18 @@
+-- echo miniob2025 04 date setup
+create table date_t(id int, birthday date, tag char);
+insert into date_t values(1, '1969-12-31', 'a');
+insert into date_t values(2, '1970-01-01', 'b');
+insert into date_t values(3, '2038-01-20', 'c');
+insert into date_t values(4, '2020-02-29', 'd');
+
+-- echo date checks
+-- sort select id, birthday from date_t;
+select id from date_t where birthday='2020-02-29';
+-- sort select id, birthday from date_t where birthday<'1970-01-01' or birthday>'2038-01-19';
+update date_t set birthday='2024-02-29' where id=2;
+select birthday from date_t where id=2;
+
+-- echo date boundary errors
+insert into date_t values(5, '2021-02-29', 'x');
+insert into date_t values(6, '2020-13-01', 'y');
+update date_t set birthday='2020-00-01' where id=1;

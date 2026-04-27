@@ -1,0 +1,19 @@
+-- echo miniob2025 08 multi index setup
+create table multi_index_t(id int, a int, b int, c char);
+create index idx_multi_ab on multi_index_t(a, b);
+insert into multi_index_t values(1, 10, 1, 'a');
+insert into multi_index_t values(2, 10, 2, 'b');
+insert into multi_index_t values(3, 20, 1, 'c');
+insert into multi_index_t values(4, 20, 2, 'd');
+
+-- echo multi index checks
+-- sort select id, c from multi_index_t where a=10 and b>=1;
+update multi_index_t set b=3 where id=2;
+-- sort select id, a, b from multi_index_t where a=10;
+delete from multi_index_t where a=20 and b=1;
+-- sort select * from multi_index_t;
+
+-- echo multi index boundary errors
+create index idx_multi_ab_dup on multi_index_t(a, missing_col);
+create index idx_multi_ab on multi_index_t(a, b);
+select * from multi_index_t where missing_col=1;

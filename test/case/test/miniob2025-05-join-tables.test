@@ -1,0 +1,21 @@
+-- echo miniob2025 05 join tables setup
+create table join_a(id int, dept int, name char);
+create table join_b(dept int, score int);
+create table join_c(id int, flag int);
+insert into join_a values(1, 10, 'a');
+insert into join_a values(2, 20, 'b');
+insert into join_a values(3, 10, 'c');
+insert into join_b values(10, 100);
+insert into join_b values(20, 200);
+insert into join_c values(1, 1);
+insert into join_c values(3, 0);
+
+-- echo join checks
+-- sort select a.id, a.name, b.score from join_a as a inner join join_b as b on a.dept=b.dept;
+-- sort select a.id, b.score, c.flag from join_a as a inner join join_b as b on a.dept=b.dept, join_c as c where c.id=a.id;
+-- sort select a.id, b.score from join_a a inner join join_b b on a.dept=b.dept and b.score>=100 where a.id>=2;
+
+-- echo join boundary errors
+select id from join_a inner join join_b on join_a.dept=join_b.dept;
+select a.id from join_a as a inner join missing_join as m on a.id=m.id;
+select a.missing_col from join_a as a inner join join_b as b on a.dept=b.dept;

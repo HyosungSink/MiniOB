@@ -765,3 +765,36 @@ BM25 分数计算公式如下：
 <span style="color: rgb(0, 0, 0);"> </span>[https://oceanbase.github.io/miniob/game/miniob-memtracer](https://oceanbase.github.io/miniob/game/miniob-memtracer/)
 
 或者MiniOB目录下 docs/docs/game/miniob-memtracer.md
+
+## 本地评测用例补充说明
+
+`test/case/test` 下新增的 `miniob2025-XX-*.test` 用例按 2025 比赛题目粒度划分，每道题对应一个独立 case，便于针对未完成内核逐题运行和定位。除全文索引题外，标准输出使用仓库本地 `mysql-server/` 中的比赛指定 MySQL 版本生成。
+
+全文索引题 `miniob2025-23-full-text-index.test` 不使用 MySQL 作为标准输出来源，因为比赛语义依赖 cppjieba 分词和 BM25 评分，和 MySQL fulltext 行为不同。
+
+| 题号 | 题目 | 本地 case | 标准输出 |
+| --- | --- | --- | --- |
+| 1 | basic | `miniob2025-01-basic.test` | `miniob2025-01-basic.result` |
+| 2 | update | `miniob2025-02-update.test` | `miniob2025-02-update.result` |
+| 3 | drop-table | `miniob2025-03-drop-table.test` | `miniob2025-03-drop-table.result` |
+| 4 | date | `miniob2025-04-date.test` | `miniob2025-04-date.result` |
+| 5 | join-tables | `miniob2025-05-join-tables.test` | `miniob2025-05-join-tables.result` |
+| 6 | expression | `miniob2025-06-expression.test` | `miniob2025-06-expression.result` |
+| 7 | function | `miniob2025-07-function.test` | `miniob2025-07-function.result` |
+| 8 | multi-index | `miniob2025-08-multi-index.test` | `miniob2025-08-multi-index.result` |
+| 9 | unique | `miniob2025-09-unique.test` | `miniob2025-09-unique.result` |
+| 10 | group-by | `miniob2025-10-group-by.test` | `miniob2025-10-group-by.result` |
+| 11 | simple-sub-query | `miniob2025-11-simple-sub-query.test` | `miniob2025-11-simple-sub-query.result` |
+| 12 | alias | `miniob2025-12-alias.test` | `miniob2025-12-alias.result` |
+| 13 | null | `miniob2025-13-null.test` | `miniob2025-13-null.result` |
+| 14 | union | `miniob2025-14-union.test` | `miniob2025-14-union.result` |
+| 15 | order-by | `miniob2025-15-order-by.test` | `miniob2025-15-order-by.result` |
+| 16 | vector-basic | `miniob2025-16-vector-basic.test` | `miniob2025-16-vector-basic.result` |
+| 17 | text | `miniob2025-17-text.test` | `miniob2025-17-text.result` |
+| 18 | vector-search | `miniob2025-18-vector-search.test` | `miniob2025-18-vector-search.result` |
+| 19 | alter | `miniob2025-19-alter.test` | `miniob2025-19-alter.result` |
+| 20 | update-mvcc | `miniob2025-20-update-mvcc.test` | `miniob2025-20-update-mvcc.result` |
+| 21 | complex-sub-query | `miniob2025-21-complex-sub-query.test` | `miniob2025-21-complex-sub-query.result` |
+| 22 | create-view | `miniob2025-22-create-view.test` | `miniob2025-22-create-view.result` |
+| 23 | full-text-index | `miniob2025-23-full-text-index.test` | 不使用 MySQL 生成 |
+| 24 | big-order-by | `miniob2025-24-big-order-by.test` | `miniob2025-24-big-order-by.result` |

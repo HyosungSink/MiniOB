@@ -1,0 +1,19 @@
+-- echo miniob2025 01 basic setup
+create table basic_t(id int, age int, name char, score float);
+create index idx_basic_id on basic_t(id);
+insert into basic_t values(1, 18, 'a', 1.5);
+insert into basic_t values(2, 20, 'b', 2.5);
+insert into basic_t values(3, 18, 'c', 3.5);
+
+-- echo basic select insert delete
+select * from basic_t where id=1;
+-- sort select id, age, name from basic_t where age=18;
+delete from basic_t where id=2;
+-- sort select * from basic_t;
+insert into basic_t values(4, 30, 'd', 4.5);
+-- sort select id, score from basic_t;
+
+-- echo basic boundary errors
+create table basic_t(id int);
+insert into basic_t values(5);
+select missing_col from basic_t;

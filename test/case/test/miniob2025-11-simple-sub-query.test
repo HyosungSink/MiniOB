@@ -1,0 +1,19 @@
+-- echo miniob2025 11 simple sub query setup
+create table subq_user(id int, age int, name char);
+create table subq_order(uid int, amount int);
+insert into subq_user values(1, 18, 'a');
+insert into subq_user values(2, 20, 'b');
+insert into subq_user values(3, 30, 'c');
+insert into subq_order values(1, 100);
+insert into subq_order values(1, 200);
+insert into subq_order values(3, 300);
+
+-- echo simple sub query checks
+-- sort select id, name from subq_user where id in (select uid from subq_order where amount>=200);
+-- sort select id, name from subq_user where id not in (select uid from subq_order where amount>250);
+select id from subq_user where age=(select max(age) from subq_user);
+select id from subq_user where age>(select avg(age) from subq_user);
+
+-- echo simple sub query boundary errors
+select id from subq_user where age=(select amount from subq_order);
+select id from subq_user where id in (select missing_col from subq_order);
