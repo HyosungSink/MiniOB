@@ -1,0 +1,38 @@
+-- echo miniob2025 alter setup
+create table alter_base(id int, score int, name char);
+create table alter_existing(id int);
+insert into alter_base values(1, 10, 'a');
+insert into alter_base values(2, 20, 'b');
+create index idx_alter_score on alter_base(score);
+
+-- echo add column
+alter table alter_base add column age int;
+-- sort select * from alter_base;
+insert into alter_base values(3, 30, 'c', 18);
+-- sort select * from alter_base;
+
+-- echo change column
+alter table alter_base change column age years int;
+update alter_base set years=21 where id=1;
+-- sort select id, years from alter_base;
+select age from alter_base;
+
+-- echo drop column and index interaction
+alter table alter_base drop column name;
+-- sort select * from alter_base;
+select name from alter_base;
+alter table alter_base drop column score;
+-- sort select * from alter_base;
+select * from alter_base where score=20;
+
+-- echo rename table
+alter table alter_base rename to alter_renamed;
+-- sort select * from alter_renamed;
+select * from alter_base;
+
+-- echo alter boundary errors
+alter table alter_renamed add column id int;
+alter table alter_renamed drop column missing_col;
+alter table missing_table add column c int;
+alter table alter_renamed change column years id int;
+alter table alter_renamed rename to alter_existing;

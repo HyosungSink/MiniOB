@@ -1,0 +1,33 @@
+-- echo miniob2025 cross topic setup
+create table cross_user(id int not null, age int null, score float, birthday date, name char);
+create table cross_order(uid int, amount int, note char);
+create unique index idx_cross_user_id on cross_user(id);
+create index idx_cross_user_age_score on cross_user(age, score);
+insert into cross_user values(1, 18, 1.5, '2020-01-01', 'a');
+insert into cross_user values(2, null, 2.5, '2020-02-29', 'b');
+insert into cross_user values(3, 18, 3.5, '2021-12-31', 'c');
+insert into cross_user values(4, 30, 4.5, null, 'd');
+insert into cross_order values(1, 100, 'x');
+insert into cross_order values(1, 200, 'y');
+insert into cross_order values(3, 300, 'z');
+
+-- echo basic update date null unique and multi index
+update cross_user set score=9.5 where age is null;
+select id, score from cross_user where age is null;
+insert into cross_user values(1, 99, 9.9, '2022-01-01', 'dup');
+-- sort select id, age, score from cross_user where age=18 and score>1.0;
+delete from cross_user where birthday is null;
+-- sort select id, birthday from cross_user;
+
+-- echo joins expressions functions group by order by
+-- sort select u.id, u.name, o.amount, u.score + o.amount as total from cross_user as u inner join cross_order as o on u.id=o.uid where o.amount>=100 order by u.id asc, o.amount desc;
+-- sort select age, count(*), avg(score), min(score), max(score) from cross_user group by age;
+select abs(-10), length('MiniOB'), round(1.234, 2);
+
+-- echo simple and complex subquery
+-- sort select id, name from cross_user where id in (select uid from cross_order where amount>150);
+-- sort select id, name from cross_user where exists (select uid from cross_order where cross_order.uid=cross_user.id and amount>150);
+
+-- echo drop table boundary
+drop table cross_order;
+select * from cross_order;

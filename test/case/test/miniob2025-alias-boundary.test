@@ -1,0 +1,26 @@
+-- echo miniob2025 alias setup
+create table alias_t1(id int, score int, name char);
+create table alias_t2(id int, score int, name char);
+insert into alias_t1 values(1, 10, 'a');
+insert into alias_t1 values(2, 20, 'b');
+insert into alias_t1 values(3, 20, 'c');
+insert into alias_t2 values(1, 100, 'x');
+insert into alias_t2 values(2, 200, 'y');
+insert into alias_t2 values(4, 400, 'z');
+
+-- echo column aliases
+select id as alias_id, score as alias_score from alias_t1 where id=1;
+select id alias_id_no_as, name alias_name_no_as from alias_t1 where id=2;
+select id + score as total_score from alias_t1 where id=1;
+select count(*) as row_count, avg(score) as avg_score from alias_t1;
+
+-- echo table aliases
+-- sort select a.id, a.name, b.score from alias_t1 as a, alias_t2 as b where a.id=b.id;
+-- sort select a.id as left_id, b.id as right_id from alias_t1 a inner join alias_t2 b on a.id=b.id;
+-- sort select outer_t.id from alias_t1 as outer_t where outer_t.id in (select inner_t.id from alias_t2 as inner_t);
+
+-- echo alias boundary errors
+select a.id from alias_t1 as a, alias_t2 as a where a.id=1;
+select alias_t1.id from alias_t1 as a where a.id=1;
+select a.unknown_col from alias_t1 as a;
+select id as from alias_t1;

@@ -1,0 +1,38 @@
+-- echo miniob2025 create view setup
+create table view_t1(id int, age int, name char);
+create table view_t2(id int, score int, tag char);
+insert into view_t1 values(1, 10, 'a');
+insert into view_t1 values(2, 20, 'b');
+insert into view_t1 values(3, 30, 'c');
+insert into view_t2 values(1, 100, 'x');
+insert into view_t2 values(2, 200, 'y');
+
+-- echo simple view select
+create view view_simple as select id, age from view_t1;
+-- sort select * from view_simple;
+insert into view_simple(id, age) values(4, 40);
+-- sort select * from view_t1;
+update view_simple set age=41 where id=4;
+select age from view_t1 where id=4;
+delete from view_simple where id=4;
+-- sort select * from view_t1;
+
+-- echo view with aliases and filters
+create view view_alias as select id as vid, name as vname from view_t1 where age>=20;
+-- sort select * from view_alias;
+select vname from view_alias where vid=2;
+
+-- echo join and aggregate views
+create view view_join as select a.id as id, a.age as age, b.score as score from view_t1 as a, view_t2 as b where a.id=b.id;
+-- sort select * from view_join;
+insert into view_join(id, age) values(5, 50);
+update view_join set age=21 where id=1;
+
+create view view_agg as select age, count(*) as cnt from view_t1 group by age;
+-- sort select * from view_agg;
+insert into view_agg(age, cnt) values(1, 1);
+
+-- echo view boundary errors
+create view view_simple as select id from view_t1;
+create view view_bad as select missing_col from view_t1;
+select * from missing_view;

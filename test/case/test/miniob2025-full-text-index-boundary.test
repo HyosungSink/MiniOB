@@ -1,0 +1,31 @@
+-- echo miniob2025 full text setup
+create table fti_docs(id int, content text);
+insert into fti_docs values(1, 'MiniOB 是一个数据库教学系统');
+insert into fti_docs values(2, '数据库 系统 支持 索引 查询');
+insert into fti_docs values(3, '向量数据库和全文索引都属于检索能力');
+insert into fti_docs values(4, 'hello miniob database index');
+insert into fti_docs values(5, 'unrelated document');
+
+-- echo tokenize
+select tokenize('information_schema.SCHEMATA表的主要功能是什么？', 'jieba') as text_tokens;
+select tokenize('MiniOB 支持 full text index', 'jieba') as text_tokens;
+select tokenize('', 'jieba') as text_tokens;
+
+-- echo create fulltext index and search
+alter table fti_docs add fulltext index idx_fti_content (content) with parser jieba;
+select id, match(content) against('数据库') as score from fti_docs where match(content) against('数据库') > 0 order by match(content) against('数据库') desc, id asc;
+select id, match(content) against('索引 查询') as score from fti_docs where match(content) against('索引 查询') > 0 order by match(content) against('索引 查询') desc, id asc;
+select id, content, match(content) against('nohit') as score from fti_docs where match(content) against('nohit') > 0 order by id asc;
+
+-- echo index maintenance
+insert into fti_docs values(6, '数据库 数据库 索引');
+select id, match(content) against('数据库 索引') as score from fti_docs where match(content) against('数据库 索引') > 0 order by match(content) against('数据库 索引') desc, id asc;
+delete from fti_docs where id=6;
+select id, match(content) against('数据库 索引') as score from fti_docs where match(content) against('数据库 索引') > 0 order by match(content) against('数据库 索引') desc, id asc;
+
+-- echo fulltext boundary errors
+alter table fti_docs add fulltext index idx_fti_multi (content, id) with parser jieba;
+alter table fti_docs add fulltext index idx_fti_bad (id) with parser jieba;
+alter table fti_docs add fulltext index idx_fti_unknown (missing_col) with parser jieba;
+select id from fti_docs where match(missing_col) against('数据库') > 0;
+select tokenize('abc', 'unknown_parser') as text_tokens;

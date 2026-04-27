@@ -1,0 +1,31 @@
+-- echo miniob2025 big order by setup
+create table big_order_a(a1 int, a2 int, a3 int, a4 int, a5 int, a6 int, a7 int, a8 int, a9 int, a10 int, a11 int, a12 int, a13 int, a14 int, a15 int, a16 int, a17 int, a18 int, a19 int, a20 int);
+create table big_order_b(b1 int, b2 int, b3 int, b4 int, b5 int, b6 int, b7 int, b8 int, b9 int, b10 int, b11 int, b12 int, b13 int, b14 int, b15 int, b16 int, b17 int, b18 int, b19 int, b20 int);
+create table big_order_c(c1 int, c2 int, c3 int, c4 int, c5 int, c6 int, c7 int, c8 int, c9 int, c10 int, c11 int, c12 int, c13 int, c14 int, c15 int, c16 int, c17 int, c18 int, c19 int, c20 int);
+create table big_order_d(d1 int, d2 int, d3 int, d4 int, d5 int, d6 int, d7 int, d8 int, d9 int, d10 int, d11 int, d12 int, d13 int, d14 int, d15 int, d16 int, d17 int, d18 int, d19 int, d20 int);
+
+insert into big_order_a values(3,2,1,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20);
+insert into big_order_a values(1,3,2,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20);
+insert into big_order_a values(2,1,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20);
+insert into big_order_a values(2,1,2,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20);
+insert into big_order_b values(4,1,4,1,4,1,4,1,4,1,4,1,4,1,4,1,4,1,4,1);
+insert into big_order_b values(1,4,1,4,1,4,1,4,1,4,1,4,1,4,1,4,1,4,1,4);
+insert into big_order_b values(2,3,2,3,2,3,2,3,2,3,2,3,2,3,2,3,2,3,2,3);
+insert into big_order_c values(9,8,7,6,5,4,3,2,1,0,9,8,7,6,5,4,3,2,1,0);
+insert into big_order_c values(0,1,2,3,4,5,6,7,8,9,0,1,2,3,4,5,6,7,8,9);
+insert into big_order_c values(5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5);
+insert into big_order_d values(7,7,1,1,2,2,3,3,4,4,5,5,6,6,8,8,9,9,10,10);
+insert into big_order_d values(6,6,2,2,3,3,4,4,5,5,7,7,8,8,9,9,10,10,11,11);
+insert into big_order_d values(5,5,3,3,4,4,6,6,7,7,8,8,9,9,10,10,11,11,12,12);
+
+-- echo local big order checks
+select a1, b1, c1, d1 from big_order_a, big_order_b, big_order_c, big_order_d order by a1 asc, b1 desc, c1 asc, d1 desc limit 10;
+select a1, a2, a3 from big_order_a order by a1 asc, a2 asc, a3 desc;
+select b1, c1, d1 from big_order_b, big_order_c, big_order_d order by b1 asc, b2 desc, c1 asc, c2 desc, d1 asc, d2 desc limit 20;
+
+-- echo order by every field prefix
+select a1, b1, c1, d1 from big_order_a, big_order_b, big_order_c, big_order_d order by a1, a2, a3, a4, a5, b1, b2, b3, b4, b5, c1, c2, c3, c4, c5, d1, d2, d3, d4, d5 limit 15;
+
+-- echo big order boundary errors
+select a1 from big_order_a order by missing_col;
+select a1 from big_order_a order by;
