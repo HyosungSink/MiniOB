@@ -69,7 +69,7 @@ function try_make
 function prepare_build_dir
 {
   TYPE=$1
-  mkdir -p $TOPDIR/build_$TYPE && cd $TOPDIR/build_$TYPE
+  mkdir -p "$TOPDIR/build_$TYPE" && cd "$TOPDIR/build_$TYPE"
 }
 
 function do_init
@@ -80,7 +80,7 @@ function do_init
   MAKE_COMMAND="make --silent"
 
   # build libevent
-  cd ${TOPDIR}/deps/3rd/libevent && \
+  cd "${TOPDIR}/deps/3rd/libevent" && \
     mkdir -p build && \
     cd build && \
     ${CMAKE_COMMAND_THIRD_PARTY} .. -DEVENT__DISABLE_OPENSSL=ON -DEVENT__LIBRARY_TYPE=BOTH && \
@@ -88,7 +88,7 @@ function do_init
     make install
 
   # build googletest
-  cd ${TOPDIR}/deps/3rd/googletest && \
+  cd "${TOPDIR}/deps/3rd/googletest" && \
     mkdir -p build && \
     cd build && \
     ${CMAKE_COMMAND_THIRD_PARTY} .. && \
@@ -96,7 +96,7 @@ function do_init
     ${MAKE_COMMAND} install
 
   # build google benchmark
-  cd ${TOPDIR}/deps/3rd/benchmark && \
+  cd "${TOPDIR}/deps/3rd/benchmark" && \
     mkdir -p build && \
     cd build && \
     ${CMAKE_COMMAND_THIRD_PARTY} .. -DCMAKE_BUILD_TYPE=RelWithDebInfo -DBENCHMARK_ENABLE_TESTING=OFF  -DBENCHMARK_INSTALL_DOCS=OFF -DBENCHMARK_ENABLE_GTEST_TESTS=OFF -DBENCHMARK_USE_BUNDLED_GTEST=OFF -DBENCHMARK_ENABLE_ASSEMBLY_TESTS=OFF && \
@@ -104,7 +104,7 @@ function do_init
     ${MAKE_COMMAND} install
 
   # build jsoncpp
-  cd ${TOPDIR}/deps/3rd/jsoncpp && \
+  cd "${TOPDIR}/deps/3rd/jsoncpp" && \
     mkdir -p build && \
     cd build && \
     ${CMAKE_COMMAND_THIRD_PARTY} -DJSONCPP_WITH_TESTS=OFF -DJSONCPP_WITH_POST_BUILD_UNITTEST=OFF .. && \
@@ -112,7 +112,7 @@ function do_init
     ${MAKE_COMMAND} install
 
   # build replxx
-  cd ${TOPDIR}/deps/3rd/replxx && \
+  cd "${TOPDIR}/deps/3rd/replxx" && \
     mkdir -p build && \
     cd build && \
     ${CMAKE_COMMAND_THIRD_PARTY} .. -DCMAKE_BUILD_TYPE=Release -DREPLXX_BUILD_EXAMPLES=OFF -DREPLXX_BUILD_PACKAGE=OFF && \
@@ -120,28 +120,28 @@ function do_init
     ${MAKE_COMMAND} install
 
   # build limonp
-  cd ${TOPDIR}/deps/3rd/cppjieba && \
+  cd "${TOPDIR}/deps/3rd/cppjieba" && \
     git submodule update --init && \
     cd deps/limonp && \
     mkdir -p build && cd build && \
-    ${CMAKE_COMMAND_THIRD_PARTY} .. -DCMAKE_BUILD_TYPE=Release -DINSTALL_GTEST=OFF -DBUILD_GMOCK=OFF -DFETCHCONTENT_SOURCE_DIR_GOOGLETEST=${TOPDIR}/deps/3rd/googletest && \
+    ${CMAKE_COMMAND_THIRD_PARTY} .. -DCMAKE_BUILD_TYPE=Release -DINSTALL_GTEST=OFF -DBUILD_GMOCK=OFF -DFETCHCONTENT_SOURCE_DIR_GOOGLETEST="${TOPDIR}/deps/3rd/googletest" && \
     ${MAKE_COMMAND} -j4 && \
     ${MAKE_COMMAND} install
   
   # build cppjieba
-  cd ${TOPDIR}/deps/3rd/cppjieba && \
+  cd "${TOPDIR}/deps/3rd/cppjieba" && \
     mkdir -p build && \
     cd build && \
-    ${CMAKE_COMMAND_THIRD_PARTY} .. -DCMAKE_BUILD_TYPE=Release -DINSTALL_GTEST=OFF -DBUILD_GMOCK=OFF -DFETCHCONTENT_SOURCE_DIR_GOOGLETEST=${TOPDIR}/deps/3rd/googletest && \
+    ${CMAKE_COMMAND_THIRD_PARTY} .. -DCMAKE_BUILD_TYPE=Release -DINSTALL_GTEST=OFF -DBUILD_GMOCK=OFF -DFETCHCONTENT_SOURCE_DIR_GOOGLETEST="${TOPDIR}/deps/3rd/googletest" && \
     ${MAKE_COMMAND} -j4 && \
     ${MAKE_COMMAND} install && \
 
   # create soft link for cppjieba dict
-  cd ${TOPDIR}/deps/3rd/usr/local && \
+  cd "${THIRD_PARTY_INSTALL_PREFIX}" && \
     [ ! -e dict ] && \
     ln -s share/cppjieba/dict .
 
-  cd $current_dir
+  cd "$current_dir"
 }
 
 function do_musl_init
@@ -150,20 +150,20 @@ function do_musl_init
   current_dir=$PWD
 
   MAKE_COMMAND="make --silent"
-  cd ${TOPDIR}/deps/3rd/libexecinfo && \
+  cd "${TOPDIR}/deps/3rd/libexecinfo" && \
     ${MAKE_COMMAND} install && \
-    ${MAKE_COMMAND} clean && rm ${TOPDIR}/deps/3rd/libexecinfo/libexecinfo.so.* && \
-    cd ${current_dir}
+    ${MAKE_COMMAND} clean && rm "${TOPDIR}"/deps/3rd/libexecinfo/libexecinfo.so.* && \
+    cd "${current_dir}"
 }
 
 function prepare_build_dir
 {
   TYPE=$1
-  mkdir -p ${TOPDIR}/build_${TYPE}
+  mkdir -p "${TOPDIR}/build_${TYPE}"
   rm -f build
   echo "create soft link for build_${TYPE}, linked by directory named build"
-  ln -s build_${TYPE} build
-  cd ${TOPDIR}/build_${TYPE}
+  ln -s "build_${TYPE}" build
+  cd "${TOPDIR}/build_${TYPE}"
 }
 
 function do_build
@@ -171,7 +171,7 @@ function do_build
   TYPE=$1; shift
   prepare_build_dir $TYPE || return
   echo "${CMAKE_COMMAND_MINIOB} ${TOPDIR} $@"
-  ${CMAKE_COMMAND_MINIOB} -S ${TOPDIR} $@
+  ${CMAKE_COMMAND_MINIOB} -S "${TOPDIR}" "$@"
 }
 
 function do_clean
