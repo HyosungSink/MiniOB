@@ -174,7 +174,7 @@ pip install -r requirements.txt
 注意：需要将 `algorithms/miniob/config.yml` 中的 `arg_groups: [{unix_socket: "/tmp/miniob.sock"}]` 修改为 miniob 实际使用的 unix socket 文件地址
 ```bash
 # 示例命令
-python3 run.py --dataset fashion-mnist-784-euclidean --docker-tag ann-benchmarks-miniob --local --timeout 100 --runs 1
+python3 run.py --dataset fashion-mnist-784-euclidean --local --timeout 100 --runs 1
 ```
 * 生成运行结果.
 ```bash

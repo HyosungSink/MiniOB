@@ -1,10 +1,7 @@
 name: build
 
 on:
-  push:
-    branches: [ "main" ]
-  pull_request:
-    branches: [ "main" ]
+  workflow_dispatch:
 
 env:
   # Customize the CMake build type here (Release, Debug, RelWithDebInfo, etc.)
@@ -348,7 +345,7 @@ jobs:
         shell: bash
         run: |
           cd test/integration_test/
-          bash ./miniob_test_docker_entry.sh
+          bash ./miniob_test_env_entry.sh
           python3 ./libminiob_test.py -c conf.ini
   build-on-mac:
     runs-on: macos-latest

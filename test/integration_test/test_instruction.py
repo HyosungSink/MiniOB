@@ -350,7 +350,7 @@ class AnnBmInstruction(ExecuteFileInstruction):
     def _run(self) -> Tuple[List[str], float]:
         messages = ""
         try:
-            ann_run_command: str = f"cd {self._ann_benchmark_dir} && rm -rf results/fashion-mnist-784-euclidean && python3 run.py --dataset fashion-mnist-784-euclidean --docker-tag ann-benchmarks-miniob --local --timeout 100 --runs 1"
+            ann_run_command: str = f"cd {self._ann_benchmark_dir} && rm -rf results/fashion-mnist-784-euclidean && python3 run.py --dataset fashion-mnist-784-euclidean --local --timeout 100 --runs 1"
             process = subprocess.run(ann_run_command,
                                      stdout=subprocess.PIPE,
                                      stderr=subprocess.STDOUT,

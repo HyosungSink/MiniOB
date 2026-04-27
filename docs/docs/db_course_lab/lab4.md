@@ -40,7 +40,7 @@ sudo pip2 install pymysql==0.9.3 --trusted-host pypi.python.org --trusted-host p
 
 **如何在 Ubuntu24.04 中安装python2/pip2**
 
-由于 python2/pip2 已经停止维护，这里提供一种在 Ubuntu 24.04（目前 Docker 镜像使用 Ubuntu 24.04）从源码编译安装 python2/pip2 的方法，仅供参考：
+由于 python2/pip2 已经停止维护，这里提供一种在 Ubuntu 24.04 从源码编译安装 python2/pip2 的方法，仅供参考：
 ```
 # 安装依赖
 sudo apt install build-essential zlib1g-dev libncurses5-dev libgdbm-dev libnss3-dev libssl-dev libreadline-dev libffi-dev wget

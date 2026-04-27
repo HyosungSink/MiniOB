@@ -36,7 +36,7 @@ THIRD_PARTY_INSTALL_PREFIX=/usr/local bash build.sh init
 
 > 注意：安装到系统目录可能需要一些特殊权限，可能需要使用 `sudo` 来执行命令。
 
-> 如果使用 GitPod、GitHub Devcontainer 或 miniob docker 容器开发，可以跳过这步，会自动执行。
+> 如果使用已经预装依赖的在线开发环境，可以跳过这步。
 
 ## 2. 编译
 
@@ -142,7 +142,7 @@ sudo bash build.sh init
 在执行build.sh脚本时，遇到下面的错误
 ![crlf error](images/miniob-build-crlf.png)
 
-通常是使用Windows电脑下载源码，然后在docker或虚拟机中运行build.sh脚本运行时出现这个错误。
+通常是使用 Windows 电脑下载源码，然后在 Linux 环境中运行 `build.sh` 脚本时出现这个错误。
 
 ***解决方法：***
 

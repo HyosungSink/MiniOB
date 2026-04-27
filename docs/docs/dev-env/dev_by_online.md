@@ -4,7 +4,7 @@ title: 使用在线开发环境开发 MiniOB
 
 # 使用在线开发环境开发 MiniOB
 
-本篇文章介绍如何使用 [GitPod](https://www.gitpod.io/) 或 [GitHub Codespaces](https://github.com/features/codespaces)开发 [MiniOB](https://github.com/oceanbase/miniob)。对于代码开发调试，可以参考[使用 vscode 开发 miniob](./how_to_dev_miniob_by_vscode.md), [MiniOB 调试](./miniob-how-to-debug.md) 。
+本篇文章介绍如何使用 [GitPod](https://www.gitpod.io/) 开发 [MiniOB](https://github.com/oceanbase/miniob)。对于代码开发调试，可以参考[使用 vscode 开发 miniob](./how_to_dev_miniob_by_vscode.md), [MiniOB 调试](./miniob-how-to-debug.md) 。
 
 ## GitPod 开发环境
 ### GitPod 简介
@@ -39,7 +39,7 @@ title: 使用在线开发环境开发 MiniOB
 
   ![gitpod new workspace](images/dev_by_gitpod_gitpod_new_workspace.png)
 
-  这里选择自己的代码项目，并且使用vscode浏览器版本，容器规格也选择最小的（最小的规格对miniob来说已经非常充足）
+  这里选择自己的代码项目，并且使用 vscode 浏览器版本，资源规格选择最小的即可（最小规格对 MiniOB 来说已经非常充足）。
   ![gitpod open miniob](images/dev_by_gitpod_open_miniob.jpg)
 
   ![gitpod miniob workspace](images/dev_by_gitpod_miniob_workspace.png)
@@ -60,7 +60,7 @@ title: 使用在线开发环境开发 MiniOB
 因为MiniOB当前已经将.vscode文件加入到项目中，所以可以直接使用当前已有的一些命令(task)来构建代码。
 如果是一个全新的机器环境，那么先要运行 `init` 任务。init 任务会在当前的机器上安装一些依赖，比如 google test、libevent等。
 
-> NOTE: gitpod 项目启动时，就会自动运行初始化。如果没有运行，可以手动执行一下。可以参考 .gitpod.yml 文件
+> NOTE: 如果在线环境没有自动完成初始化，可以手动执行初始化命令。
 
 **编译miniob**
 初始化完成，可以运行 `Build` 任务，即可构建。
@@ -151,24 +151,4 @@ Git的其它操作链接在这里
 ![git auth](images/dev_by_gitpod_git_auth.png)
 
 ![git auth1](images/dev_by_gitpod_git_auth1.png)
-
-## GitHub Codespaces 开发环境
-GitHub Codespaces 是托管在云中的开发环境。它允许开发⼈员通过浏览器或从本地的 Visual Studio Code IDE 直接进⾏调试 GitHub 上的代码。GitHub Codespaces 的使用十分方便，但是实际使用体验受限于网络环境，适合网络环境比较好的开发者使用。
-
-### 在 GitHub Codespaces 上开发自己的 MiniOB
-
-#### 创建自己的GitHub项目
-
-在开发 MiniOB 之前，应该先在 GitHub 上将 MiniOB 放在自己的私有仓库中。具体方法可以参考: [创建 Github 私有仓库](../game/github-introduction.md#github-私有仓库创建)
-
-#### 在 GitHub Codespaces 上打开自己的项目
-
-在浏览器中打开自己的私有仓库，依次点击截图中的 `Code` -> `Codespaces` -> `Create codespace on main`，即可初始化一个 MiniOB 在线开发环境。
-
-![GitHub Codespaces](images/dev_by_github_codespaces.png)
-
-#### 代码调试
-在GitHub Codespaces 上开发调试 MiniOB 与本地环境基本类似，这里不再重复。可以参考：对于代码开发调试，可以参考[使用 vscode 开发 miniob](./how_to_dev_miniob_by_vscode.md), [MiniOB 调试](./miniob-how-to-debug.md) 。
-
-
 

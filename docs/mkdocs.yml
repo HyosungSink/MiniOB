@@ -16,10 +16,6 @@ nav:
       - dev-env/introduction.md
       - dev-env/vscode_dev_with_local_virtual_env.md
       - dev-env/dev_by_online.md
-      - dev-env/how-to-dev-using-docker.md
-      - dev-env/how_to_dev_in_docker_container_by_vscode.md
-      - dev-env/how_to_dev_in_docker_container_by_vscode_on_windows.md
-      - dev-env/how_to_dev_miniob_by_docker_on_windows.md
       - dev-env/how_to_dev_miniob_by_vscode.md
       - dev-env/miniob-how-to-debug.md
       - dev-env/how_to_submit_for_testing.md
@@ -121,8 +117,6 @@ extra:
   social:
     - icon: fontawesome/brands/github
       link: https://github.com/oceanbase
-    - icon: fontawesome/brands/docker
-      link: https://hub.docker.com/r/oceanbase/miniob
     - icon: fontawesome/brands/slack
       link: https://join.slack.com/t/oceanbase/shared_invite/zt-1e25oz3ol-lJ6YNqPHaKwY_mhhioyEuw
 

@@ -10,7 +10,7 @@ MiniOB 集成测试的代码位于: `test/integration_test` 下，[训练营](ht
 ## 本地运行
 
 ### 前置依赖
-1. 建议使用 MiniOB 提供的官方镜像进行开发，关于如何使用可参考：[开发环境](./introduction.md)
+1. 请先按[开发环境](./introduction.md)准备可编译 MiniOB 的本地环境。
 2. 安装集成测试运行所需依赖
 ```bash
 sudo bash build.sh init
@@ -20,7 +20,7 @@ sudo apt -y install pip python3-pymysql python3-psutil mysql-server
 ### 执行集成测试
 ```
 cd test/integration_test
-bash ./miniob_test_docker_entry.sh
+bash ./miniob_test_env_entry.sh
 python3 libminiob_test.py -c conf.ini
 ```
 ## GitHub 中运行
@@ -112,7 +112,7 @@ def create_test_cases() -> TestCase:
 # 常见问题
 
 Q: 我在本地运行的集成测试和训练营中的测试是完全一样的吗还是有什么区别？
-A: 可以认为是基本一样的，区别在于训练营中的集成测试是在内存受限（1GB）的容器内运行的。测试运行的代码基本一致，如果遇到在本地/Github 上运行的结果与训练营的结果不一致，欢迎反馈。
+A: 可以认为是基本一样的，区别在于训练营中的集成测试是在内存受限（1GB）的环境中运行的。测试运行的代码基本一致，如果遇到在本地/Github 上运行的结果与训练营的结果不一致，欢迎反馈。
 
 Q: 我用该集成测试可以复现出训练营中的问题，但是不知道如何进一步定位问题？
 A: 你可以在集成测试的关键位置增加更多自定义的日志输出。默认情况下，集成测试的日志会输出到标准输出.

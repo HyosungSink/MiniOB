@@ -6,7 +6,7 @@ function init_coredump_settings()
   sudo chmod 777 /corefile
   sudo ulimit -c unlimited
 
-  # 这两个配置在容器中不生效，需要在宿主机上配置
+  # 这两个配置在部分受限环境中不生效，需要在宿主机上配置
   sudo sysctl -w kernel.core_uses_pid=1
   sudo sysctl -w kernel.core_pattern=/corefile/core.%p
 }
