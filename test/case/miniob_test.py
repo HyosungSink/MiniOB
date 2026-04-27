@@ -419,7 +419,7 @@ class CommandRunner:
       _logger.error("Found empty client name")
       return False
 
-    client = self.__clients[name]
+    client = self.__clients.get(name)
     if client != None:
       _logger.error("Client with name %s already exists", name)
       return False
