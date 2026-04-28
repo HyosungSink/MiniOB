@@ -1,0 +1,8 @@
+-- echo miniob2025 05 join type cast regression
+create table join_table_1(id int, name char);
+create table join_table_2(id int, age int);
+insert into join_table_1 values (4, '16a');
+insert into join_table_1 values (5, '21a');
+insert into join_table_2 values (4, 20);
+insert into join_table_2 values (5, 18);
+select * from join_table_1 inner join join_table_2 on join_table_1.name<join_table_2.age and join_table_1.id=join_table_2.id;
