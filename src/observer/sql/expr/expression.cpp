@@ -154,8 +154,12 @@ ComparisonExpr::~ComparisonExpr() {}
 RC ComparisonExpr::compare_value(const Value &left, const Value &right, bool &result) const
 {
   RC  rc         = RC::SUCCESS;
-  int cmp_result = left.compare(right);
   result         = false;
+  if (left.is_null() || right.is_null()) {
+    return rc;
+  }
+
+  int cmp_result = left.compare(right);
   switch (comp_) {
     case EQUAL_TO: {
       result = (0 == cmp_result);
@@ -186,23 +190,32 @@ RC ComparisonExpr::compare_value(const Value &left, const Value &right, bool &re
 
 RC ComparisonExpr::try_get_value(Value &cell) const
 {
-  if (left_->type() == ExprType::VALUE && right_->type() == ExprType::VALUE) {
-    ValueExpr *  left_value_expr  = static_cast<ValueExpr *>(left_.get());
-    ValueExpr *  right_value_expr = static_cast<ValueExpr *>(right_.get());
-    const Value &left_cell        = left_value_expr->get_value();
-    const Value &right_cell       = right_value_expr->get_value();
+  Value left_cell;
+  Value right_cell;
 
-    bool value = false;
-    RC   rc    = compare_value(left_cell, right_cell, value);
-    if (rc != RC::SUCCESS) {
-      LOG_WARN("failed to compare tuple cells. rc=%s", strrc(rc));
-    } else {
-      cell.set_boolean(value);
-    }
+  RC rc = left_->try_get_value(left_cell);
+  if (rc != RC::SUCCESS) {
     return rc;
   }
 
-  return RC::INVALID_ARGUMENT;
+  rc = right_->try_get_value(right_cell);
+  if (rc != RC::SUCCESS) {
+    return rc;
+  }
+
+  if (left_cell.is_null() || right_cell.is_null()) {
+    cell.set_null();
+    return RC::SUCCESS;
+  }
+
+  bool value = false;
+  rc         = compare_value(left_cell, right_cell, value);
+  if (rc != RC::SUCCESS) {
+    LOG_WARN("failed to compare tuple cells. rc=%s", strrc(rc));
+  } else {
+    cell.set_boolean(value);
+  }
+  return rc;
 }
 
 RC ComparisonExpr::get_value(const Tuple &tuple, Value &value) const
@@ -219,6 +232,11 @@ RC ComparisonExpr::get_value(const Tuple &tuple, Value &value) const
   if (rc != RC::SUCCESS) {
     LOG_WARN("failed to get value of right expression. rc=%s", strrc(rc));
     return rc;
+  }
+
+  if (left_value.is_null() || right_value.is_null()) {
+    value.set_null();
+    return RC::SUCCESS;
   }
 
   bool bool_value = false;
