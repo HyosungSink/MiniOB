@@ -35,6 +35,7 @@ public:
   friend class FloatType;
   friend class BooleanType;
   friend class CharType;
+  friend class DateType;
   friend class VectorType;
 
   Value() = default;
@@ -109,6 +110,7 @@ public:
    */
   int      get_int() const;
   float    get_float() const;
+  int      get_date() const;
   string   get_string() const;
   string_t get_string_t() const;
   bool     get_boolean() const;
@@ -116,6 +118,7 @@ public:
 public:
   void set_int(int val);
   void set_float(float val);
+  void set_date(int val);
   void set_string(const char *s, int len = 0);
   void set_empty_string(int len);
   void set_string_from_other(const Value &other);

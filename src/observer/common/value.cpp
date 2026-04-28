@@ -124,6 +124,10 @@ void Value::set_data(char *data, int length)
       value_.float_value_ = *(float *)data;
       length_             = length;
     } break;
+    case AttrType::DATES: {
+      value_.int_value_ = *(int *)data;
+      length_           = length;
+    } break;
     case AttrType::BOOLEANS: {
       value_.bool_value_ = *(int *)data != 0;
       length_            = length;
@@ -149,6 +153,15 @@ void Value::set_float(float val)
   value_.float_value_ = val;
   length_             = sizeof(val);
 }
+
+void Value::set_date(int val)
+{
+  reset();
+  attr_type_        = AttrType::DATES;
+  value_.int_value_ = val;
+  length_           = sizeof(val);
+}
+
 void Value::set_boolean(bool val)
 {
   reset();
@@ -199,6 +212,9 @@ void Value::set_value(const Value &value)
     } break;
     case AttrType::FLOATS: {
       set_float(value.get_float());
+    } break;
+    case AttrType::DATES: {
+      set_date(value.get_date());
     } break;
     case AttrType::CHARS: {
       set_string(value.get_string().c_str());
@@ -264,6 +280,9 @@ int Value::get_int() const
     case AttrType::FLOATS: {
       return (int)(value_.float_value_);
     }
+    case AttrType::DATES: {
+      return value_.int_value_;
+    }
     case AttrType::BOOLEANS: {
       return (int)(value_.bool_value_);
     }
@@ -301,6 +320,15 @@ float Value::get_float() const
     }
   }
   return 0;
+}
+
+int Value::get_date() const
+{
+  if (attr_type_ != AttrType::DATES) {
+    LOG_WARN("value is not date. type=%d", attr_type_);
+    return 0;
+  }
+  return value_.int_value_;
 }
 
 string Value::get_string() const { return this->to_string(); }
