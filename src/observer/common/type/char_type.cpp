@@ -30,6 +30,14 @@ RC CharType::set_value_from_str(Value &val, const string &data) const
 RC CharType::cast_to(const Value &val, AttrType type, Value &result) const
 {
   switch (type) {
+    case AttrType::INTS: {
+      result.set_int(val.get_int());
+      return RC::SUCCESS;
+    }
+    case AttrType::FLOATS: {
+      result.set_float(val.get_float());
+      return RC::SUCCESS;
+    }
     case AttrType::DATES: {
       int date = 0;
       RC rc = DateType::parse_date(val.get_string(), date);
@@ -48,6 +56,8 @@ int CharType::cast_cost(AttrType type)
 {
   if (type == AttrType::CHARS) {
     return 0;
+  } else if (type == AttrType::INTS || type == AttrType::FLOATS) {
+    return 1;
   } else if (type == AttrType::DATES) {
     return 1;
   }
