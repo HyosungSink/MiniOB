@@ -583,7 +583,7 @@ RC ExpressionBinder::bind_scalar_function(const char *function_name,
       }
       AttrType date_type = type_at(0);
       AttrType format_type = type_at(1);
-      if (date_type != AttrType::DATES && !is_null_literal_type(date_type)) {
+      if (date_type != AttrType::DATES && date_type != AttrType::CHARS && !is_null_literal_type(date_type)) {
         return RC::INVALID_ARGUMENT;
       }
       if (format_type != AttrType::CHARS && !is_null_literal_type(format_type)) {

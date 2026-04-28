@@ -743,7 +743,17 @@ RC FunctionExpr::eval_arguments(const vector<Value> &arguments, Value &value) co
       }
     } break;
     case Type::DATE_FORMAT: {
-      value.set_string(format_date_value(arguments[0].get_date(), arguments[1].get_string()).c_str());
+      Value date_value;
+      if (arguments[0].attr_type() == AttrType::DATES) {
+        date_value = arguments[0];
+      } else {
+        RC rc = Value::cast_to(arguments[0], AttrType::DATES, date_value);
+        if (OB_FAIL(rc)) {
+          value.set_null();
+          return RC::SUCCESS;
+        }
+      }
+      value.set_string(format_date_value(date_value.get_date(), arguments[1].get_string()).c_str());
     } break;
   }
 
