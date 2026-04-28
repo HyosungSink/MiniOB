@@ -53,19 +53,39 @@ RC DateType::to_string(const Value &val, string &result) const
 
 RC DateType::parse_date(const string &data, int &date)
 {
-  if (data.size() != 10 || data[4] != '-' || data[7] != '-') {
+  if (data.size() < 8 || data.size() > 10 || data[4] != '-') {
     return RC::SCHEMA_FIELD_TYPE_MISMATCH;
   }
 
-  for (int i : {0, 1, 2, 3, 5, 6, 8, 9}) {
-    if (data[i] < '0' || data[i] > '9') {
-      return RC::SCHEMA_FIELD_TYPE_MISMATCH;
-    }
+  size_t second_dash = data.find('-', 5);
+  if (second_dash == string::npos || data.find('-', second_dash + 1) != string::npos) {
+    return RC::SCHEMA_FIELD_TYPE_MISMATCH;
   }
 
-  int year  = stoi(data.substr(0, 4));
-  int month = stoi(data.substr(5, 2));
-  int day   = stoi(data.substr(8, 2));
+  string year_part  = data.substr(0, 4);
+  string month_part = data.substr(5, second_dash - 5);
+  string day_part   = data.substr(second_dash + 1);
+  if (month_part.empty() || month_part.size() > 2 || day_part.empty() || day_part.size() > 2) {
+    return RC::SCHEMA_FIELD_TYPE_MISMATCH;
+  }
+
+  auto parse_digits = [](const string &part, int &value) -> bool {
+    value = 0;
+    for (char ch : part) {
+      if (ch < '0' || ch > '9') {
+        return false;
+      }
+      value = value * 10 + ch - '0';
+    }
+    return true;
+  };
+
+  int year  = 0;
+  int month = 0;
+  int day   = 0;
+  if (!parse_digits(year_part, year) || !parse_digits(month_part, month) || !parse_digits(day_part, day)) {
+    return RC::SCHEMA_FIELD_TYPE_MISMATCH;
+  }
 
   if (!is_valid_date(year, month, day)) {
     return RC::SCHEMA_FIELD_TYPE_MISMATCH;
