@@ -468,9 +468,10 @@ public:
   void set_parent_tables(const vector<ParentTableRef> &parent_tables) { parent_tables_ = parent_tables; }
 
   RC materialized_values(const vector<Value> *&values) const;
+  RC materialized_values(const Tuple &outer_tuple, const vector<Value> *&values) const;
 
 private:
-  RC materialize() const;
+  RC materialize(const Tuple *outer_tuple = nullptr) const;
 
 private:
   string                sql_;

@@ -21,6 +21,7 @@ See the Mulan PSL v2 for more details. */
 #include "sql/optimizer/physical_plan_generator.h"
 #include "sql/operator/logical_operator.h"
 #include "sql/operator/physical_operator.h"
+#include "sql/parser/expression_binder.h"
 #include "sql/parser/parse.h"
 #include "sql/stmt/stmt.h"
 #include "storage/db/db.h"
@@ -34,9 +35,33 @@ See the Mulan PSL v2 for more details. */
 
 using namespace std;
 
+static thread_local const Tuple *current_subquery_outer_tuple = nullptr;
+
+class ScopedSubqueryOuterTuple
+{
+public:
+  explicit ScopedSubqueryOuterTuple(const Tuple *outer_tuple)
+      : previous_(current_subquery_outer_tuple)
+  {
+    if (outer_tuple != nullptr) {
+      current_subquery_outer_tuple = outer_tuple;
+    }
+  }
+
+  ~ScopedSubqueryOuterTuple() { current_subquery_outer_tuple = previous_; }
+
+private:
+  const Tuple *previous_ = nullptr;
+};
+
 RC FieldExpr::get_value(const Tuple &tuple, Value &value) const
 {
-  return tuple.find_cell(TupleCellSpec(table_name(), field_name()), value);
+  TupleCellSpec spec(table_name(), field_name());
+  RC rc = tuple.find_cell(spec, value);
+  if (rc == RC::NOTFOUND && current_subquery_outer_tuple != nullptr && current_subquery_outer_tuple != &tuple) {
+    rc = current_subquery_outer_tuple->find_cell(spec, value);
+  }
+  return rc;
 }
 
 bool FieldExpr::equal(const Expression &other) const
@@ -717,13 +742,16 @@ static RC materialize_derived_select(const string &sql, vector<Value> &values, A
   return RC::SUCCESS;
 }
 
-RC SubqueryExpr::materialize() const
+RC SubqueryExpr::materialize(const Tuple *outer_tuple) const
 {
-  if (materialized_) {
+  if (!correlated_ && materialized_) {
     return materialize_rc_;
   }
 
-  materialized_ = true;
+  if (!correlated_) {
+    materialized_ = true;
+  }
+  ScopedSubqueryOuterTuple scoped_outer_tuple(correlated_ ? outer_tuple : nullptr);
   values_.clear();
 
   Session *session = Session::current_session();
@@ -750,7 +778,16 @@ RC SubqueryExpr::materialize() const
   }
 
   Stmt *raw_stmt = nullptr;
-  rc = Stmt::create_stmt(db, *parsed_sql_result.sql_nodes().front(), raw_stmt);
+  BinderContext parent_context;
+  BinderContext *parent_context_ptr = nullptr;
+  if (!parent_tables_.empty()) {
+    parent_context.set_db(db);
+    for (const ParentTableRef &parent_table : parent_tables_) {
+      parent_context.add_table(parent_table.table, parent_table.alias);
+    }
+    parent_context_ptr = &parent_context;
+  }
+  rc = Stmt::create_stmt(db, *parsed_sql_result.sql_nodes().front(), raw_stmt, parent_context_ptr);
   unique_ptr<Stmt> stmt(raw_stmt);
   if (OB_FAIL(rc)) {
     materialize_rc_ = materialize_derived_select(sql_, values_, cast_type_);
@@ -831,9 +868,20 @@ RC SubqueryExpr::materialized_values(const vector<Value> *&values) const
   return RC::SUCCESS;
 }
 
+RC SubqueryExpr::materialized_values(const Tuple &outer_tuple, const vector<Value> *&values) const
+{
+  RC rc = materialize(&outer_tuple);
+  if (OB_FAIL(rc)) {
+    return rc;
+  }
+
+  values = &values_;
+  return RC::SUCCESS;
+}
+
 RC SubqueryExpr::get_value(const Tuple &tuple, Value &value) const
 {
-  RC rc = materialize();
+  RC rc = materialize(&tuple);
   if (OB_FAIL(rc)) {
     return rc;
   }
@@ -849,6 +897,10 @@ RC SubqueryExpr::get_value(const Tuple &tuple, Value &value) const
 
 RC SubqueryExpr::prepare() const
 {
+  if (correlated_) {
+    return RC::SUCCESS;
+  }
+
   RC rc = materialize();
   if (OB_FAIL(rc)) {
     return rc;
@@ -864,6 +916,10 @@ RC SubqueryExpr::prepare() const
 
 RC SubqueryExpr::try_get_value(Value &value) const
 {
+  if (correlated_) {
+    return RC::UNIMPLEMENTED;
+  }
+
   RC rc = prepare();
   if (OB_FAIL(rc)) {
     return rc;
@@ -890,7 +946,7 @@ RC InSubqueryExpr::get_value(const Tuple &tuple, Value &value) const
   }
 
   const vector<Value> *subquery_values = nullptr;
-  rc = subquery_->materialized_values(subquery_values);
+  rc = subquery_->materialized_values(tuple, subquery_values);
   if (OB_FAIL(rc)) {
     return rc;
   }
@@ -922,6 +978,10 @@ RC InSubqueryExpr::get_value(const Tuple &tuple, Value &value) const
 
 RC InSubqueryExpr::prepare() const
 {
+  if (subquery_->correlated()) {
+    return RC::SUCCESS;
+  }
+
   const vector<Value> *subquery_values = nullptr;
   return subquery_->materialized_values(subquery_values);
 }
@@ -983,6 +1043,10 @@ QuantifiedComparisonExpr::QuantifiedComparisonExpr(
 
 RC QuantifiedComparisonExpr::prepare() const
 {
+  if (subquery_->correlated()) {
+    return RC::SUCCESS;
+  }
+
   const vector<Value> *subquery_values = nullptr;
   return subquery_->materialized_values(subquery_values);
 }
@@ -1000,7 +1064,7 @@ RC QuantifiedComparisonExpr::get_value(const Tuple &tuple, Value &value) const
   }
 
   const vector<Value> *subquery_values = nullptr;
-  rc = subquery_->materialized_values(subquery_values);
+  rc = subquery_->materialized_values(tuple, subquery_values);
   if (OB_FAIL(rc)) {
     return rc;
   }
