@@ -151,6 +151,7 @@ UnboundFunctionExpr *create_function_expression(const char *function_name,
   vector<Value> *                            value_list;
   vector<ConditionSqlNode> *                 condition_list;
   vector<RelAttrSqlNode> *                   rel_attr_list;
+  vector<UpdateAssignmentSqlNode> *          update_assignment_list;
   RelationSqlNode *                          relation;
   TableRefsSqlNode *                         table_refs;
   vector<string> *                           key_list;
@@ -167,6 +168,7 @@ UnboundFunctionExpr *create_function_expression(const char *function_name,
 %destructor { delete $$; } <expression_list>
 %destructor { delete $$; } <value_list>
 %destructor { delete $$; } <condition_list>
+%destructor { delete $$; } <update_assignment_list>
 // %destructor { delete $$; } <rel_attr_list>
 %destructor { delete $$; } <relation>
 %destructor { delete $$; } <table_refs>
@@ -193,6 +195,7 @@ UnboundFunctionExpr *create_function_expression(const char *function_name,
 %type <value_list>          value_list
 %type <condition_list>      where
 %type <condition_list>      condition_list
+%type <update_assignment_list> update_assignment_list
 %type <table_refs>          table_refs
 %type <table_refs>          table_ref
 %type <cstring>             storage_format
@@ -527,16 +530,39 @@ delete_stmt:    /*  delete 语句的语法解析树*/
     }
     ;
 update_stmt:      /*  update 语句的语法解析树*/
-    UPDATE ID SET ID EQ value where 
+    UPDATE ID SET update_assignment_list where
     {
       $$ = new ParsedSqlNode(SCF_UPDATE);
       $$->update.relation_name = $2;
-      $$->update.attribute_name = $4;
-      $$->update.value = *$6;
-      if ($7 != nullptr) {
-        $$->update.conditions.swap(*$7);
-        delete $7;
+      $$->update.assignments.swap(*$4);
+      if (!$$->update.assignments.empty()) {
+        $$->update.attribute_name = $$->update.assignments.front().attribute_name;
+        $$->update.value = $$->update.assignments.front().value;
       }
+      delete $4;
+      if ($5 != nullptr) {
+        $$->update.conditions.swap(*$5);
+        delete $5;
+      }
+    }
+    ;
+
+update_assignment_list:
+    ID EQ value
+    {
+      $$ = new vector<UpdateAssignmentSqlNode>;
+      $$->push_back(UpdateAssignmentSqlNode{$1, *$3});
+      delete $3;
+    }
+    | ID EQ value COMMA update_assignment_list
+    {
+      if ($5 != nullptr) {
+        $$ = $5;
+      } else {
+        $$ = new vector<UpdateAssignmentSqlNode>;
+      }
+      $$->insert($$->begin(), UpdateAssignmentSqlNode{$1, *$3});
+      delete $3;
     }
     ;
 select_stmt:        /*  select 语句的语法解析树*/

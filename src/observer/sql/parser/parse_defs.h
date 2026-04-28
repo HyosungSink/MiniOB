@@ -149,11 +149,18 @@ struct DeleteSqlNode
  * @brief 描述一个update语句
  * @ingroup SQLParser
  */
+struct UpdateAssignmentSqlNode
+{
+  string attribute_name;
+  Value  value;
+};
+
 struct UpdateSqlNode
 {
-  string                   relation_name;   ///< Relation to update
-  string                   attribute_name;  ///< 更新的字段，仅支持一个字段
-  Value                    value;           ///< 更新的值，仅支持一个字段
+  string                          relation_name;  ///< Relation to update
+  vector<UpdateAssignmentSqlNode> assignments;    ///< 更新的字段和值
+  string                          attribute_name; ///< 兼容单字段更新路径
+  Value                           value;          ///< 兼容单字段更新路径
   vector<ConditionSqlNode> conditions;
 };
 
