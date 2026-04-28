@@ -650,6 +650,18 @@ select_stmt:        /*  select 语句的语法解析树*/
         delete $2;
       }
     }
+    | SELECT select_expression_list WHERE condition_list
+    {
+      $$ = new ParsedSqlNode(SCF_SELECT);
+      if ($2 != nullptr) {
+        $$->selection.expressions.swap(*$2);
+        delete $2;
+      }
+      if ($4 != nullptr) {
+        $$->selection.conditions.swap(*$4);
+        delete $4;
+      }
+    }
     ;
 table_refs:
     table_ref

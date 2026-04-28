@@ -21,7 +21,8 @@ See the Mulan PSL v2 for more details. */
 
 PredicatePhysicalOperator::PredicatePhysicalOperator(std::unique_ptr<Expression> expr) : expression_(std::move(expr))
 {
-  ASSERT(expression_->value_type() == AttrType::BOOLEANS, "predicate's expression should be BOOLEAN type");
+  ASSERT(expression_->value_type() == AttrType::BOOLEANS || expression_->value_type() == AttrType::UNDEFINED,
+      "predicate's expression should be BOOLEAN or NULL type");
 }
 
 RC PredicatePhysicalOperator::open(Trx *trx)
@@ -71,7 +72,7 @@ RC PredicatePhysicalOperator::next()
       return rc;
     }
 
-    if (value.get_boolean()) {
+    if (!value.is_null() && value.get_boolean()) {
       return rc;
     }
   }

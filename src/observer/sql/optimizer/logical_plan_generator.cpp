@@ -110,7 +110,13 @@ RC LogicalPlanGenerator::create_plan(SelectStmt *select_stmt, unique_ptr<Logical
 
   const vector<Table *> &tables = select_stmt->tables();
   if (tables.empty()) {
-    logical_operator = make_unique<CalcLogicalOperator>(std::move(select_stmt->query_expressions()));
+    auto calc_oper = make_unique<CalcLogicalOperator>(std::move(select_stmt->query_expressions()));
+    if (predicate_oper) {
+      predicate_oper->add_child(std::move(calc_oper));
+      logical_operator = std::move(predicate_oper);
+    } else {
+      logical_operator = std::move(calc_oper);
+    }
     return RC::SUCCESS;
   }
 
@@ -194,7 +200,8 @@ RC LogicalPlanGenerator::create_plan(FilterStmt *filter_stmt, unique_ptr<Logical
     unique_ptr<Expression> left = filter_obj_left.expression->copy();
     unique_ptr<Expression> right = filter_obj_right.expression->copy();
 
-    if (left->value_type() != right->value_type()) {
+    if (left->value_type() != AttrType::UNDEFINED && right->value_type() != AttrType::UNDEFINED &&
+        left->value_type() != right->value_type()) {
       auto left_to_right_cost = implicit_cast_cost(left->value_type(), right->value_type());
       auto right_to_left_cost = implicit_cast_cost(right->value_type(), left->value_type());
       if (left_to_right_cost <= right_to_left_cost && left_to_right_cost != INT32_MAX) {
