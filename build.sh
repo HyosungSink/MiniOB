@@ -74,7 +74,15 @@ function prepare_build_dir
 
 function do_init
 {
-  git submodule update --init || return
+  local required_submodules=(
+    deps/3rd/libevent
+    deps/3rd/googletest
+    deps/3rd/benchmark
+    deps/3rd/jsoncpp
+    deps/3rd/replxx
+    deps/3rd/cppjieba
+  )
+  git submodule update --init "${required_submodules[@]}" || return
   current_dir=$PWD
 
   MAKE_COMMAND="make --silent"
