@@ -30,7 +30,7 @@ FilterStmt::~FilterStmt()
 }
 
 RC FilterStmt::create(Db *db, Table *default_table, unordered_map<string, Table *> *tables,
-    const ConditionSqlNode *conditions, int condition_num, FilterStmt *&stmt)
+    const ConditionSqlNode *conditions, int condition_num, FilterStmt *&stmt, bool allow_aggregate)
 {
   RC rc = RC::SUCCESS;
   stmt  = nullptr;
@@ -54,7 +54,7 @@ RC FilterStmt::create(Db *db, Table *default_table, unordered_map<string, Table 
   for (int i = 0; i < condition_num; i++) {
     FilterUnit *filter_unit = nullptr;
 
-    rc = create_filter_unit(db, default_table, tables, conditions[i], filter_unit, &binder_context);
+    rc = create_filter_unit(db, default_table, tables, conditions[i], filter_unit, &binder_context, allow_aggregate);
     if (rc != RC::SUCCESS) {
       delete tmp_stmt;
       LOG_WARN("failed to create filter unit. condition index=%d", i);
@@ -114,7 +114,7 @@ static RC reject_aggregate_expression(Expression &expr)
 }
 
 RC FilterStmt::create_filter_unit(Db *db, Table *default_table, unordered_map<string, Table *> *tables,
-    const ConditionSqlNode &condition, FilterUnit *&filter_unit, BinderContext *binder_context)
+    const ConditionSqlNode &condition, FilterUnit *&filter_unit, BinderContext *binder_context, bool allow_aggregate)
 {
   RC rc = RC::SUCCESS;
 
@@ -148,11 +148,13 @@ RC FilterStmt::create_filter_unit(Db *db, Table *default_table, unordered_map<st
     filter_unit = nullptr;
     return RC::INVALID_ARGUMENT;
   }
-  rc = reject_aggregate_expression(*left_bound_expressions[0]);
-  if (OB_FAIL(rc)) {
-    delete filter_unit;
-    filter_unit = nullptr;
-    return rc;
+  if (!allow_aggregate) {
+    rc = reject_aggregate_expression(*left_bound_expressions[0]);
+    if (OB_FAIL(rc)) {
+      delete filter_unit;
+      filter_unit = nullptr;
+      return rc;
+    }
   }
   filter_unit->set_left(std::move(left_bound_expressions[0]));
 
@@ -169,11 +171,13 @@ RC FilterStmt::create_filter_unit(Db *db, Table *default_table, unordered_map<st
     filter_unit = nullptr;
     return RC::INVALID_ARGUMENT;
   }
-  rc = reject_aggregate_expression(*right_bound_expressions[0]);
-  if (OB_FAIL(rc)) {
-    delete filter_unit;
-    filter_unit = nullptr;
-    return rc;
+  if (!allow_aggregate) {
+    rc = reject_aggregate_expression(*right_bound_expressions[0]);
+    if (OB_FAIL(rc)) {
+      delete filter_unit;
+      filter_unit = nullptr;
+      return rc;
+    }
   }
   filter_unit->set_right(std::move(right_bound_expressions[0]));
 

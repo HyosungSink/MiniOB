@@ -46,6 +46,8 @@ public:
   void set_left(unique_ptr<Expression> expr) { left_.expression = std::move(expr); }
   void set_right(unique_ptr<Expression> expr) { right_.expression = std::move(expr); }
 
+  FilterObj       &left() { return left_; }
+  FilterObj       &right() { return right_; }
   const FilterObj &left() const { return left_; }
   const FilterObj &right() const { return right_; }
 
@@ -71,10 +73,11 @@ public:
 
 public:
   static RC create(Db *db, Table *default_table, unordered_map<string, Table *> *tables,
-      const ConditionSqlNode *conditions, int condition_num, FilterStmt *&stmt);
+      const ConditionSqlNode *conditions, int condition_num, FilterStmt *&stmt, bool allow_aggregate = false);
 
   static RC create_filter_unit(Db *db, Table *default_table, unordered_map<string, Table *> *tables,
-      const ConditionSqlNode &condition, FilterUnit *&filter_unit, BinderContext *binder_context = nullptr);
+      const ConditionSqlNode &condition, FilterUnit *&filter_unit, BinderContext *binder_context = nullptr,
+      bool allow_aggregate = false);
 
 private:
   vector<FilterUnit *> filter_units_;
