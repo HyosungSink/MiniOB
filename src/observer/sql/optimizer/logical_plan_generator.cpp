@@ -385,6 +385,13 @@ RC LogicalPlanGenerator::create_group_by_plan(SelectStmt *select_stmt, unique_pt
   function<RC(unique_ptr<Expression>&)> collector = [&](unique_ptr<Expression> &expr) -> RC {
     RC rc = RC::SUCCESS;
     if (expr->type() == ExprType::AGGREGATION) {
+      for (size_t i = 0; i < aggregate_expressions.size(); i++) {
+        if (expr->equal(*aggregate_expressions[i])) {
+          expr->set_name(aggregate_expressions[i]->name());
+          expr->set_pos(i + group_by_expressions.size());
+          return rc;
+        }
+      }
       expr->set_pos(aggregate_expressions.size() + group_by_expressions.size());
       aggregate_expressions.push_back(expr.get());
     }
