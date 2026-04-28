@@ -53,6 +53,9 @@ public:
 
   CompOp comp() const { return comp_; }
 
+  void set_conjunction(ConditionConjunction conjunction) { conjunction_ = conjunction; }
+  ConditionConjunction conjunction() const { return conjunction_; }
+
   void set_left(const FilterObj &obj) { left_ = obj; }
   void set_right(const FilterObj &obj) { right_ = obj; }
 
@@ -60,9 +63,10 @@ public:
   const FilterObj &right() const { return right_; }
 
 private:
-  CompOp    comp_ = NO_OP;
-  FilterObj left_;
-  FilterObj right_;
+  CompOp               comp_        = NO_OP;
+  ConditionConjunction conjunction_ = ConditionConjunction::AND;
+  FilterObj            left_;
+  FilterObj            right_;
 };
 
 /**
@@ -86,5 +90,5 @@ public:
       const ConditionSqlNode &condition, FilterUnit *&filter_unit);
 
 private:
-  vector<FilterUnit *> filter_units_;  // 默认当前都是AND关系
+  vector<FilterUnit *> filter_units_;
 };

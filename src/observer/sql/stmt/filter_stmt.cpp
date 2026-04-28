@@ -126,6 +126,7 @@ RC FilterStmt::create_filter_unit(Db *db, Table *default_table, unordered_map<st
   }
 
   filter_unit->set_comp(comp);
+  filter_unit->set_conjunction(condition.conjunction);
 
   // 检查两个类型是否能够比较
   return rc;

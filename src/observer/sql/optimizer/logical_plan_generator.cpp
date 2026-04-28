@@ -162,7 +162,12 @@ RC LogicalPlanGenerator::create_plan(FilterStmt *filter_stmt, unique_ptr<Logical
   RC                                  rc = RC::SUCCESS;
   vector<unique_ptr<Expression>> cmp_exprs;
   const vector<FilterUnit *>    &filter_units = filter_stmt->filter_units();
+  bool                           has_or       = false;
   for (const FilterUnit *filter_unit : filter_units) {
+    if (filter_unit->conjunction() == ConditionConjunction::OR) {
+      has_or = true;
+    }
+
     const FilterObj &filter_obj_left  = filter_unit->left();
     const FilterObj &filter_obj_right = filter_unit->right();
 
@@ -219,8 +224,23 @@ RC LogicalPlanGenerator::create_plan(FilterStmt *filter_stmt, unique_ptr<Logical
 
   unique_ptr<PredicateLogicalOperator> predicate_oper;
   if (!cmp_exprs.empty()) {
-    unique_ptr<ConjunctionExpr> conjunction_expr(new ConjunctionExpr(ConjunctionExpr::Type::AND, cmp_exprs));
-    predicate_oper = unique_ptr<PredicateLogicalOperator>(new PredicateLogicalOperator(std::move(conjunction_expr)));
+    unique_ptr<Expression> predicate_expr;
+    if (!has_or) {
+      predicate_expr = make_unique<ConjunctionExpr>(ConjunctionExpr::Type::AND, cmp_exprs);
+    } else {
+      predicate_expr = std::move(cmp_exprs[0]);
+      for (size_t i = 1; i < cmp_exprs.size(); i++) {
+        vector<unique_ptr<Expression>> children;
+        children.emplace_back(std::move(predicate_expr));
+        children.emplace_back(std::move(cmp_exprs[i]));
+
+        ConjunctionExpr::Type type = filter_units[i]->conjunction() == ConditionConjunction::OR
+                                         ? ConjunctionExpr::Type::OR
+                                         : ConjunctionExpr::Type::AND;
+        predicate_expr = make_unique<ConjunctionExpr>(type, children);
+      }
+    }
+    predicate_oper = make_unique<PredicateLogicalOperator>(std::move(predicate_expr));
   }
 
   logical_operator = std::move(predicate_oper);
