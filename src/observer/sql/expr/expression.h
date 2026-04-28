@@ -49,6 +49,7 @@ enum class ExprType
   ARITHMETIC,   ///< 算术运算
   FUNCTION,     ///< 标量函数
   AGGREGATION,  ///< 聚合运算
+  IN_LIST,      ///< IN/NOT IN value list predicate
 };
 
 /**
@@ -379,6 +380,36 @@ public:
 private:
   Type                           conjunction_type_;
   vector<unique_ptr<Expression>> children_;
+};
+
+class InExpr : public Expression
+{
+public:
+  InExpr(unique_ptr<Expression> left, vector<unique_ptr<Expression>> values, bool not_in);
+  virtual ~InExpr() = default;
+
+  unique_ptr<Expression> copy() const override
+  {
+    vector<unique_ptr<Expression>> values;
+    for (const unique_ptr<Expression> &value : values_) {
+      values.emplace_back(value->copy());
+    }
+    return make_unique<InExpr>(left_->copy(), std::move(values), not_in_);
+  }
+
+  ExprType type() const override { return ExprType::IN_LIST; }
+  AttrType value_type() const override { return AttrType::BOOLEANS; }
+
+  RC get_value(const Tuple &tuple, Value &value) const override;
+
+  unique_ptr<Expression> &left() { return left_; }
+  vector<unique_ptr<Expression>> &values() { return values_; }
+  bool not_in() const { return not_in_; }
+
+private:
+  unique_ptr<Expression>         left_;
+  vector<unique_ptr<Expression>> values_;
+  bool                           not_in_ = false;
 };
 
 /**

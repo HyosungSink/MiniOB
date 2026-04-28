@@ -163,7 +163,12 @@ RC ComparisonExpr::compare_value(const Value &left, const Value &right, bool &re
     return rc;
   }
 
-  int cmp_result = left.compare(right);
+  int cmp_result = 0;
+  if (left.attr_type() == AttrType::BOOLEANS && right.attr_type() == AttrType::BOOLEANS) {
+    cmp_result = static_cast<int>(left.get_boolean()) - static_cast<int>(right.get_boolean());
+  } else {
+    cmp_result = left.compare(right);
+  }
   switch (comp_) {
     case EQUAL_TO: {
       result = (0 == cmp_result);
@@ -351,6 +356,58 @@ RC ConjunctionExpr::get_value(const Tuple &tuple, Value &value) const
   bool default_value = (conjunction_type_ == Type::AND);
   value.set_boolean(default_value);
   return rc;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+InExpr::InExpr(unique_ptr<Expression> left, vector<unique_ptr<Expression>> values, bool not_in)
+    : left_(std::move(left)), values_(std::move(values)), not_in_(not_in)
+{}
+
+RC InExpr::get_value(const Tuple &tuple, Value &value) const
+{
+  Value left_value;
+  RC rc = left_->get_value(tuple, left_value);
+  if (OB_FAIL(rc)) {
+    LOG_WARN("failed to get value of IN left expression. rc=%s", strrc(rc));
+    return rc;
+  }
+
+  if (left_value.is_null()) {
+    value.set_null();
+    return RC::SUCCESS;
+  }
+
+  bool has_null = false;
+  bool matched  = false;
+  for (const unique_ptr<Expression> &expr : values_) {
+    Value right_value;
+    rc = expr->get_value(tuple, right_value);
+    if (OB_FAIL(rc)) {
+      LOG_WARN("failed to get value of IN list expression. rc=%s", strrc(rc));
+      return rc;
+    }
+
+    if (right_value.is_null()) {
+      has_null = true;
+      continue;
+    }
+
+    if (left_value.compare(right_value) == 0) {
+      matched = true;
+      break;
+    }
+  }
+
+  if (matched) {
+    value.set_boolean(!not_in_);
+  } else if (has_null) {
+    value.set_null();
+  } else {
+    value.set_boolean(not_in_);
+  }
+
+  return RC::SUCCESS;
 }
 
 ////////////////////////////////////////////////////////////////////////////////

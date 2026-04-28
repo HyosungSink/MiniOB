@@ -49,6 +49,20 @@ RC ExpressionIterator::iterate_child_expr(Expression &expr, function<RC(unique_p
       }
     } break;
 
+    case ExprType::IN_LIST: {
+      auto &in_expr = static_cast<InExpr &>(expr);
+      rc = callback(in_expr.left());
+      if (OB_FAIL(rc)) {
+        break;
+      }
+      for (auto &value : in_expr.values()) {
+        rc = callback(value);
+        if (OB_FAIL(rc)) {
+          break;
+        }
+      }
+    } break;
+
     case ExprType::ARITHMETIC: {
 
       auto &arithmetic_expr = static_cast<ArithmeticExpr &>(expr);
