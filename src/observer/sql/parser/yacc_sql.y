@@ -184,7 +184,9 @@ UnboundAggregateExpr *create_aggregate_expression(const char *aggregate_name,
 %type <key_list>            primary_key
 %type <key_list>            attr_list
 %type <expression>          expression
+%type <expression>          select_expression
 %type <expression>          aggregate_expression
+%type <expression_list>     select_expression_list
 %type <expression_list>     expression_list
 %type <expression_list>     group_by
 %type <cstring>             fields_terminated_by
@@ -501,7 +503,7 @@ update_stmt:      /*  update 语句的语法解析树*/
     }
     ;
 select_stmt:        /*  select 语句的语法解析树*/
-    SELECT expression_list FROM table_refs where group_by
+    SELECT select_expression_list FROM table_refs where group_by
     {
       $$ = new ParsedSqlNode(SCF_SELECT);
       if ($2 != nullptr) {
@@ -563,6 +565,35 @@ calc_stmt:
       $$ = new ParsedSqlNode(SCF_CALC);
       $$->calc.expressions.swap(*$2);
       delete $2;
+    }
+    ;
+
+select_expression_list:
+    select_expression
+    {
+      $$ = new vector<unique_ptr<Expression>>;
+      $$->emplace_back($1);
+    }
+    | select_expression COMMA select_expression_list
+    {
+      if ($3 != nullptr) {
+        $$ = $3;
+      } else {
+        $$ = new vector<unique_ptr<Expression>>;
+      }
+      $$->emplace($$->begin(), $1);
+    }
+    ;
+
+select_expression:
+    expression
+    {
+      $$ = $1;
+    }
+    | expression AS ID
+    {
+      $$ = $1;
+      $$->set_name($3);
     }
     ;
 
