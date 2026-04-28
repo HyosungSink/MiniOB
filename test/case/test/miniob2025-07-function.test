@@ -10,6 +10,7 @@ select date_format(d, '%D,%M,%Y') as formatted_date from function_t where id=1;
 select date_format(d, 'abc %z def %n ghi') as formatted_date from function_t where id=2;
 select length(null), round(null), date_format(null, '%Y');
 select length('13IGW0E0VW0PZIOL3NAWHB6HFDS') len1, length('II8XP21F3YW9T37C01YZDAEFYHMPDWPKBFWVOXSYC94OAV2O6TVEXE7FGAETX8YRNX') len2;
+select round(15.6077, 2) as round_value;
 
 -- echo function boundary errors
 select length() from function_t;
