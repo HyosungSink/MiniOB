@@ -1,0 +1,194 @@
+-- echo official miniob2025-20-update-mvcc-official
+# /* =========================================================
+# update-mvcc 功能测试脚本
+# 目标：验证 MVCC 下 UPDATE 的可见性、写写冲突、快照一致性（无幻读）等。
+# 约定与说明：
+# - 启动 observer：./bin/observer -f ../etc/observer.ini -s miniob.sock -t mvcc
+# - 本脚本以“多连接串行交错”的方式编排，使用注释标明会话：
+# -- [S1] 表示会话1中的语句
+# -- [S2] 表示会话2中的语句
+# - 仅在 SELECT 后给出“正确输出”作为注释，方便断言。
+# ========================================================= */
+
+# -- ========== 0) 干净环境 ==========
+DROP TABLE IF EXISTS mvcc_t1;
+
+# -- ========== 1) 建表与初始数据（在任意会话执行，提交后再进入多会话测试） ==========
+CREATE TABLE mvcc_t1 ( id INT, name CHAR(8), amount INT );
+# -- 期望：SUCCESS
+
+INSERT INTO mvcc_t1 VALUES (1,'A1',10), (2,'A2',20), (3,'A3',30);
+# -- 期望：SUCCESS
+
+# -- （确保起点明确）
+SELECT * FROM mvcc_t1 ORDER BY id;
+# -- 正确输出：
+# -- 1 | A1 | 10
+# -- 2 | A2 | 20
+# -- 3 | A3 | 30
+
+
+# /* =========================================================
+# 用例 1：未提交更新的可见性 + 提交后快照可见性
+# 场景：
+# - S1 打开事务并读取基线；
+# - S2 更新 id=2 的 name，但不提交 → S1 不可见；
+# - S2 提交 → S1 仍不可见（快照一致性）；
+# - S1 提交后再开启新事务 → 可见更新。
+# ========================================================= */
+
+-- connect S1
+-- connection S1
+BEGIN;
+SELECT id,name,amount FROM mvcc_t1 ORDER BY id;
+# -- 正确输出（S1快照）：
+# -- 1 | A1 | 10
+# -- 2 | A2 | 20
+# -- 3 | A3 | 30
+
+-- connect S2
+-- connection S2
+BEGIN;
+UPDATE mvcc_t1 SET name='B2' WHERE id=2;
+# -- 期望：SUCCESS（S2自读可见）
+SELECT id,name,amount FROM mvcc_t1 WHERE id=2;
+# -- 正确输出（S2自读）：
+# -- 2 | B2 | 20
+
+-- connection S1
+SELECT id,name,amount FROM mvcc_t1 WHERE id=2;
+# -- 正确输出（S1看不到未提交的 S2）：
+# -- 2 | A2 | 20
+
+-- connection S2
+COMMIT;
+
+-- connection S1
+SELECT id,name,amount FROM mvcc_t1 WHERE id=2;
+# -- 正确输出（S1仍看旧值）：
+# -- 2 | A2 | 20
+
+-- connection S1
+COMMIT;
+-- connection S1
+BEGIN;
+SELECT id,name,amount FROM mvcc_t1 WHERE id=2;
+# -- 正确输出：
+# -- 2 | B2 | 20
+COMMIT;
+
+
+# /* =========================================================
+# 用例 2：写-写冲突（同一行被两个事务更新）
+# 场景：
+# - S1 基于旧版本把 id=3 的 amount 改为 31；
+# - S2 并行把同一行改为 35 并提交；
+# - S1 提交时应检测到写写冲突而失败（或 UPDATE/COMMIT 报冲突）。
+# ========================================================= */
+
+# -- 还原当前状态确认（可选）
+SELECT * FROM mvcc_t1 ORDER BY id;
+# -- 正确输出：
+# -- 1 | A1 | 10
+# -- 2 | B2 | 20
+# -- 3 | A3 | 30
+
+-- connection S1
+BEGIN;
+UPDATE mvcc_t1 SET amount=31 WHERE id=3;
+# -- 期望：SUCCESS（尚未提交）
+
+-- connection S2
+BEGIN;
+UPDATE mvcc_t1 SET amount=35 WHERE id=3;
+COMMIT;
+# -- 期望：SUCCESS（S2先提交）
+
+-- connection S1
+COMMIT;
+# -- 期望：FAILURE（Write-Write Conflict / Update conflict）
+
+-- connection S1
+ROLLBACK;
+SELECT id,name,amount FROM mvcc_t1 WHERE id=3;
+# -- 正确输出：
+# -- 3 | A3 | 35
+
+
+# /* =========================================================
+# 用例 3：快照一致性避免“幻读”
+# 场景：
+# - S1 读取 amount>=20 的计数；
+# - S2 插入一行满足该条件并提交；
+# - S1 同一事务再次计数，结果不变；
+# - S1 提交后新事务计数，包含新插入行。
+# ========================================================= */
+
+-- connection S1
+BEGIN;
+SELECT COUNT(*) FROM mvcc_t1 WHERE amount >= 20;
+# -- 正确输出（当前有 id=2(20), id=3(35) → 2）：
+# -- 2
+
+-- connection S2
+BEGIN;
+INSERT INTO mvcc_t1 VALUES (4,'D4',50);
+COMMIT;
+# -- 期望：SUCCESS
+
+-- connection S1
+SELECT COUNT(*) FROM mvcc_t1 WHERE amount >= 20;
+# -- 正确输出：
+# -- 2
+
+-- connection S1
+COMMIT;
+-- connection S1
+BEGIN;
+SELECT COUNT(*) FROM mvcc_t1 WHERE amount >= 20;
+# -- 正确输出（新增 id=4 计入）：
+# -- 3
+COMMIT;
+
+
+# /* =========================================================
+# 用例 4：谓词更新的快照语义（不影响快照之外的新行）
+# 场景：
+# - S1 开事务并执行：UPDATE ... WHERE amount>=20（基于其快照，命中当前满足条件的行）
+# 在本例中，S1 开始前已有 id=2(20), id=3(35), id=4(50)，都会被更新 +1。
+# - S2 在 S1 执行 UPDATE 后插入一行 id=5, amount=25 并提交；
+# - S1 提交；
+# - 新事务查询可见：旧三行的 amount 增加了 1；新插入的 id=5 未受 S1 的 UPDATE 影响。
+# ========================================================= */
+
+# -- 先查看当前全表
+SELECT * FROM mvcc_t1 ORDER BY id;
+# -- 正确输出：
+# -- 1 | A1 | 10
+# -- 2 | B2 | 20
+# -- 3 | A3 | 35
+# -- 4 | D4 | 50
+
+-- connection S1
+BEGIN;
+UPDATE mvcc_t1 SET amount = amount + 1 WHERE amount >= 20;
+# -- 期望：SUCCESS（基于 S1 快照命中 id=2,3,4）
+
+-- connection S2
+BEGIN;
+INSERT INTO mvcc_t1 VALUES (5,'E5',25);
+COMMIT;
+# -- 期望：SUCCESS
+
+-- connection S1
+COMMIT;
+# -- 期望：SUCCESS（不发生冲突）
+
+# -- 新事务检查结果：2/3/4 增加了 1；新插入的 5 未被 S1 的 UPDATE 影响
+SELECT * FROM mvcc_t1 ORDER BY id;
+# -- 正确输出：
+# -- 1 | A1 | 10
+# -- 2 | B2 | 21
+# -- 3 | A3 | 36
+# -- 4 | D4 | 51
+# -- 5 | E5 | 25
