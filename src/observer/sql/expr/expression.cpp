@@ -13,6 +13,7 @@ See the Mulan PSL v2 for more details. */
 //
 
 #include "sql/expr/expression.h"
+#include "common/defs.h"
 #include "sql/expr/tuple.h"
 #include "sql/expr/arithmetic_operator.hpp"
 
@@ -489,7 +490,12 @@ RC ArithmeticExpr::get_value(const Tuple &tuple, Value &value) const
       return rc;
     }
   }
-  return calc_value(left_value, right_value, value);
+  rc = calc_value(left_value, right_value, value);
+  if (OB_SUCC(rc) && arithmetic_type_ == Type::DIV && right_value.get_float() > -EPSILON &&
+      right_value.get_float() < EPSILON) {
+    value.set_string("NULL");
+  }
+  return rc;
 }
 
 RC ArithmeticExpr::get_column(Chunk &chunk, Column &column)
