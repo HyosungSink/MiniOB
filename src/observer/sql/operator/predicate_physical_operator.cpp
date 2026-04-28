@@ -14,6 +14,7 @@ See the Mulan PSL v2 for more details. */
 
 #include "sql/operator/predicate_physical_operator.h"
 #include "common/log/log.h"
+#include "sql/expr/expression_iterator.h"
 #include "sql/stmt/filter_stmt.h"
 #include "storage/field/field.h"
 #include "storage/record/record.h"
@@ -28,6 +29,24 @@ RC PredicatePhysicalOperator::open(Trx *trx)
   if (children_.size() != 1) {
     LOG_WARN("predicate operator must has one child");
     return RC::INTERNAL;
+  }
+
+  function<RC(unique_ptr<Expression> &)> prepare_child;
+  prepare_child = [&](unique_ptr<Expression> &expr) -> RC {
+    RC rc = expr->prepare();
+    if (OB_FAIL(rc)) {
+      return rc;
+    }
+    return ExpressionIterator::iterate_child_expr(*expr, prepare_child);
+  };
+
+  RC rc = expression_->prepare();
+  if (OB_FAIL(rc)) {
+    return rc;
+  }
+  rc = ExpressionIterator::iterate_child_expr(*expression_, prepare_child);
+  if (OB_FAIL(rc)) {
+    return rc;
   }
 
   return children_[0]->open(trx);

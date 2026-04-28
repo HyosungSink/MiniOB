@@ -19,6 +19,7 @@ See the Mulan PSL v2 for more details. */
 #include "net/buffered_writer.h"
 #include "session/session.h"
 #include "sql/expr/tuple.h"
+#include "storage/trx/trx.h"
 
 PlainCommunicator::PlainCommunicator()
 {
@@ -192,8 +193,14 @@ RC PlainCommunicator::write_result_internal(SessionEvent *event, bool &need_disc
 
   rc = sql_result->open();
   if (OB_FAIL(rc)) {
-    sql_result->close();
     sql_result->set_return_code(rc);
+    if (event->session() != nullptr && !event->session()->is_trx_multi_operation_mode()) {
+      RC rollback_rc = event->session()->current_trx()->rollback();
+      if (OB_FAIL(rollback_rc)) {
+        LOG_WARN("failed to rollback after opening result failed. rc=%s", strrc(rollback_rc));
+      }
+      event->session()->destroy_trx();
+    }
     return write_state(event, need_disconnect);
   }
 

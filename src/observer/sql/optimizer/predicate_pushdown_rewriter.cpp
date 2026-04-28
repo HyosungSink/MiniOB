@@ -15,6 +15,7 @@ See the Mulan PSL v2 for more details. */
 #include "sql/optimizer/predicate_pushdown_rewriter.h"
 #include "common/log/log.h"
 #include "sql/expr/expression.h"
+#include "sql/expr/expression_iterator.h"
 #include "sql/operator/logical_operator.h"
 #include "sql/operator/table_get_logical_operator.h"
 
@@ -82,6 +83,26 @@ bool PredicatePushdownRewriter::is_empty_predicate(unique_ptr<Expression> &expr)
   return bool_ret;
 }
 
+static bool contains_subquery(Expression &expr)
+{
+  if (expr.type() == ExprType::SUBQUERY || expr.type() == ExprType::IN_SUBQUERY) {
+    return true;
+  }
+
+  bool found = false;
+  function<RC(unique_ptr<Expression> &)> finder = [&](unique_ptr<Expression> &child) -> RC {
+    if (found) {
+      return RC::SUCCESS;
+    }
+    if (contains_subquery(*child)) {
+      found = true;
+    }
+    return RC::SUCCESS;
+  };
+  ExpressionIterator::iterate_child_expr(expr, finder);
+  return found;
+}
+
 /**
  * 查看表达式是否可以直接下放到table get算子的filter
  * @param expr 是当前的表达式。如果可以下放给table get 算子，执行完成后expr就失效了
@@ -117,6 +138,9 @@ RC PredicatePushdownRewriter::get_exprs_can_pushdown(
     }
   } else if (expr->type() == ExprType::COMPARISON) {
     // 如果是比较操作，并且比较的左边或右边是表某个列值，那么就下推下去
+    if (contains_subquery(*expr)) {
+      return rc;
+    }
 
     pushdown_exprs.emplace_back(std::move(expr));
   }

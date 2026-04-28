@@ -557,7 +557,7 @@ RC SubqueryExpr::get_value(const Tuple &tuple, Value &value) const
   return RC::SUCCESS;
 }
 
-RC SubqueryExpr::try_get_value(Value &value) const
+RC SubqueryExpr::prepare() const
 {
   RC rc = materialize();
   if (OB_FAIL(rc)) {
@@ -567,6 +567,16 @@ RC SubqueryExpr::try_get_value(Value &value) const
   if (values_.size() != 1) {
     LOG_WARN("scalar subquery should return one row. actual rows=%d", values_.size());
     return RC::INVALID_ARGUMENT;
+  }
+
+  return RC::SUCCESS;
+}
+
+RC SubqueryExpr::try_get_value(Value &value) const
+{
+  RC rc = prepare();
+  if (OB_FAIL(rc)) {
+    return rc;
   }
 
   value = values_[0];
@@ -618,6 +628,12 @@ RC InSubqueryExpr::get_value(const Tuple &tuple, Value &value) const
   }
 
   return RC::SUCCESS;
+}
+
+RC InSubqueryExpr::prepare() const
+{
+  const vector<Value> *subquery_values = nullptr;
+  return subquery_->materialized_values(subquery_values);
 }
 
 ////////////////////////////////////////////////////////////////////////////////

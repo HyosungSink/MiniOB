@@ -95,6 +95,11 @@ public:
   virtual RC try_get_value(Value &value) const { return RC::UNIMPLEMENTED; }
 
   /**
+   * @brief Prepare expression state before tuple iteration.
+   */
+  virtual RC prepare() const { return RC::SUCCESS; }
+
+  /**
    * @brief 从 `chunk` 中获取表达式的计算结果 `column`
    */
   virtual RC get_column(Chunk &chunk, Column &column) { return RC::UNIMPLEMENTED; }
@@ -432,6 +437,7 @@ public:
 
   RC get_value(const Tuple &tuple, Value &value) const override;
   RC try_get_value(Value &value) const override;
+  RC prepare() const override;
 
   const string &sql() const { return sql_; }
   void set_value_info(AttrType value_type, int value_length)
@@ -475,6 +481,7 @@ public:
   AttrType value_type() const override { return AttrType::BOOLEANS; }
 
   RC get_value(const Tuple &tuple, Value &value) const override;
+  RC prepare() const override;
 
   unique_ptr<Expression> &left() { return left_; }
   SubqueryExpr           &subquery() { return *subquery_; }
