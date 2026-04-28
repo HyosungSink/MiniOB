@@ -129,6 +129,7 @@ UnboundFunctionExpr *create_function_expression(const char *function_name,
         TERMINATED
         ENCLOSED
         NULL_T
+        UNIQUE
         EQ
         LT
         GT
@@ -179,6 +180,7 @@ UnboundFunctionExpr *create_function_expression(const char *function_name,
 
 /** type 定义了各种解析后的结果输出的是什么类型。类型对应了 union 中的定义的成员变量名称 **/
 %type <number>              type
+%type <number>              unique_opt
 %type <condition>           condition
 %type <value>               value
 %type <number>              number
@@ -329,17 +331,29 @@ desc_table_stmt:
     ;
 
 create_index_stmt:    /*create index 语句的语法解析树*/
-    CREATE INDEX ID ON ID LBRACE attr_list RBRACE
+    CREATE unique_opt INDEX ID ON ID LBRACE attr_list RBRACE
     {
       $$ = new ParsedSqlNode(SCF_CREATE_INDEX);
       CreateIndexSqlNode &create_index = $$->create_index;
-      create_index.index_name = $3;
-      create_index.relation_name = $5;
-      create_index.attribute_names.swap(*$7);
+      create_index.unique = ($2 != 0);
+      create_index.index_name = $4;
+      create_index.relation_name = $6;
+      create_index.attribute_names.swap(*$8);
       if (!create_index.attribute_names.empty()) {
         create_index.attribute_name = create_index.attribute_names.front();
       }
-      delete $7;
+      delete $8;
+    }
+    ;
+
+unique_opt:
+    /* empty */
+    {
+      $$ = 0;
+    }
+    | UNIQUE
+    {
+      $$ = 1;
     }
     ;
 
