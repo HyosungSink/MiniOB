@@ -173,3 +173,32 @@ SELECT * FROM ssq_2 WHERE (SELECT MIN(ssq_3.feat3) FROM ssq_3) <= feat2 ORDER BY
 # -- 82 | 9  | 96.58
 # -- 89 | 54 | 94.89
 # -- 95 | 64 | 72.75
+
+
+# -- 功能 9：相关 IN 子查询引用外层表别名
+DROP TABLE table_alias_1;
+DROP TABLE table_alias_2;
+DROP TABLE table_alias_3;
+
+CREATE TABLE table_alias_1(id int, col1 int, feat1 float);
+CREATE TABLE table_alias_2(id int, col2 int, feat2 float);
+CREATE TABLE table_alias_3(id int, col3 int, feat3 float);
+
+INSERT INTO table_alias_1 VALUES (74, 25, 64.4);
+INSERT INTO table_alias_1 VALUES (14, 18, 28.8);
+INSERT INTO table_alias_1 VALUES (1, 10, 1.0);
+INSERT INTO table_alias_1 VALUES (2, 20, 2.0);
+INSERT INTO table_alias_1 VALUES (3, 30, 3.0);
+
+INSERT INTO table_alias_2 VALUES (74, 30, 1.0);
+INSERT INTO table_alias_2 VALUES (14, 10, 2.0);
+INSERT INTO table_alias_2 VALUES (1, 5, 3.0);
+INSERT INTO table_alias_2 VALUES (2, 25, 4.0);
+INSERT INTO table_alias_2 VALUES (3, 35, 5.0);
+
+SELECT * FROM table_alias_1 t1 WHERE id IN (SELECT t2.id FROM table_alias_2 t2 WHERE t2.col2 >= t1.col1);
+
+# -- 期望输出：
+# -- 74 | 25 | 64.4
+# -- 2 | 20 | 2.0
+# -- 3 | 30 | 3.0
