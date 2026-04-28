@@ -22,7 +22,10 @@ using namespace common;
 
 void BinderContext::add_table(Table *table, const string &alias)
 {
-  query_tables_.push_back(table);
+  auto table_iter = ranges::find(query_tables_, table);
+  if (table_iter == query_tables_.end()) {
+    query_tables_.push_back(table);
+  }
   if (!is_blank(alias.c_str())) {
     table_aliases_.push_back({alias, table});
   }
