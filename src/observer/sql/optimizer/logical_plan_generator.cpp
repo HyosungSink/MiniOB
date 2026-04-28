@@ -109,6 +109,11 @@ RC LogicalPlanGenerator::create_plan(SelectStmt *select_stmt, unique_ptr<Logical
   }
 
   const vector<Table *> &tables = select_stmt->tables();
+  if (tables.empty()) {
+    logical_operator = make_unique<CalcLogicalOperator>(std::move(select_stmt->query_expressions()));
+    return RC::SUCCESS;
+  }
+
   for (Table *table : tables) {
 
     unique_ptr<LogicalOperator> table_get_oper(new TableGetLogicalOperator(table, ReadWriteMode::READ_ONLY));
