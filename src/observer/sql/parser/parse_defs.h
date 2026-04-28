@@ -113,6 +113,7 @@ struct SelectSqlNode
   vector<RelationSqlNode>        relations;    ///< 查询的表
   vector<ConditionSqlNode>       conditions;   ///< 查询条件，使用AND串联起来多个条件
   vector<unique_ptr<Expression>> group_by;     ///< group by clause
+  vector<ConditionSqlNode>       having;       ///< having conditions
 };
 
 /**

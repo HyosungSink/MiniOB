@@ -80,6 +80,7 @@ UnboundFunctionExpr *create_function_expression(const char *function_name,
         CREATE
         DROP
         GROUP
+        HAVING
         TABLE
         TABLES
         INDEX
@@ -196,6 +197,7 @@ UnboundFunctionExpr *create_function_expression(const char *function_name,
 %type <number>              attr_nullability
 %type <value_list>          value_list
 %type <condition_list>      where
+%type <condition_list>      having
 %type <condition_list>      condition_list
 %type <update_assignment_list> update_assignment_list
 %type <table_refs>          table_refs
@@ -583,7 +585,7 @@ update_assignment_list:
     }
     ;
 select_stmt:        /*  select 语句的语法解析树*/
-    SELECT select_expression_list FROM table_refs where group_by
+    SELECT select_expression_list FROM table_refs where group_by having
     {
       $$ = new ParsedSqlNode(SCF_SELECT);
       if ($2 != nullptr) {
@@ -606,6 +608,11 @@ select_stmt:        /*  select 语句的语法解析树*/
       if ($6 != nullptr) {
         $$->selection.group_by.swap(*$6);
         delete $6;
+      }
+
+      if ($7 != nullptr) {
+        $$->selection.having.swap(*$7);
+        delete $7;
       }
     }
     | SELECT select_expression_list
@@ -857,6 +864,16 @@ group_by:
       // group by 的表达式范围与select查询值的表达式范围是不同的，比如group by不支持 *
       // 但是这里没有处理。
       $$ = $3;
+    }
+    ;
+having:
+    /* empty */
+    {
+      $$ = nullptr;
+    }
+    | HAVING condition_list
+    {
+      $$ = $2;
     }
     ;
 load_data_stmt:
