@@ -86,7 +86,7 @@ RC FloatType::set_value_from_str(Value &val, const string &data) const
 RC FloatType::to_string(const Value &val, string &result) const
 {
   stringstream ss;
-  ss << common::double_to_str(val.value_.float_value_);
+  ss << common::double_to_str(val.value_.float_value_, val.float_precision_);
   result = ss.str();
   return RC::SUCCESS;
 }

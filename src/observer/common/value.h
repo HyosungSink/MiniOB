@@ -107,6 +107,7 @@ public:
 
   int      length() const { return length_; }
   AttrType attr_type() const { return attr_type_; }
+  int      float_precision() const { return float_precision_; }
 
 public:
   /**
@@ -122,7 +123,7 @@ public:
 
 public:
   void set_int(int val);
-  void set_float(float val);
+  void set_float(float val, int precision = 2);
   void set_date(int val);
   void set_string(const char *s, int len = 0);
   void set_empty_string(int len);
@@ -142,4 +143,5 @@ private:
 
   /// 是否申请并占有内存, 目前对于 CHARS 类型 own_data_ 为true, 其余类型 own_data_ 为false
   bool own_data_ = false;
+  int  float_precision_ = 2;
 };

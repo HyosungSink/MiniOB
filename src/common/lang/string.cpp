@@ -268,11 +268,12 @@ char *substr(const char *s, int n1, int n2)
  * @param v
  * @return
  */
-string double_to_str(double v)
+string double_to_str(double v, int precision)
 {
   char buf[256];
-  double rounded_v = round(v * 100.0) / 100.0;
-  snprintf(buf, sizeof(buf), "%.2f", rounded_v);
+  double scale = pow(10.0, precision);
+  double rounded_v = round(v * scale) / scale;
+  snprintf(buf, sizeof(buf), "%.*f", precision, rounded_v);
   size_t len = strlen(buf);
   while (buf[len - 1] == '0') {
     len--;

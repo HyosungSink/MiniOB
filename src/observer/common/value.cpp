@@ -40,6 +40,7 @@ Value::Value(const Value &other)
   this->attr_type_ = other.attr_type_;
   this->length_    = other.length_;
   this->own_data_  = other.own_data_;
+  this->float_precision_ = other.float_precision_;
   switch (this->attr_type_) {
     case AttrType::CHARS: {
       set_string_from_other(other);
@@ -57,6 +58,7 @@ Value::Value(Value &&other)
   this->length_    = other.length_;
   this->own_data_  = other.own_data_;
   this->value_     = other.value_;
+  this->float_precision_ = other.float_precision_;
   other.own_data_  = false;
   other.length_    = 0;
 }
@@ -70,6 +72,7 @@ Value &Value::operator=(const Value &other)
   this->attr_type_ = other.attr_type_;
   this->length_    = other.length_;
   this->own_data_  = other.own_data_;
+  this->float_precision_ = other.float_precision_;
   switch (this->attr_type_) {
     case AttrType::CHARS: {
       set_string_from_other(other);
@@ -92,6 +95,7 @@ Value &Value::operator=(Value &&other)
   this->length_    = other.length_;
   this->own_data_  = other.own_data_;
   this->value_     = other.value_;
+  this->float_precision_ = other.float_precision_;
   other.own_data_  = false;
   other.length_    = 0;
   return *this;
@@ -112,6 +116,7 @@ void Value::reset()
   attr_type_ = AttrType::UNDEFINED;
   length_    = 0;
   own_data_  = false;
+  float_precision_ = 2;
 }
 
 void Value::set_null()
@@ -208,12 +213,13 @@ void Value::set_int(int val)
   length_           = sizeof(val);
 }
 
-void Value::set_float(float val)
+void Value::set_float(float val, int precision)
 {
   reset();
   attr_type_          = AttrType::FLOATS;
   value_.float_value_ = val;
   length_             = sizeof(val);
+  float_precision_    = precision;
 }
 
 void Value::set_date(int val)
@@ -273,7 +279,7 @@ void Value::set_value(const Value &value)
       set_int(value.get_int());
     } break;
     case AttrType::FLOATS: {
-      set_float(value.get_float());
+      set_float(value.get_float(), value.float_precision_);
     } break;
     case AttrType::DATES: {
       set_date(value.get_date());
