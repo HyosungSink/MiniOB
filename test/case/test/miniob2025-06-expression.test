@@ -23,3 +23,11 @@ insert into exp_table values(6, 8, 3, 4.6, 1.3);
 insert into exp_table values(7, 4, 8, 7.63, 2.2);
 insert into exp_table values(2, 8, 9, 9.95, 1.64);
 -- sort select * from exp_table where -0 < col1 - col2;
+
+-- echo expression division null regression
+drop table exp_table;
+create table exp_table(id int, col1 int, col2 int, col3 float, col4 float);
+insert into exp_table values(9, 2, 1, 2.42, 2.17);
+insert into exp_table values(7, 1, 1, 5.18, 4.75);
+insert into exp_table values(2, 8, 5, 9.52, 1.92);
+select id,2*col1*(col2+1) from exp_table where 3*col1*(col2+2)+8/0 > 4;
