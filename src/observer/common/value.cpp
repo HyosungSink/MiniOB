@@ -231,10 +231,19 @@ void Value::set_value(const Value &value)
 void Value::set_string_from_other(const Value &other)
 {
   ASSERT(attr_type_ == AttrType::CHARS, "attr type is not CHARS");
-  if (own_data_ && other.value_.pointer_value_ != nullptr && length_ != 0) {
+  value_.pointer_value_ = nullptr;
+  if (other.value_.pointer_value_ == nullptr) {
+    return;
+  }
+
+  if (own_data_) {
     this->value_.pointer_value_ = new char[this->length_ + 1];
-    memcpy(this->value_.pointer_value_, other.value_.pointer_value_, this->length_);
+    if (this->length_ > 0) {
+      memcpy(this->value_.pointer_value_, other.value_.pointer_value_, this->length_);
+    }
     this->value_.pointer_value_[this->length_] = '\0';
+  } else {
+    this->value_.pointer_value_ = other.value_.pointer_value_;
   }
 }
 
