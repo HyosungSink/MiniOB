@@ -608,14 +608,12 @@ select_expression_list:
     ;
 
 select_expression:
-    expression
+    expression opt_alias
     {
       $$ = $1;
-    }
-    | expression AS ID
-    {
-      $$ = $1;
-      $$->set_name($3);
+      if ($2 != nullptr) {
+        $$->set_name($2);
+      }
     }
     ;
 
