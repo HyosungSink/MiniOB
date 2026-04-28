@@ -28,6 +28,7 @@ void BinderContext::add_table(Table *table, const string &alias)
   }
   if (!is_blank(alias.c_str())) {
     table_aliases_.push_back({alias, table});
+    aliased_tables_.push_back(table);
   }
 }
 
@@ -41,7 +42,12 @@ Table *BinderContext::find_table(const char *table_name) const
     return alias_iter->table;
   }
 
-  auto pred = [table_name](Table *table) { return 0 == strcasecmp(table_name, table->name()); };
+  auto pred = [this, table_name](Table *table) {
+    if (ranges::find(aliased_tables_, table) != aliased_tables_.end()) {
+      return false;
+    }
+    return 0 == strcasecmp(table_name, table->name());
+  };
   auto iter = ranges::find_if(query_tables_, pred);
   if (iter == query_tables_.end()) {
     return nullptr;
@@ -203,7 +209,13 @@ RC ExpressionBinder::bind_unbound_field_expression(
 
     Field      field(table, field_meta);
     FieldExpr *field_expr = new FieldExpr(field);
-    field_expr->set_name(field_name);
+    const char *expression_name = unbound_field_expr->name();
+    if (!is_blank(expression_name) && strchr(expression_name, '.') == nullptr &&
+        0 != strcasecmp(expression_name, field_name)) {
+      field_expr->set_name(expression_name);
+    } else {
+      field_expr->set_name(field_name);
+    }
     bound_expressions.emplace_back(field_expr);
   }
 

@@ -38,6 +38,7 @@ private:
 
   vector<Table *> query_tables_;
   vector<TableAlias> table_aliases_;
+  vector<Table *> aliased_tables_;
 };
 
 /**

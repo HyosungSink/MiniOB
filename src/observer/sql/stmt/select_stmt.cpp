@@ -14,14 +14,27 @@ See the Mulan PSL v2 for more details. */
 
 #include "sql/stmt/select_stmt.h"
 #include "common/lang/string.h"
+#include "common/lang/unordered_set.h"
 #include "common/log/log.h"
 #include "sql/stmt/filter_stmt.h"
 #include "storage/db/db.h"
 #include "storage/table/table.h"
 #include "sql/parser/expression_binder.h"
 
+#include <cctype>
+
 using namespace std;
 using namespace common;
+
+static string lower_identifier(const string &identifier)
+{
+  string lowered;
+  lowered.reserve(identifier.size());
+  for (char ch : identifier) {
+    lowered.push_back(static_cast<char>(tolower(static_cast<unsigned char>(ch))));
+  }
+  return lowered;
+}
 
 SelectStmt::~SelectStmt()
 {
@@ -47,6 +60,7 @@ RC SelectStmt::create(Db *db, SelectSqlNode &select_sql, Stmt *&stmt)
   // collect tables in `from` statement
   vector<Table *>                tables;
   unordered_map<string, Table *> table_map;
+  unordered_set<string>          table_names;
   for (size_t i = 0; i < select_sql.relations.size(); i++) {
     const char *table_name = select_sql.relations[i].relation_name.c_str();
     if (nullptr == table_name) {
@@ -61,10 +75,19 @@ RC SelectStmt::create(Db *db, SelectSqlNode &select_sql, Stmt *&stmt)
     }
 
     const string &alias = select_sql.relations[i].alias;
+    const string visible_name = is_blank(alias.c_str()) ? select_sql.relations[i].relation_name : alias;
+    const string lowered_name = lower_identifier(visible_name);
+    if (table_names.find(lowered_name) != table_names.end()) {
+      LOG_WARN("duplicate table alias or name. name=%s", visible_name.c_str());
+      return RC::SCHEMA_TABLE_NOT_EXIST;
+    }
+    table_names.insert(lowered_name);
+
     binder_context.add_table(table, alias);
     tables.push_back(table);
-    table_map.insert({table_name, table});
-    if (!is_blank(alias.c_str())) {
+    if (is_blank(alias.c_str())) {
+      table_map.insert({table_name, table});
+    } else {
       table_map.insert({alias, table});
     }
   }
