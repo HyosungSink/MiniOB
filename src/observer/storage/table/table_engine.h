@@ -49,6 +49,7 @@ public:
 
   virtual RC     create_index(
           Trx *trx, const vector<const FieldMeta *> &field_metas, const char *index_name, bool unique) = 0;
+  virtual RC     drop_index(const char *index_name)                                             = 0;
   virtual RC     get_record_scanner(RecordScanner *&scanner, Trx *trx, ReadWriteMode mode)   = 0;
   virtual RC     get_chunk_scanner(ChunkFileScanner &scanner, Trx *trx, ReadWriteMode mode)  = 0;
   virtual RC     visit_record(const RID &rid, function<bool(Record &)> visitor)              = 0;

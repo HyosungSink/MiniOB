@@ -15,6 +15,7 @@ See the Mulan PSL v2 for more details. */
 #include "storage/common/meta_util.h"
 #include "storage/db/db.h"
 
+#include <cstdio>
 
 HeapTableEngine::~HeapTableEngine()
 {
@@ -342,6 +343,60 @@ RC HeapTableEngine::validate_unique_index_existing(const IndexMeta &index_meta, 
   scanner->close_scan();
   delete scanner;
   return rc == RC::RECORD_EOF ? RC::SUCCESS : rc;
+}
+
+RC HeapTableEngine::drop_index(const char *index_name)
+{
+  if (common::is_blank(index_name)) {
+    return RC::INVALID_ARGUMENT;
+  }
+
+  auto iter = indexes_.end();
+  for (auto index_iter = indexes_.begin(); index_iter != indexes_.end(); ++index_iter) {
+    if (0 == strcmp((*index_iter)->index_meta().name(), index_name)) {
+      iter = index_iter;
+      break;
+    }
+  }
+  if (iter == indexes_.end()) {
+    return RC::SCHEMA_INDEX_NAME_REPEAT;
+  }
+
+  delete *iter;
+  indexes_.erase(iter);
+
+  TableMeta new_table_meta(*table_meta_);
+  RC rc = new_table_meta.remove_index(index_name);
+  if (OB_FAIL(rc)) {
+    return rc;
+  }
+
+  string tmp_file = table_meta_file(db_->path().c_str(), table_meta_->name()) + ".tmp";
+  fstream fs;
+  fs.open(tmp_file, ios_base::out | ios_base::binary | ios_base::trunc);
+  if (!fs.is_open()) {
+    LOG_ERROR("Failed to open file for write. file name=%s, errmsg=%s", tmp_file.c_str(), strerror(errno));
+    return RC::IOERR_OPEN;
+  }
+  if (new_table_meta.serialize(fs) < 0) {
+    LOG_ERROR("Failed to dump new table meta to file: %s. sys err=%d:%s", tmp_file.c_str(), errno, strerror(errno));
+    return RC::IOERR_WRITE;
+  }
+  fs.close();
+
+  string meta_file = table_meta_file(db_->path().c_str(), table_meta_->name());
+  int ret = rename(tmp_file.c_str(), meta_file.c_str());
+  if (ret != 0) {
+    LOG_ERROR("Failed to rename tmp meta file (%s) to normal meta file (%s) while dropping index (%s) on table (%s). "
+              "system error=%d:%s",
+              tmp_file.c_str(), meta_file.c_str(), index_name, table_meta_->name(), errno, strerror(errno));
+    return RC::IOERR_WRITE;
+  }
+
+  table_meta_->swap(new_table_meta);
+  string index_file = table_index_file(db_->path().c_str(), table_meta_->name(), index_name);
+  (void)std::remove(index_file.c_str());
+  return RC::SUCCESS;
 }
 
 RC HeapTableEngine::insert_entry_of_indexes(const char *record, const RID &rid)

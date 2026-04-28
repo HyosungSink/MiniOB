@@ -291,6 +291,11 @@ RC Table::create_index(Trx *trx, const vector<const FieldMeta *> &field_metas, c
   return engine_->create_index(trx, field_metas, index_name, unique);
 }
 
+RC Table::drop_index(const char *index_name)
+{
+  return engine_->drop_index(index_name);
+}
+
 RC Table::delete_record(const Record &record)
 {
   return engine_->delete_record(record);

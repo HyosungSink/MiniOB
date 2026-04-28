@@ -39,6 +39,7 @@ public:
   RC validate_unique_constraints(const Record &record, const RID *skip_rid) override;
 
   RC create_index(Trx *trx, const vector<const FieldMeta *> &field_metas, const char *index_name, bool unique) override;
+  RC drop_index(const char *index_name) override;
   RC get_record_scanner(RecordScanner *&scanner, Trx *trx, ReadWriteMode mode) override;
   RC get_chunk_scanner(ChunkFileScanner &scanner, Trx *trx, ReadWriteMode mode) override;
   RC visit_record(const RID &rid, function<bool(Record &)> visitor) override;
