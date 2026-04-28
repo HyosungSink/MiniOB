@@ -16,6 +16,15 @@ See the Mulan PSL v2 for more details. */
 #include "common/defs.h"
 #include "sql/expr/tuple.h"
 #include "sql/expr/arithmetic_operator.hpp"
+#include "session/session.h"
+#include "sql/optimizer/logical_plan_generator.h"
+#include "sql/optimizer/physical_plan_generator.h"
+#include "sql/operator/logical_operator.h"
+#include "sql/operator/physical_operator.h"
+#include "sql/parser/parse.h"
+#include "sql/stmt/stmt.h"
+#include "storage/db/db.h"
+#include "storage/trx/trx.h"
 
 #include <cmath>
 #include <cstdio>
@@ -394,6 +403,207 @@ RC InExpr::get_value(const Tuple &tuple, Value &value) const
     }
 
     if (left_value.compare(right_value) == 0) {
+      matched = true;
+      break;
+    }
+  }
+
+  if (matched) {
+    value.set_boolean(!not_in_);
+  } else if (has_null) {
+    value.set_null();
+  } else {
+    value.set_boolean(not_in_);
+  }
+
+  return RC::SUCCESS;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+SubqueryExpr::SubqueryExpr(string sql) : sql_(std::move(sql)) {}
+
+SubqueryExpr::SubqueryExpr(string sql, AttrType value_type, int value_length, AttrType cast_type)
+    : sql_(std::move(sql)), value_type_(value_type), value_length_(value_length), cast_type_(cast_type)
+{}
+
+RC SubqueryExpr::materialize() const
+{
+  if (materialized_) {
+    return materialize_rc_;
+  }
+
+  materialized_ = true;
+  values_.clear();
+
+  Session *session = Session::current_session();
+  if (session == nullptr) {
+    materialize_rc_ = RC::INTERNAL;
+    return materialize_rc_;
+  }
+
+  Db *db = session->get_current_db();
+  if (db == nullptr) {
+    materialize_rc_ = RC::SCHEMA_DB_NOT_EXIST;
+    return materialize_rc_;
+  }
+
+  ParsedSqlResult parsed_sql_result;
+  RC rc = parse(sql_.c_str(), &parsed_sql_result);
+  if (OB_FAIL(rc)) {
+    materialize_rc_ = rc;
+    return materialize_rc_;
+  }
+  if (parsed_sql_result.sql_nodes().size() != 1 || parsed_sql_result.sql_nodes().front()->flag != SCF_SELECT) {
+    materialize_rc_ = RC::SQL_SYNTAX;
+    return materialize_rc_;
+  }
+
+  Stmt *raw_stmt = nullptr;
+  rc = Stmt::create_stmt(db, *parsed_sql_result.sql_nodes().front(), raw_stmt);
+  unique_ptr<Stmt> stmt(raw_stmt);
+  if (OB_FAIL(rc)) {
+    materialize_rc_ = rc;
+    return materialize_rc_;
+  }
+
+  LogicalPlanGenerator logical_plan_generator;
+  unique_ptr<LogicalOperator> logical_operator;
+  rc = logical_plan_generator.create(stmt.get(), logical_operator);
+  if (OB_FAIL(rc)) {
+    materialize_rc_ = rc;
+    return materialize_rc_;
+  }
+
+  PhysicalPlanGenerator physical_plan_generator;
+  unique_ptr<PhysicalOperator> physical_operator;
+  rc = physical_plan_generator.create(*logical_operator, physical_operator, session);
+  if (OB_FAIL(rc)) {
+    materialize_rc_ = rc;
+    return materialize_rc_;
+  }
+
+  Trx *trx = session->current_trx();
+  trx->start_if_need();
+  rc = physical_operator->open(trx);
+  if (OB_FAIL(rc)) {
+    materialize_rc_ = rc;
+    return materialize_rc_;
+  }
+
+  while ((rc = physical_operator->next()) == RC::SUCCESS) {
+    Tuple *tuple = physical_operator->current_tuple();
+    if (tuple == nullptr || tuple->cell_num() != 1) {
+      physical_operator->close();
+      materialize_rc_ = RC::INVALID_ARGUMENT;
+      return materialize_rc_;
+    }
+
+    Value value;
+    rc = tuple->cell_at(0, value);
+    if (OB_FAIL(rc)) {
+      physical_operator->close();
+      materialize_rc_ = rc;
+      return materialize_rc_;
+    }
+
+    if (cast_type_ != AttrType::UNDEFINED && !value.is_null() && value.attr_type() != cast_type_) {
+      Value cast_value;
+      rc = Value::cast_to(value, cast_type_, cast_value);
+      if (OB_FAIL(rc)) {
+        physical_operator->close();
+        materialize_rc_ = rc;
+        return materialize_rc_;
+      }
+      value = std::move(cast_value);
+    }
+
+    values_.push_back(std::move(value));
+  }
+
+  RC close_rc = physical_operator->close();
+  if (rc == RC::RECORD_EOF) {
+    rc = close_rc;
+  }
+
+  materialize_rc_ = rc;
+  return materialize_rc_;
+}
+
+RC SubqueryExpr::materialized_values(const vector<Value> *&values) const
+{
+  RC rc = materialize();
+  if (OB_FAIL(rc)) {
+    return rc;
+  }
+
+  values = &values_;
+  return RC::SUCCESS;
+}
+
+RC SubqueryExpr::get_value(const Tuple &tuple, Value &value) const
+{
+  RC rc = materialize();
+  if (OB_FAIL(rc)) {
+    return rc;
+  }
+
+  if (values_.size() != 1) {
+    LOG_WARN("scalar subquery should return one row. actual rows=%d", values_.size());
+    return RC::INVALID_ARGUMENT;
+  }
+
+  value = values_[0];
+  return RC::SUCCESS;
+}
+
+RC SubqueryExpr::try_get_value(Value &value) const
+{
+  RC rc = materialize();
+  if (OB_FAIL(rc)) {
+    return rc;
+  }
+
+  if (values_.size() != 1) {
+    LOG_WARN("scalar subquery should return one row. actual rows=%d", values_.size());
+    return RC::INVALID_ARGUMENT;
+  }
+
+  value = values_[0];
+  return RC::SUCCESS;
+}
+
+InSubqueryExpr::InSubqueryExpr(unique_ptr<Expression> left, unique_ptr<SubqueryExpr> subquery, bool not_in)
+    : left_(std::move(left)), subquery_(std::move(subquery)), not_in_(not_in)
+{}
+
+RC InSubqueryExpr::get_value(const Tuple &tuple, Value &value) const
+{
+  Value left_value;
+  RC rc = left_->get_value(tuple, left_value);
+  if (OB_FAIL(rc)) {
+    return rc;
+  }
+  if (left_value.is_null()) {
+    value.set_null();
+    return RC::SUCCESS;
+  }
+
+  const vector<Value> *subquery_values = nullptr;
+  rc = subquery_->materialized_values(subquery_values);
+  if (OB_FAIL(rc)) {
+    return rc;
+  }
+
+  bool has_null = false;
+  bool matched  = false;
+  for (const Value &subquery_value : *subquery_values) {
+    if (subquery_value.is_null()) {
+      has_null = true;
+      continue;
+    }
+
+    if (left_value.compare(subquery_value) == 0) {
       matched = true;
       break;
     }

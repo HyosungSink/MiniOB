@@ -63,6 +63,11 @@ RC ExpressionIterator::iterate_child_expr(Expression &expr, function<RC(unique_p
       }
     } break;
 
+    case ExprType::IN_SUBQUERY: {
+      auto &in_subquery_expr = static_cast<InSubqueryExpr &>(expr);
+      rc = callback(in_subquery_expr.left());
+    } break;
+
     case ExprType::ARITHMETIC: {
 
       auto &arithmetic_expr = static_cast<ArithmeticExpr &>(expr);
@@ -93,7 +98,8 @@ RC ExpressionIterator::iterate_child_expr(Expression &expr, function<RC(unique_p
     case ExprType::UNBOUND_FIELD:
     case ExprType::UNBOUND_FUNCTION:
     case ExprType::FIELD:
-    case ExprType::VALUE: {
+    case ExprType::VALUE:
+    case ExprType::SUBQUERY: {
       // Do nothing
     } break;
 

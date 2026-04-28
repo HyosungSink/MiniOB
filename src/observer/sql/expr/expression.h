@@ -50,6 +50,8 @@ enum class ExprType
   FUNCTION,     ///< 标量函数
   AGGREGATION,  ///< 聚合运算
   IN_LIST,      ///< IN/NOT IN value list predicate
+  SUBQUERY,     ///< scalar subquery
+  IN_SUBQUERY,  ///< IN/NOT IN subquery predicate
 };
 
 /**
@@ -410,6 +412,78 @@ private:
   unique_ptr<Expression>         left_;
   vector<unique_ptr<Expression>> values_;
   bool                           not_in_ = false;
+};
+
+class SubqueryExpr : public Expression
+{
+public:
+  explicit SubqueryExpr(string sql);
+  SubqueryExpr(string sql, AttrType value_type, int value_length, AttrType cast_type = AttrType::UNDEFINED);
+  virtual ~SubqueryExpr() = default;
+
+  unique_ptr<Expression> copy() const override
+  {
+    return make_unique<SubqueryExpr>(sql_, value_type_, value_length_, cast_type_);
+  }
+
+  ExprType type() const override { return ExprType::SUBQUERY; }
+  AttrType value_type() const override { return value_type_; }
+  int      value_length() const override { return value_length_; }
+
+  RC get_value(const Tuple &tuple, Value &value) const override;
+  RC try_get_value(Value &value) const override;
+
+  const string &sql() const { return sql_; }
+  void set_value_info(AttrType value_type, int value_length)
+  {
+    value_type_   = value_type;
+    value_length_ = value_length;
+  }
+  void set_cast_type(AttrType cast_type)
+  {
+    cast_type_  = cast_type;
+    value_type_ = cast_type;
+  }
+
+  RC materialized_values(const vector<Value> *&values) const;
+
+private:
+  RC materialize() const;
+
+private:
+  string                sql_;
+  AttrType              value_type_   = AttrType::UNDEFINED;
+  int                   value_length_ = -1;
+  AttrType              cast_type_    = AttrType::UNDEFINED;
+  mutable bool          materialized_ = false;
+  mutable RC            materialize_rc_ = RC::SUCCESS;
+  mutable vector<Value> values_;
+};
+
+class InSubqueryExpr : public Expression
+{
+public:
+  InSubqueryExpr(unique_ptr<Expression> left, unique_ptr<SubqueryExpr> subquery, bool not_in);
+  virtual ~InSubqueryExpr() = default;
+
+  unique_ptr<Expression> copy() const override
+  {
+    return make_unique<InSubqueryExpr>(left_->copy(), unique_ptr<SubqueryExpr>(static_cast<SubqueryExpr *>(subquery_->copy().release())), not_in_);
+  }
+
+  ExprType type() const override { return ExprType::IN_SUBQUERY; }
+  AttrType value_type() const override { return AttrType::BOOLEANS; }
+
+  RC get_value(const Tuple &tuple, Value &value) const override;
+
+  unique_ptr<Expression> &left() { return left_; }
+  SubqueryExpr           &subquery() { return *subquery_; }
+  bool not_in() const { return not_in_; }
+
+private:
+  unique_ptr<Expression>  left_;
+  unique_ptr<SubqueryExpr> subquery_;
+  bool                    not_in_ = false;
 };
 
 /**
