@@ -18,6 +18,7 @@ See the Mulan PSL v2 for more details. */
 #include "sql/parser/parse_defs.h"
 
 class Db;
+class BinderContext;
 
 /**
  * @brief Statement SQL语句解析后通过Resolver转换成Stmt
@@ -88,7 +89,7 @@ public:
   virtual StmtType type() const = 0;
 
 public:
-  static RC create_stmt(Db *db, ParsedSqlNode &sql_node, Stmt *&stmt);
+  static RC create_stmt(Db *db, ParsedSqlNode &sql_node, Stmt *&stmt, const BinderContext *parent_context = nullptr);
 
 private:
 };

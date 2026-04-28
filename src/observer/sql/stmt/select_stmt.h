@@ -22,6 +22,7 @@ class FieldMeta;
 class FilterStmt;
 class Db;
 class Table;
+class BinderContext;
 
 /**
  * @brief 表示select语句
@@ -36,7 +37,7 @@ public:
   StmtType type() const override { return StmtType::SELECT; }
 
 public:
-  static RC create(Db *db, SelectSqlNode &select_sql, Stmt *&stmt);
+  static RC create(Db *db, SelectSqlNode &select_sql, Stmt *&stmt, const BinderContext *parent_context = nullptr);
 
 public:
   const vector<Table *> &tables() const { return tables_; }
@@ -45,6 +46,7 @@ public:
 
   vector<unique_ptr<Expression>> &query_expressions() { return query_expressions_; }
   vector<unique_ptr<Expression>> &group_by() { return group_by_; }
+  bool has_outer_reference() const { return has_outer_reference_; }
 
 private:
   vector<unique_ptr<Expression>> query_expressions_;
@@ -52,4 +54,5 @@ private:
   FilterStmt                    *filter_stmt_ = nullptr;
   FilterStmt                    *having_filter_stmt_ = nullptr;
   vector<unique_ptr<Expression>> group_by_;
+  bool                           has_outer_reference_ = false;
 };

@@ -56,10 +56,65 @@ Table *BinderContext::find_table(const char *table_name) const
     return 0 == strcasecmp(table_name, table->name());
   };
   auto iter = ranges::find_if(query_tables_, pred);
-  if (iter == query_tables_.end()) {
-    return nullptr;
+  if (iter != query_tables_.end()) {
+    return *iter;
   }
-  return *iter;
+
+  if (parent_ != nullptr) {
+    Table *parent_table = parent_->find_table(table_name);
+    if (parent_table != nullptr) {
+      has_outer_reference_ = true;
+    }
+    return parent_table;
+  }
+  return nullptr;
+}
+
+RC BinderContext::find_table_by_field(const char *field_name, Table *&table) const
+{
+  table = nullptr;
+  for (Table *candidate_table : query_tables_) {
+    const FieldMeta *field_meta = candidate_table->table_meta().field(field_name);
+    if (field_meta == nullptr) {
+      continue;
+    }
+
+    if (table != nullptr) {
+      LOG_INFO("ambiguous field: %s", field_name);
+      return RC::SCHEMA_FIELD_MISSING;
+    }
+    table = candidate_table;
+  }
+
+  if (table != nullptr) {
+    return RC::SUCCESS;
+  }
+
+  if (parent_ != nullptr) {
+    RC rc = parent_->find_table_by_field(field_name, table);
+    if (OB_SUCC(rc) && table != nullptr) {
+      has_outer_reference_ = true;
+    }
+    return rc;
+  }
+
+  LOG_INFO("no such field in table list: %s", field_name);
+  return RC::SCHEMA_FIELD_MISSING;
+}
+
+void BinderContext::collect_table_refs(vector<SubqueryExpr::ParentTableRef> &table_refs) const
+{
+  for (const TableAlias &table_alias : table_aliases_) {
+    table_refs.push_back({table_alias.table, table_alias.alias});
+  }
+  for (Table *table : query_tables_) {
+    if (ranges::find(aliased_tables_, table) == aliased_tables_.end()) {
+      table_refs.push_back({table, ""});
+    }
+  }
+  if (parent_ != nullptr) {
+    parent_->collect_table_refs(table_refs);
+  }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -200,22 +255,9 @@ RC ExpressionBinder::bind_unbound_field_expression(
 
   Table *table = nullptr;
   if (is_blank(table_name)) {
-    for (Table *candidate_table : context_.query_tables()) {
-      const FieldMeta *field_meta = candidate_table->table_meta().field(field_name);
-      if (field_meta == nullptr) {
-        continue;
-      }
-
-      if (table != nullptr) {
-        LOG_INFO("ambiguous field: %s", field_name);
-        return RC::SCHEMA_FIELD_MISSING;
-      }
-      table = candidate_table;
-    }
-
-    if (table == nullptr) {
-      LOG_INFO("no such field in table list: %s", field_name);
-      return RC::SCHEMA_FIELD_MISSING;
+    RC rc = context_.find_table_by_field(field_name, table);
+    if (OB_FAIL(rc)) {
+      return rc;
     }
   } else {
     table = context_.find_table(table_name);
@@ -450,10 +492,15 @@ RC ExpressionBinder::bind_in_expression(unique_ptr<Expression> &expr, vector<uni
   return RC::SUCCESS;
 }
 
-static RC infer_subquery_value_info(Db *db, SubqueryExpr &subquery_expr)
+static RC infer_subquery_value_info(Db *db, SubqueryExpr &subquery_expr, const BinderContext *parent_context)
 {
   if (db == nullptr) {
     return RC::SCHEMA_DB_NOT_EXIST;
+  }
+  if (parent_context != nullptr) {
+    vector<SubqueryExpr::ParentTableRef> parent_tables;
+    parent_context->collect_table_refs(parent_tables);
+    subquery_expr.set_parent_tables(parent_tables);
   }
 
   auto maybe_derived_select = [](const string &sql) -> bool {
@@ -511,7 +558,7 @@ static RC infer_subquery_value_info(Db *db, SubqueryExpr &subquery_expr)
   }
 
   Stmt *raw_stmt = nullptr;
-  rc = Stmt::create_stmt(db, *parsed_sql_result.sql_nodes().front(), raw_stmt);
+  rc = Stmt::create_stmt(db, *parsed_sql_result.sql_nodes().front(), raw_stmt, parent_context);
   unique_ptr<Stmt> stmt(raw_stmt);
   if (OB_FAIL(rc)) {
     if (maybe_derived_select(subquery_expr.sql())) {
@@ -531,6 +578,7 @@ static RC infer_subquery_value_info(Db *db, SubqueryExpr &subquery_expr)
   }
 
   subquery_expr.set_value_info(expressions[0]->value_type(), expressions[0]->value_length());
+  subquery_expr.set_correlated(select_stmt->has_outer_reference());
   return RC::SUCCESS;
 }
 
@@ -542,7 +590,7 @@ RC ExpressionBinder::bind_subquery_expression(
   }
 
   auto subquery_expr = static_cast<SubqueryExpr *>(expr.get());
-  RC rc = infer_subquery_value_info(context_.db(), *subquery_expr);
+  RC rc = infer_subquery_value_info(context_.db(), *subquery_expr, &context_);
   if (OB_FAIL(rc)) {
     return rc;
   }
@@ -577,7 +625,7 @@ RC ExpressionBinder::bind_in_subquery_expression(
   }
 
   SubqueryExpr &subquery = in_subquery_expr->subquery();
-  rc = infer_subquery_value_info(context_.db(), subquery);
+  rc = infer_subquery_value_info(context_.db(), subquery, &context_);
   if (OB_FAIL(rc)) {
     return rc;
   }
@@ -654,7 +702,7 @@ RC ExpressionBinder::bind_quantified_comparison_expression(
   }
 
   SubqueryExpr &subquery = comp_subquery_expr->subquery();
-  rc = infer_subquery_value_info(context_.db(), subquery);
+  rc = infer_subquery_value_info(context_.db(), subquery, &context_);
   if (OB_FAIL(rc)) {
     return rc;
   }

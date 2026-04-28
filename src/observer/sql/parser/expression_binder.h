@@ -26,16 +26,22 @@ public:
 
   void set_db(Db *db) { db_ = db; }
   Db  *db() const { return db_; }
+  void set_parent(const BinderContext *parent) { parent_ = parent; }
 
   void add_table(Table *table) { add_table(table, ""); }
   void add_table(Table *table, const string &alias);
 
   Table *find_table(const char *table_name) const;
+  RC find_table_by_field(const char *field_name, Table *&table) const;
+  bool has_outer_reference() const { return has_outer_reference_; }
+  void collect_table_refs(vector<SubqueryExpr::ParentTableRef> &table_refs) const;
 
   const vector<Table *> &query_tables() const { return query_tables_; }
 
 private:
   Db *db_ = nullptr;
+  const BinderContext *parent_ = nullptr;
+  mutable bool has_outer_reference_ = false;
 
   struct TableAlias
   {

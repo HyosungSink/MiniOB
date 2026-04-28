@@ -48,7 +48,7 @@ SelectStmt::~SelectStmt()
   }
 }
 
-RC SelectStmt::create(Db *db, SelectSqlNode &select_sql, Stmt *&stmt)
+RC SelectStmt::create(Db *db, SelectSqlNode &select_sql, Stmt *&stmt, const BinderContext *parent_context)
 {
   if (nullptr == db) {
     LOG_WARN("invalid argument. db is null");
@@ -57,6 +57,7 @@ RC SelectStmt::create(Db *db, SelectSqlNode &select_sql, Stmt *&stmt)
 
   BinderContext binder_context;
   binder_context.set_db(db);
+  binder_context.set_parent(parent_context);
 
   // collect tables in `from` statement
   vector<Table *>                tables;
@@ -126,7 +127,9 @@ RC SelectStmt::create(Db *db, SelectSqlNode &select_sql, Stmt *&stmt)
       &table_map,
       select_sql.conditions.data(),
       static_cast<int>(select_sql.conditions.size()),
-      filter_stmt);
+      filter_stmt,
+      false,
+      parent_context);
   if (rc != RC::SUCCESS) {
     LOG_WARN("cannot construct filter stmt");
     return rc;
@@ -139,7 +142,8 @@ RC SelectStmt::create(Db *db, SelectSqlNode &select_sql, Stmt *&stmt)
       select_sql.having.data(),
       static_cast<int>(select_sql.having.size()),
       having_filter_stmt,
-      true);
+      true,
+      parent_context);
   if (rc != RC::SUCCESS) {
     delete filter_stmt;
     LOG_WARN("cannot construct having filter stmt");
@@ -154,6 +158,9 @@ RC SelectStmt::create(Db *db, SelectSqlNode &select_sql, Stmt *&stmt)
   select_stmt->filter_stmt_ = filter_stmt;
   select_stmt->having_filter_stmt_ = having_filter_stmt;
   select_stmt->group_by_.swap(group_by_expressions);
+  select_stmt->has_outer_reference_ = binder_context.has_outer_reference() ||
+                                      (filter_stmt != nullptr && filter_stmt->has_outer_reference()) ||
+                                      (having_filter_stmt != nullptr && having_filter_stmt->has_outer_reference());
   stmt                      = select_stmt;
   return RC::SUCCESS;
 }

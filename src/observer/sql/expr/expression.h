@@ -23,6 +23,7 @@ See the Mulan PSL v2 for more details. */
 #include "storage/common/chunk.h"
 
 class Tuple;
+class Table;
 
 /**
  * @defgroup Expression
@@ -424,13 +425,23 @@ private:
 class SubqueryExpr : public Expression
 {
 public:
+  struct ParentTableRef
+  {
+    Table *table = nullptr;
+    string alias;
+  };
+
+public:
   explicit SubqueryExpr(string sql);
   SubqueryExpr(string sql, AttrType value_type, int value_length, AttrType cast_type = AttrType::UNDEFINED);
   virtual ~SubqueryExpr() = default;
 
   unique_ptr<Expression> copy() const override
   {
-    return make_unique<SubqueryExpr>(sql_, value_type_, value_length_, cast_type_);
+    auto expr = make_unique<SubqueryExpr>(sql_, value_type_, value_length_, cast_type_);
+    expr->set_correlated(correlated_);
+    expr->set_parent_tables(parent_tables_);
+    return expr;
   }
 
   ExprType type() const override { return ExprType::SUBQUERY; }
@@ -452,6 +463,9 @@ public:
     cast_type_  = cast_type;
     value_type_ = cast_type;
   }
+  void set_correlated(bool correlated) { correlated_ = correlated; }
+  bool correlated() const { return correlated_; }
+  void set_parent_tables(const vector<ParentTableRef> &parent_tables) { parent_tables_ = parent_tables; }
 
   RC materialized_values(const vector<Value> *&values) const;
 
@@ -463,6 +477,8 @@ private:
   AttrType              value_type_   = AttrType::UNDEFINED;
   int                   value_length_ = -1;
   AttrType              cast_type_    = AttrType::UNDEFINED;
+  bool                  correlated_   = false;
+  vector<ParentTableRef> parent_tables_;
   mutable bool          materialized_ = false;
   mutable RC            materialize_rc_ = RC::SUCCESS;
   mutable vector<Value> values_;

@@ -48,7 +48,7 @@ bool stmt_type_ddl(StmtType type)
     }
   }
 }
-RC Stmt::create_stmt(Db *db, ParsedSqlNode &sql_node, Stmt *&stmt)
+RC Stmt::create_stmt(Db *db, ParsedSqlNode &sql_node, Stmt *&stmt, const BinderContext *parent_context)
 {
   stmt = nullptr;
 
@@ -63,7 +63,7 @@ RC Stmt::create_stmt(Db *db, ParsedSqlNode &sql_node, Stmt *&stmt)
       return UpdateStmt::create(db, sql_node.update, stmt);
     }
     case SCF_SELECT: {
-      return SelectStmt::create(db, sql_node.selection, stmt);
+      return SelectStmt::create(db, sql_node.selection, stmt, parent_context);
     }
 
     case SCF_EXPLAIN: {

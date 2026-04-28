@@ -30,13 +30,15 @@ FilterStmt::~FilterStmt()
 }
 
 RC FilterStmt::create(Db *db, Table *default_table, unordered_map<string, Table *> *tables,
-    const ConditionSqlNode *conditions, int condition_num, FilterStmt *&stmt, bool allow_aggregate)
+    const ConditionSqlNode *conditions, int condition_num, FilterStmt *&stmt, bool allow_aggregate,
+    const BinderContext *parent_context)
 {
   RC rc = RC::SUCCESS;
   stmt  = nullptr;
 
   BinderContext binder_context;
   binder_context.set_db(db);
+  binder_context.set_parent(parent_context);
   if (tables != nullptr) {
     for (auto &entry : *tables) {
       const string &name  = entry.first;
@@ -64,6 +66,7 @@ RC FilterStmt::create(Db *db, Table *default_table, unordered_map<string, Table 
     tmp_stmt->filter_units_.push_back(filter_unit);
   }
 
+  tmp_stmt->has_outer_reference_ = binder_context.has_outer_reference();
   stmt = tmp_stmt;
   return rc;
 }

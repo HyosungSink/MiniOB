@@ -70,10 +70,12 @@ public:
 
 public:
   const vector<FilterUnit *> &filter_units() const { return filter_units_; }
+  bool has_outer_reference() const { return has_outer_reference_; }
 
 public:
   static RC create(Db *db, Table *default_table, unordered_map<string, Table *> *tables,
-      const ConditionSqlNode *conditions, int condition_num, FilterStmt *&stmt, bool allow_aggregate = false);
+      const ConditionSqlNode *conditions, int condition_num, FilterStmt *&stmt, bool allow_aggregate = false,
+      const BinderContext *parent_context = nullptr);
 
   static RC create_filter_unit(Db *db, Table *default_table, unordered_map<string, Table *> *tables,
       const ConditionSqlNode &condition, FilterUnit *&filter_unit, BinderContext *binder_context = nullptr,
@@ -81,4 +83,5 @@ public:
 
 private:
   vector<FilterUnit *> filter_units_;
+  bool                 has_outer_reference_ = false;
 };
