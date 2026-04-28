@@ -748,6 +748,11 @@ expression:
       $$ = $2;
       $$->set_name(token_name(sql_string, &@$));
     }
+    | LBRACE select_stmt RBRACE {
+      $$ = new SubqueryExpr(token_name(sql_string, &@2));
+      $$->set_name(token_name(sql_string, &@$));
+      delete $2;
+    }
     | '-' expression %prec UMINUS {
       $$ = create_arithmetic_expression(ArithmeticExpr::Type::NEGATIVE, $2, nullptr, sql_string, &@$);
     }
@@ -876,6 +881,24 @@ condition:
     {
       $$ = new ConditionSqlNode;
       $$->left_expr.reset(new InExpr(unique_ptr<Expression>($1), std::move(*$5), true));
+      $$->right_expr.reset(new ValueExpr(Value(true)));
+      $$->comp = EQUAL_TO;
+      delete $5;
+    }
+    | expression IN LBRACE select_stmt RBRACE
+    {
+      $$ = new ConditionSqlNode;
+      $$->left_expr.reset(new InSubqueryExpr(unique_ptr<Expression>($1),
+          make_unique<SubqueryExpr>(token_name(sql_string, &@4)), false));
+      $$->right_expr.reset(new ValueExpr(Value(true)));
+      $$->comp = EQUAL_TO;
+      delete $4;
+    }
+    | expression NOT IN LBRACE select_stmt RBRACE
+    {
+      $$ = new ConditionSqlNode;
+      $$->left_expr.reset(new InSubqueryExpr(unique_ptr<Expression>($1),
+          make_unique<SubqueryExpr>(token_name(sql_string, &@5)), true));
       $$->right_expr.reset(new ValueExpr(Value(true)));
       $$->comp = EQUAL_TO;
       delete $5;
