@@ -1,4 +1,4 @@
-# RMDB Competition Development Guide
+# MiniOB Competition Development Guide
 
 ## Project Structure
 
@@ -37,8 +37,9 @@
 - `etc/`: runtime configuration, including `observer.ini`.
 - `docs/`: documentation site content, design notes, lab/dev environment docs, images, and course material.
 - `deps/3rd/`: vendored third-party dependencies such as libevent, googletest, benchmark, jsoncpp, replxx, and cppjieba. Do not modify unless explicitly required.
+- `mysql-server/`: optional submodule for the competition-specified MySQL server used to generate standard output for local evaluation cases; a normal clone records only the gitlink until the submodule is initialized.
 - `.github/workflows/`: CI workflows for build/test, formatting, and documentation/page automation.
-- `miniob-2025-problem-list.md`: local summary of the MiniOB 2025 problem list and scoring information.
+- `miniob-2025-problem-list.md`: local MiniOB 2025 problem summary plus per-problem local evaluation notes with paired SQL case snippets and expected results.
 
 ## Restrictions
 
@@ -90,17 +91,17 @@
 ## Build
 
 ```bash
-cmake --build build --target rmdb
-cmake --build build --target unit_test
-cmake --build build --target test_parser
+bash build.sh debug -DWITH_CPPLINGS=OFF -DWITH_UNIT_TESTS=ON --make -j4
+cmake --build build_debug --target observer
+cmake --build build_debug --target obclient
 ```
 
 If parser grammar changes:
 
 ```bash
-cd src/parser
-flex --header-file=lex.yy.hpp -o lex.yy.cpp lex.l
-bison --defines=yacc.tab.hpp -o yacc.tab.cpp yacc.y
+cd src/observer/sql/parser
+flex --header-file=lex_sql.h -o lex_sql.cpp lex_sql.l
+bison --defines=yacc_sql.hpp -o yacc_sql.cpp yacc_sql.y
 ```
 
 ## Testing
@@ -143,11 +144,19 @@ python3 test/case/miniob_test.py --test-cases=vectorized-basic
 python3 test/case/miniob_test.py --test-cases=basic,vectorized-basic
 ```
 
-Only cases with expected result files can be checked normally. Current result files include `basic`, `vectorized-basic`, and `vectorized-aggregation-and-group-by`. For cases without result files, use `--report-only` when generating or inspecting behavior:
+Only cases with expected result files can be checked normally. Current result files include `basic`, `vectorized-basic`, `vectorized-aggregation-and-group-by`, and MiniOB 2025 per-problem cases `miniob2025-01` through `miniob2025-22` plus `miniob2025-24`. The full-text case `miniob2025-23-full-text-index.test` intentionally has no MySQL-generated `.result`; inspect it with `--report-only` or a feature-specific oracle. For other cases without result files, use `--report-only` when generating or inspecting behavior:
 
 ```bash
 python3 test/case/miniob_test.py --test-cases=primary-update --report-only
 ```
+
+The competition-specified MySQL server is an optional submodule. Initialize it only when regenerating MySQL-backed standard output:
+
+```bash
+git submodule update --init mysql-server
+```
+
+Be aware that `bash build.sh init` currently runs `git submodule update --init`, which initializes all submodules and may also fetch `mysql-server`.
 
 When the repository path contains spaces, prefer an explicit temporary work directory and reuse an existing build through a symlink:
 
@@ -184,7 +193,7 @@ Use it after focused CTest and SQL case coverage, especially for cross-feature c
 
 ### CI Parity
 
-The main CI workflow builds debug and release variants, runs CTest, checks the `basic` SQL case, runs sysbench, and runs selected benchmark/memtracer checks. For local CI-like coverage:
+The main build workflow is `.github/workflows/build-test.yml` and is currently manual-only via `workflow_dispatch`. It builds debug and release variants, runs CTest, checks the `basic` SQL case, runs sysbench, and runs selected benchmark/memtracer checks. For local CI-like coverage:
 
 ```bash
 bash build.sh debug -DCONCURRENCY=ON -DENABLE_COVERAGE=ON -DWITH_BENCHMARK=ON -DWITH_MEMTRACER=ON -DWITH_UNIT_TESTS=ON --make -j4
