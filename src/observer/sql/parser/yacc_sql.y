@@ -51,6 +51,17 @@ UnboundAggregateExpr *create_aggregate_expression(const char *aggregate_name,
   return expr;
 }
 
+UnboundFunctionExpr *create_function_expression(const char *function_name,
+                                                vector<unique_ptr<Expression>> *arguments,
+                                                const char *sql_string,
+                                                YYLTYPE *llocp)
+{
+  UnboundFunctionExpr *expr = new UnboundFunctionExpr(function_name, std::move(*arguments));
+  expr->set_name(token_name(sql_string, llocp));
+  delete arguments;
+  return expr;
+}
+
 %}
 
 %define api.pure full
@@ -188,8 +199,10 @@ UnboundAggregateExpr *create_aggregate_expression(const char *aggregate_name,
 %type <expression>          expression
 %type <expression>          select_expression
 %type <expression>          aggregate_expression
+%type <expression>          function_expression
 %type <expression_list>     select_expression_list
 %type <expression_list>     expression_list
+%type <expression_list>     function_argument_list
 %type <expression_list>     group_by
 %type <cstring>             fields_terminated_by
 %type <cstring>             enclosed_by
@@ -656,7 +669,24 @@ expression:
       $$->set_name(token_name(sql_string, &@$));
       delete $1;
     }
-    | aggregate_expression {
+    | function_expression {
+      $$ = $1;
+    }
+    ;
+
+function_expression:
+    ID LBRACE function_argument_list RBRACE {
+      $$ = create_function_expression($1, $3, sql_string, &@$);
+    }
+    ;
+
+function_argument_list:
+    /* empty */
+    {
+      $$ = new vector<unique_ptr<Expression>>;
+    }
+    | expression_list
+    {
       $$ = $1;
     }
     ;

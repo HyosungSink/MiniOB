@@ -39,6 +39,7 @@ enum class ExprType
   STAR,                 ///< 星号，表示所有字段
   UNBOUND_FIELD,        ///< 未绑定的字段，需要在resolver阶段解析为FieldExpr
   UNBOUND_AGGREGATION,  ///< 未绑定的聚合函数，需要在resolver阶段解析为AggregateExpr
+  UNBOUND_FUNCTION,     ///< 未绑定的函数调用，需要在resolver阶段解析
 
   FIELD,        ///< 字段。在实际执行时，根据行数据内容提取对应字段的值
   VALUE,        ///< 常量值
@@ -464,6 +465,28 @@ public:
 private:
   string                 aggregate_name_;
   unique_ptr<Expression> child_;
+};
+
+class UnboundFunctionExpr : public Expression
+{
+public:
+  UnboundFunctionExpr(const char *function_name, vector<unique_ptr<Expression>> arguments);
+  virtual ~UnboundFunctionExpr() = default;
+
+  ExprType type() const override { return ExprType::UNBOUND_FUNCTION; }
+
+  unique_ptr<Expression> copy() const override;
+
+  const char *function_name() const { return function_name_.c_str(); }
+
+  vector<unique_ptr<Expression>> &arguments() { return arguments_; }
+
+  RC       get_value(const Tuple &tuple, Value &value) const override { return RC::INTERNAL; }
+  AttrType value_type() const override { return AttrType::UNDEFINED; }
+
+private:
+  string                         function_name_;
+  vector<unique_ptr<Expression>> arguments_;
 };
 
 class AggregateExpr : public Expression

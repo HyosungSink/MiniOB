@@ -602,6 +602,19 @@ UnboundAggregateExpr::UnboundAggregateExpr(const char *aggregate_name, unique_pt
     : aggregate_name_(aggregate_name), child_(std::move(child))
 {}
 
+UnboundFunctionExpr::UnboundFunctionExpr(const char *function_name, vector<unique_ptr<Expression>> arguments)
+    : function_name_(function_name), arguments_(std::move(arguments))
+{}
+
+unique_ptr<Expression> UnboundFunctionExpr::copy() const
+{
+  vector<unique_ptr<Expression>> arguments;
+  for (const unique_ptr<Expression> &argument : arguments_) {
+    arguments.emplace_back(argument->copy());
+  }
+  return make_unique<UnboundFunctionExpr>(function_name_.c_str(), std::move(arguments));
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 AggregateExpr::AggregateExpr(Type type, Expression *child) : aggregate_type_(type), child_(child) {}
 

@@ -81,6 +81,10 @@ RC ExpressionBinder::bind_expression(unique_ptr<Expression> &expr, vector<unique
       return bind_aggregate_expression(expr, bound_expressions);
     } break;
 
+    case ExprType::UNBOUND_FUNCTION: {
+      return bind_function_expression(expr, bound_expressions);
+    } break;
+
     case ExprType::FIELD: {
       return bind_field_expression(expr, bound_expressions);
     } break;
@@ -440,6 +444,37 @@ RC ExpressionBinder::bind_aggregate_expression(
 
   auto unbound_aggregate_expr = static_cast<UnboundAggregateExpr *>(expr.get());
   const char *aggregate_name = unbound_aggregate_expr->aggregate_name();
+  vector<unique_ptr<Expression>> arguments;
+  arguments.emplace_back(std::move(unbound_aggregate_expr->child()));
+  return bind_aggregate_function(aggregate_name, arguments, unbound_aggregate_expr->name(), bound_expressions);
+}
+
+RC ExpressionBinder::bind_function_expression(
+    unique_ptr<Expression> &expr, vector<unique_ptr<Expression>> &bound_expressions)
+{
+  if (nullptr == expr) {
+    return RC::SUCCESS;
+  }
+
+  auto unbound_function_expr = static_cast<UnboundFunctionExpr *>(expr.get());
+  const char *function_name = unbound_function_expr->function_name();
+
+  AggregateExpr::Type aggregate_type;
+  RC rc = AggregateExpr::type_from_string(function_name, aggregate_type);
+  if (OB_SUCC(rc)) {
+    return bind_aggregate_function(
+        function_name, unbound_function_expr->arguments(), unbound_function_expr->name(), bound_expressions);
+  }
+
+  LOG_WARN("invalid function name: %s", function_name);
+  return RC::INVALID_ARGUMENT;
+}
+
+RC ExpressionBinder::bind_aggregate_function(const char *aggregate_name,
+    vector<unique_ptr<Expression>> &arguments,
+    const char *expression_name,
+    vector<unique_ptr<Expression>> &bound_expressions)
+{
   AggregateExpr::Type aggregate_type;
   RC rc = AggregateExpr::type_from_string(aggregate_name, aggregate_type);
   if (OB_FAIL(rc)) {
@@ -447,7 +482,12 @@ RC ExpressionBinder::bind_aggregate_expression(
     return rc;
   }
 
-  unique_ptr<Expression>        &child_expr = unbound_aggregate_expr->child();
+  if (arguments.size() != 1) {
+    LOG_WARN("invalid arguments number of aggregate expression: %d", arguments.size());
+    return RC::INVALID_ARGUMENT;
+  }
+
+  unique_ptr<Expression>        &child_expr = arguments[0];
   vector<unique_ptr<Expression>> child_bound_expressions;
 
   if (child_expr->type() == ExprType::STAR && aggregate_type == AggregateExpr::Type::COUNT) {
@@ -470,7 +510,7 @@ RC ExpressionBinder::bind_aggregate_expression(
   }
 
   auto aggregate_expr = make_unique<AggregateExpr>(aggregate_type, std::move(child_expr));
-  aggregate_expr->set_name(unbound_aggregate_expr->name());
+  aggregate_expr->set_name(expression_name);
   rc = check_aggregate_expression(*aggregate_expr);
   if (OB_FAIL(rc)) {
     return rc;
