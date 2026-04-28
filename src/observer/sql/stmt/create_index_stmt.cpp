@@ -14,6 +14,7 @@ See the Mulan PSL v2 for more details. */
 
 #include "sql/stmt/create_index_stmt.h"
 #include "common/lang/string.h"
+#include "common/lang/vector.h"
 #include "common/log/log.h"
 #include "storage/db/db.h"
 #include "storage/table/table.h"
@@ -27,7 +28,7 @@ RC CreateIndexStmt::create(Db *db, const CreateIndexSqlNode &create_index, Stmt 
 
   const char *table_name = create_index.relation_name.c_str();
   if (is_blank(table_name) || is_blank(create_index.index_name.c_str()) ||
-      is_blank(create_index.attribute_name.c_str())) {
+      (create_index.attribute_names.empty() && is_blank(create_index.attribute_name.c_str()))) {
     LOG_WARN("invalid argument. db=%p, table_name=%p, index name=%s, attribute name=%s",
         db, table_name, create_index.index_name.c_str(), create_index.attribute_name.c_str());
     return RC::INVALID_ARGUMENT;
@@ -40,11 +41,26 @@ RC CreateIndexStmt::create(Db *db, const CreateIndexSqlNode &create_index, Stmt 
     return RC::SCHEMA_TABLE_NOT_EXIST;
   }
 
-  const FieldMeta *field_meta = table->table_meta().field(create_index.attribute_name.c_str());
+  vector<string> attribute_names = create_index.attribute_names;
+  if (attribute_names.empty()) {
+    attribute_names.push_back(create_index.attribute_name);
+  }
+
+  const FieldMeta *field_meta = nullptr;
+  for (const string &attribute_name : attribute_names) {
+    const FieldMeta *current_field_meta = table->table_meta().field(attribute_name.c_str());
+    if (nullptr == current_field_meta) {
+      LOG_WARN("no such field in table. db=%s, table=%s, field name=%s",
+          db->name(), table_name, attribute_name.c_str());
+      return RC::SCHEMA_FIELD_NOT_EXIST;
+    }
+    if (field_meta == nullptr) {
+      field_meta = current_field_meta;
+    }
+  }
+
   if (nullptr == field_meta) {
-    LOG_WARN("no such field in table. db=%s, table=%s, field name=%s", 
-             db->name(), table_name, create_index.attribute_name.c_str());
-    return RC::SCHEMA_FIELD_NOT_EXIST;
+    return RC::INVALID_ARGUMENT;
   }
 
   Index *index = table->find_index(create_index.index_name.c_str());
