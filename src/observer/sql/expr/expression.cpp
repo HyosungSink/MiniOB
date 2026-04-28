@@ -638,6 +638,24 @@ RC InSubqueryExpr::prepare() const
 
 ////////////////////////////////////////////////////////////////////////////////
 
+IsNullExpr::IsNullExpr(unique_ptr<Expression> child, bool not_null)
+    : child_(std::move(child)), not_null_(not_null)
+{}
+
+RC IsNullExpr::get_value(const Tuple &tuple, Value &value) const
+{
+  Value child_value;
+  RC rc = child_->get_value(tuple, child_value);
+  if (OB_FAIL(rc)) {
+    return rc;
+  }
+
+  value.set_boolean(not_null_ ? !child_value.is_null() : child_value.is_null());
+  return RC::SUCCESS;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
 ArithmeticExpr::ArithmeticExpr(ArithmeticExpr::Type type, Expression *left, Expression *right)
     : arithmetic_type_(type), left_(left), right_(right)
 {}

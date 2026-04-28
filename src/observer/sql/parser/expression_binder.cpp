@@ -127,6 +127,10 @@ RC ExpressionBinder::bind_expression(unique_ptr<Expression> &expr, vector<unique
       return bind_in_subquery_expression(expr, bound_expressions);
     } break;
 
+    case ExprType::IS_NULL: {
+      return bind_is_null_expression(expr, bound_expressions);
+    } break;
+
     case ExprType::ARITHMETIC: {
       return bind_arithmetic_expression(expr, bound_expressions);
     } break;
@@ -534,6 +538,34 @@ RC ExpressionBinder::bind_in_subquery_expression(
       return RC::UNSUPPORTED;
     }
     subquery.set_cast_type(left_type);
+  }
+
+  bound_expressions.emplace_back(std::move(expr));
+  return RC::SUCCESS;
+}
+
+RC ExpressionBinder::bind_is_null_expression(unique_ptr<Expression> &expr, vector<unique_ptr<Expression>> &bound_expressions)
+{
+  if (nullptr == expr) {
+    return RC::SUCCESS;
+  }
+
+  auto is_null_expr = static_cast<IsNullExpr *>(expr.get());
+
+  vector<unique_ptr<Expression>> child_bound_expressions;
+  unique_ptr<Expression>        &child_expr = is_null_expr->child();
+  RC rc = bind_expression(child_expr, child_bound_expressions);
+  if (OB_FAIL(rc)) {
+    return rc;
+  }
+  if (child_bound_expressions.size() != 1) {
+    LOG_WARN("invalid child number of IS NULL expression: %d", child_bound_expressions.size());
+    return RC::INVALID_ARGUMENT;
+  }
+
+  unique_ptr<Expression> &child = child_bound_expressions[0];
+  if (child.get() != child_expr.get()) {
+    child_expr.reset(child.release());
   }
 
   bound_expressions.emplace_back(std::move(expr));

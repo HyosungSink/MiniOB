@@ -52,6 +52,7 @@ enum class ExprType
   IN_LIST,      ///< IN/NOT IN value list predicate
   SUBQUERY,     ///< scalar subquery
   IN_SUBQUERY,  ///< IN/NOT IN subquery predicate
+  IS_NULL,      ///< IS NULL/IS NOT NULL predicate
 };
 
 /**
@@ -491,6 +492,26 @@ private:
   unique_ptr<Expression>  left_;
   unique_ptr<SubqueryExpr> subquery_;
   bool                    not_in_ = false;
+};
+
+class IsNullExpr : public Expression
+{
+public:
+  IsNullExpr(unique_ptr<Expression> child, bool not_null);
+  virtual ~IsNullExpr() = default;
+
+  unique_ptr<Expression> copy() const override { return make_unique<IsNullExpr>(child_->copy(), not_null_); }
+
+  ExprType type() const override { return ExprType::IS_NULL; }
+  AttrType value_type() const override { return AttrType::BOOLEANS; }
+
+  RC get_value(const Tuple &tuple, Value &value) const override;
+
+  unique_ptr<Expression> &child() { return child_; }
+
+private:
+  unique_ptr<Expression> child_;
+  bool                   not_null_ = false;
 };
 
 /**

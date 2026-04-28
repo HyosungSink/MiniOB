@@ -68,6 +68,11 @@ RC ExpressionIterator::iterate_child_expr(Expression &expr, function<RC(unique_p
       rc = callback(in_subquery_expr.left());
     } break;
 
+    case ExprType::IS_NULL: {
+      auto &is_null_expr = static_cast<IsNullExpr &>(expr);
+      rc = callback(is_null_expr.child());
+    } break;
+
     case ExprType::ARITHMETIC: {
 
       auto &arithmetic_expr = static_cast<ArithmeticExpr &>(expr);

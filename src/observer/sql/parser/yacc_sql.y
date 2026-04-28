@@ -131,6 +131,7 @@ UnboundFunctionExpr *create_function_expression(const char *function_name,
         ENCLOSED
         NOT
         IN
+        IS
         NULL_T
         UNIQUE
         EQ
@@ -902,6 +903,20 @@ condition:
       $$->right_expr.reset(new ValueExpr(Value(true)));
       $$->comp = EQUAL_TO;
       delete $5;
+    }
+    | expression IS NULL_T
+    {
+      $$ = new ConditionSqlNode;
+      $$->left_expr.reset(new IsNullExpr(unique_ptr<Expression>($1), false));
+      $$->right_expr.reset(new ValueExpr(Value(true)));
+      $$->comp = EQUAL_TO;
+    }
+    | expression IS NOT NULL_T
+    {
+      $$ = new ConditionSqlNode;
+      $$->left_expr.reset(new IsNullExpr(unique_ptr<Expression>($1), true));
+      $$->right_expr.reset(new ValueExpr(Value(true)));
+      $$->comp = EQUAL_TO;
     }
     ;
 
