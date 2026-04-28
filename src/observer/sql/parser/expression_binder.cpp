@@ -20,8 +20,24 @@ See the Mulan PSL v2 for more details. */
 
 using namespace common;
 
+void BinderContext::add_table(Table *table, const string &alias)
+{
+  query_tables_.push_back(table);
+  if (!is_blank(alias.c_str())) {
+    table_aliases_.push_back({alias, table});
+  }
+}
+
 Table *BinderContext::find_table(const char *table_name) const
 {
+  auto alias_pred = [table_name](const TableAlias &table_alias) {
+    return 0 == strcasecmp(table_name, table_alias.alias.c_str());
+  };
+  auto alias_iter = ranges::find_if(table_aliases_, alias_pred);
+  if (alias_iter != table_aliases_.end()) {
+    return alias_iter->table;
+  }
+
   auto pred = [table_name](Table *table) { return 0 == strcasecmp(table_name, table->name()); };
   auto iter = ranges::find_if(query_tables_, pred);
   if (iter == query_tables_.end()) {
@@ -144,12 +160,23 @@ RC ExpressionBinder::bind_unbound_field_expression(
 
   Table *table = nullptr;
   if (is_blank(table_name)) {
-    if (context_.query_tables().size() != 1) {
-      LOG_INFO("cannot determine table for field: %s", field_name);
-      return RC::SCHEMA_TABLE_NOT_EXIST;
+    for (Table *candidate_table : context_.query_tables()) {
+      const FieldMeta *field_meta = candidate_table->table_meta().field(field_name);
+      if (field_meta == nullptr) {
+        continue;
+      }
+
+      if (table != nullptr) {
+        LOG_INFO("ambiguous field: %s", field_name);
+        return RC::SCHEMA_FIELD_MISSING;
+      }
+      table = candidate_table;
     }
 
-    table = context_.query_tables()[0];
+    if (table == nullptr) {
+      LOG_INFO("no such field in table list: %s", field_name);
+      return RC::SCHEMA_FIELD_MISSING;
+    }
   } else {
     table = context_.find_table(table_name);
     if (nullptr == table) {

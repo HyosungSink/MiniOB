@@ -22,14 +22,22 @@ public:
   BinderContext()          = default;
   virtual ~BinderContext() = default;
 
-  void add_table(Table *table) { query_tables_.push_back(table); }
+  void add_table(Table *table) { add_table(table, ""); }
+  void add_table(Table *table, const string &alias);
 
   Table *find_table(const char *table_name) const;
 
   const vector<Table *> &query_tables() const { return query_tables_; }
 
 private:
+  struct TableAlias
+  {
+    string alias;
+    Table *table = nullptr;
+  };
+
   vector<Table *> query_tables_;
+  vector<TableAlias> table_aliases_;
 };
 
 /**
