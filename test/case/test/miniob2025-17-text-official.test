@@ -1,0 +1,133 @@
+-- echo official miniob2025-17-text-official
+# -- 0) 干净环境
+DROP TABLE IF EXISTS t_text;
+
+# -- 1) 建表（题目示例）
+CREATE TABLE t_text( id INT, article TEXT );
+
+# -- 期望：SUCCESS
+
+# -- 2) 基本插入：空串与 NULL
+INSERT INTO t_text VALUES (1, ''), (2, NULL);
+
+# -- 期望：SUCCESS
+
+# -- 验证：长度分别为 0 / NULL
+SELECT id, LENGTH(article) AS len FROM t_text WHERE id IN (1,2) ORDER BY id;
+
+# -- 正确输出：
+# -- 1 | 0
+# -- 2 | NULL
+
+# -- 3) 边界测试：精确构造 65535 字节
+# -- 思路：对 id=1 的记录，从 1 字节开始倍增：
+# -- 长度序列：1,2,4,8,...,32768；然后再拼接 SUBSTR(article,1,32767) → 32768+32767=65535
+
+# -- 3.1 把 id=1 的 article 置为 'a'（1字节）
+UPDATE t_text SET article = 'a' WHERE id = 1;
+
+# -- 期望：SUCCESS
+
+# -- 3.2 连续倍增（共 15 次，从 1 → 32768）
+UPDATE t_text SET article = CONCAT(article, article) WHERE id = 1;
+UPDATE t_text SET article = CONCAT(article, article) WHERE id = 1;
+UPDATE t_text SET article = CONCAT(article, article) WHERE id = 1;
+UPDATE t_text SET article = CONCAT(article, article) WHERE id = 1;
+UPDATE t_text SET article = CONCAT(article, article) WHERE id = 1;
+UPDATE t_text SET article = CONCAT(article, article) WHERE id = 1;
+UPDATE t_text SET article = CONCAT(article, article) WHERE id = 1;
+UPDATE t_text SET article = CONCAT(article, article) WHERE id = 1;
+UPDATE t_text SET article = CONCAT(article, article) WHERE id = 1;
+UPDATE t_text SET article = CONCAT(article, article) WHERE id = 1;
+UPDATE t_text SET article = CONCAT(article, article) WHERE id = 1;
+UPDATE t_text SET article = CONCAT(article, article) WHERE id = 1;
+UPDATE t_text SET article = CONCAT(article, article) WHERE id = 1;
+UPDATE t_text SET article = CONCAT(article, article) WHERE id = 1;
+UPDATE t_text SET article = CONCAT(article, article) WHERE id = 1;
+
+# -- 期望：上述每条 UPDATE 均 SUCCESS
+
+# -- 3.3 此时长度应为 32768
+SELECT LENGTH(article) AS len_32768 FROM t_text WHERE id = 1;
+# -- 正确输出：
+# -- 32768
+
+# -- 3.4 再拼接 32767 字节，刚好到 65535
+UPDATE t_text SET article = CONCAT(article, SUBSTR(article, 1, 32767)) WHERE id = 1;
+# -- 期望：SUCCESS
+
+# -- 3.5 验证已达上限 65535
+SELECT LENGTH(article) AS len_65535 FROM t_text WHERE id = 1;
+# -- 正确输出：
+# -- 65535
+
+# -- 4) 超界失败：再多拼接 1 字节应报错
+# -- 任何再追加 1 字节的尝试都应 FAIL（例如拼接 'x'）
+UPDATE t_text SET article = CONCAT(article, 'x') WHERE id = 1;
+
+# -- 期望：FAILURE （超过 TEXT 最大 65535 字节限制）
+
+# -- 5) 插入端超界失败（直接 INSERT > 65535）
+# -- 用相同“倍增 + 拼接”的构造法在新行 id=3 上触顶：
+INSERT INTO t_text VALUES (3, 'a');
+UPDATE t_text SET article = CONCAT(article, article) WHERE id = 3;
+UPDATE t_text SET article = CONCAT(article, article) WHERE id = 3;
+UPDATE t_text SET article = CONCAT(article, article) WHERE id = 3;
+UPDATE t_text SET article = CONCAT(article, article) WHERE id = 3;
+UPDATE t_text SET article = CONCAT(article, article) WHERE id = 3;
+UPDATE t_text SET article = CONCAT(article, article) WHERE id = 3;
+UPDATE t_text SET article = CONCAT(article, article) WHERE id = 3;
+UPDATE t_text SET article = CONCAT(article, article) WHERE id = 3;
+UPDATE t_text SET article = CONCAT(article, article) WHERE id = 3;
+UPDATE t_text SET article = CONCAT(article, article) WHERE id = 3;
+UPDATE t_text SET article = CONCAT(article, article) WHERE id = 3;
+UPDATE t_text SET article = CONCAT(article, article) WHERE id = 3;
+UPDATE t_text SET article = CONCAT(article, article) WHERE id = 3;
+UPDATE t_text SET article = CONCAT(article, article) WHERE id = 3;
+UPDATE t_text SET article = CONCAT(article, article) WHERE id = 3;
+UPDATE t_text SET article = CONCAT(article, SUBSTR(article, 1, 32767)) WHERE id = 3;
+
+# -- 期望：至此仍 SUCCESS
+
+# -- 再尝试插入一行“初始即超过限制”的值（通过把 id=3 的 65535 字节再拼接 'x' 形成超界文本）：
+# -- 注意：这里构造超界值可能依赖引擎内部处理；若支持从已存在值拼接后再 INSERT，可用：
+INSERT INTO t_text SELECT 4, CONCAT(article, 'x') FROM t_text WHERE id = 3;
+
+# -- 期望：FAILURE（插入的 text 大小为 65536 字节，超限）
+
+# -- 6) 多字节字符（可选）：字节计数验证
+# -- 若引擎采用 UTF-8 存储，'汉' 通常占 3 字节。下例只做展示，不走到边界。
+INSERT INTO t_text VALUES (5, '汉');
+# -- 期望：SUCCESS
+
+SELECT id, LENGTH(article) AS bytes_len FROM t_text WHERE id = 5;
+
+# -- 正确输出（常见实现）：
+# -- 5 | 3
+
+# -- 7) 基本检索与谓词（TEXT 可参与 LIKE/等值/IS NULL）
+SELECT id FROM t_text WHERE article IS NULL ORDER BY id;
+
+# -- 正确输出：
+# -- 2
+
+SELECT id FROM t_text WHERE article = '' ORDER BY id;
+
+# -- 正确输出：
+# -- 1
+
+# -- 由于 id=1 的 article 是超长 'a...'，LIKE 'a%' 应命中
+SELECT id FROM t_text WHERE article LIKE 'a%' ORDER BY id;
+
+# -- 正确输出（至少包含）：
+# -- 1
+
+# -- 8) 清单：最终各行长度一览（便于人工核对）
+SELECT id, CASE WHEN article IS NULL THEN NULL ELSE LENGTH(article) END AS len_bytes FROM t_text ORDER BY id;
+
+# -- 正确输出（示例，长度可能略有差异取决于是否执行失败步骤）：
+# -- 1 | 65535
+# -- 2 | NULL
+# -- 3 | 65535
+# -- 4 | <无该行，因插入超界应 FAILURE>
+# -- 5 | 3

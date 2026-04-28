@@ -1,0 +1,27 @@
+-- echo official miniob2025-15-order-by-official
+# -- 清理并重建
+DROP TABLE t_order_by_1;
+
+CREATE TABLE t_order_by_1(id INT);
+
+# -- 插入数据
+INSERT INTO t_order_by_1 VALUES (2);
+INSERT INTO t_order_by_1 VALUES (2);
+INSERT INTO t_order_by_1 VALUES (4);
+INSERT INTO t_order_by_1 VALUES (4);
+INSERT INTO t_order_by_1 VALUES (6);
+INSERT INTO t_order_by_1 VALUES (7);
+INSERT INTO t_order_by_1 VALUES (8);
+
+# -- 校验
+SELECT * FROM t_order_by_1 ORDER BY id;
+
+
+# -- 重建为期望结果：1,1,3,3,7,8,9（按 id 升序）
+DROP TABLE IF EXISTS t_order_by_1;
+CREATE TABLE t_order_by_1(id INT);
+
+INSERT INTO t_order_by_1 VALUES (1),(1),(3),(3),(7),(8),(9);
+
+# -- 校验
+SELECT * FROM t_order_by_1 ORDER BY id;
