@@ -36,6 +36,7 @@ public:
     return RC::UNSUPPORTED;
   }
   RC get_record(const RID &rid, Record &record) override;
+  RC validate_unique_constraints(const Record &record, const RID *skip_rid) override;
 
   RC create_index(Trx *trx, const vector<const FieldMeta *> &field_metas, const char *index_name, bool unique) override;
   RC get_record_scanner(RecordScanner *&scanner, Trx *trx, ReadWriteMode mode) override;
@@ -52,6 +53,8 @@ public:
 private:
   RC insert_entry_of_indexes(const char *record, const RID &rid);
   RC delete_entry_of_indexes(const char *record, const RID &rid, bool error_on_not_exists);
+  bool unique_key_equal(const char *left_record, const char *right_record, const IndexMeta &index_meta) const;
+  RC validate_unique_index_existing(const IndexMeta &index_meta, Trx *trx);
 
 private:
   DiskBufferPool    *data_buffer_pool_ = nullptr;  /// 数据文件关联的buffer pool

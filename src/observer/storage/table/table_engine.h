@@ -45,6 +45,7 @@ public:
   virtual RC delete_record_with_trx(const Record &record, Trx *trx)                               = 0;
   virtual RC update_record_with_trx(const Record &old_record, const Record &new_record, Trx *trx) = 0;
   virtual RC get_record(const RID &rid, Record &record)                                           = 0;
+  virtual RC validate_unique_constraints(const Record &record, const RID *skip_rid)                = 0;
 
   virtual RC     create_index(
           Trx *trx, const vector<const FieldMeta *> &field_metas, const char *index_name, bool unique) = 0;

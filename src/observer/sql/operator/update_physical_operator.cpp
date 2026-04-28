@@ -64,6 +64,8 @@ RC UpdatePhysicalOperator::open(Trx *trx)
     return rc;
   }
 
+  vector<Record> new_records;
+  new_records.reserve(records_.size());
   for (Record &old_record : records_) {
     Record new_record;
     rc = make_updated_record(old_record, new_record);
@@ -71,6 +73,18 @@ RC UpdatePhysicalOperator::open(Trx *trx)
       LOG_WARN("failed to make updated record. rc=%s", strrc(rc));
       return rc;
     }
+
+    rc = table_->validate_unique_constraints(new_record, &old_record.rid());
+    if (OB_FAIL(rc)) {
+      LOG_WARN("unique constraint check failed while updating. rc=%s", strrc(rc));
+      return rc;
+    }
+    new_records.emplace_back(std::move(new_record));
+  }
+
+  for (size_t i = 0; i < records_.size(); i++) {
+    Record &old_record = records_[i];
+    Record &new_record = new_records[i];
 
     rc = trx->delete_record(table_, old_record);
     if (OB_FAIL(rc)) {

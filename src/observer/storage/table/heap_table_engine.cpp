@@ -39,6 +39,11 @@ HeapTableEngine::~HeapTableEngine()
 RC HeapTableEngine::insert_record(Record &record)
 {
   RC rc = RC::SUCCESS;
+  rc    = validate_unique_constraints(record, nullptr);
+  if (rc != RC::SUCCESS) {
+    return rc;
+  }
+
   rc    = record_handler_->insert_record(record.data(), table_meta_->record_size(), &record.rid());
   if (rc != RC::SUCCESS) {
     LOG_ERROR("Insert record failed. table name=%s, rc=%s", table_meta_->name(), strrc(rc));
@@ -90,6 +95,80 @@ RC HeapTableEngine::get_record(const RID &rid, Record &record)
   return rc;
 }
 
+bool HeapTableEngine::unique_key_equal(const char *left_record, const char *right_record, const IndexMeta &index_meta) const
+{
+  vector<string> fields = index_meta.fields();
+  if (fields.empty()) {
+    fields.push_back(index_meta.field());
+  }
+
+  for (const string &field_name : fields) {
+    const FieldMeta *field = table_meta_->field(field_name.c_str());
+    if (field == nullptr) {
+      return false;
+    }
+
+    const char *left_data  = left_record + field->offset();
+    const char *right_data = right_record + field->offset();
+    if (Value::is_null_data(left_data, field->len(), field->type()) ||
+        Value::is_null_data(right_data, field->len(), field->type())) {
+      return false;
+    }
+
+    Value left;
+    left.set_type(field->type());
+    left.set_data(left_data, field->len());
+    Value right;
+    right.set_type(field->type());
+    right.set_data(right_data, field->len());
+    if (left.compare(right) != 0) {
+      return false;
+    }
+  }
+  return true;
+}
+
+RC HeapTableEngine::validate_unique_constraints(const Record &record, const RID *skip_rid)
+{
+  bool has_unique_index = false;
+  for (int i = 0; i < table_meta_->index_num(); i++) {
+    const IndexMeta *index_meta = table_meta_->index(i);
+    if (index_meta->is_unique()) {
+      has_unique_index = true;
+      break;
+    }
+  }
+  if (!has_unique_index) {
+    return RC::SUCCESS;
+  }
+
+  RecordScanner *scanner = nullptr;
+  RC rc = get_record_scanner(scanner, nullptr, ReadWriteMode::READ_ONLY);
+  if (OB_FAIL(rc)) {
+    return rc;
+  }
+
+  Record existing_record;
+  while (OB_SUCC(rc = scanner->next(existing_record))) {
+    if (skip_rid != nullptr && existing_record.rid() == *skip_rid) {
+      continue;
+    }
+
+    for (int i = 0; i < table_meta_->index_num(); i++) {
+      const IndexMeta *index_meta = table_meta_->index(i);
+      if (index_meta->is_unique() && unique_key_equal(record.data(), existing_record.data(), *index_meta)) {
+        scanner->close_scan();
+        delete scanner;
+        return RC::RECORD_DUPLICATE_KEY;
+      }
+    }
+  }
+
+  scanner->close_scan();
+  delete scanner;
+  return rc == RC::RECORD_EOF ? RC::SUCCESS : rc;
+}
+
 RC HeapTableEngine::delete_record(const Record &record)
 {
   RC rc = RC::SUCCESS;
@@ -138,6 +217,13 @@ RC HeapTableEngine::create_index(
     LOG_INFO("Failed to init IndexMeta in table:%s, index_name:%s, field_name:%s", 
              table_meta_->name(), index_name, field_meta->name());
     return rc;
+  }
+
+  if (new_index_meta.is_unique()) {
+    rc = validate_unique_index_existing(new_index_meta, trx);
+    if (OB_FAIL(rc)) {
+      return rc;
+    }
   }
 
   // 创建索引相关数据
@@ -221,6 +307,41 @@ RC HeapTableEngine::create_index(
 
   LOG_INFO("Successfully added a new index (%s) on the table (%s)", index_name, table_meta_->name());
   return rc;
+}
+
+RC HeapTableEngine::validate_unique_index_existing(const IndexMeta &index_meta, Trx *trx)
+{
+  RecordScanner *scanner = nullptr;
+  RC rc = get_record_scanner(scanner, trx, ReadWriteMode::READ_ONLY);
+  if (OB_FAIL(rc)) {
+    return rc;
+  }
+
+  vector<Record> seen_records;
+  Record record;
+  while (OB_SUCC(rc = scanner->next(record))) {
+    for (const Record &seen_record : seen_records) {
+      if (unique_key_equal(record.data(), seen_record.data(), index_meta)) {
+        scanner->close_scan();
+        delete scanner;
+        return RC::RECORD_DUPLICATE_KEY;
+      }
+    }
+
+    Record copied_record;
+    copied_record.set_rid(record.rid());
+    RC copy_rc = copied_record.copy_data(record.data(), record.len());
+    if (OB_FAIL(copy_rc)) {
+      scanner->close_scan();
+      delete scanner;
+      return copy_rc;
+    }
+    seen_records.emplace_back(std::move(copied_record));
+  }
+
+  scanner->close_scan();
+  delete scanner;
+  return rc == RC::RECORD_EOF ? RC::SUCCESS : rc;
 }
 
 RC HeapTableEngine::insert_entry_of_indexes(const char *record, const RID &rid)

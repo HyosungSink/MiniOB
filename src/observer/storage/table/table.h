@@ -92,6 +92,7 @@ public:
   RC delete_record_with_trx(const Record &record, Trx *trx);
   RC update_record_with_trx(const Record &old_record, const Record &new_record, Trx *trx);
   RC get_record(const RID &rid, Record &record);
+  RC validate_unique_constraints(const Record &record, const RID *skip_rid);
 
   // TODO refactor
   RC create_index(Trx *trx, const vector<const FieldMeta *> &field_metas, const char *index_name, bool unique);

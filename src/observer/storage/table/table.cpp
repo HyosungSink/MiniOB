@@ -206,6 +206,11 @@ RC Table::get_record(const RID &rid, Record &record)
   return engine_->get_record(rid, record);
 }
 
+RC Table::validate_unique_constraints(const Record &record, const RID *skip_rid)
+{
+  return engine_->validate_unique_constraints(record, skip_rid);
+}
+
 const char *Table::name() const { return table_meta_.name(); }
 
 const TableMeta &Table::table_meta() const { return table_meta_; }
