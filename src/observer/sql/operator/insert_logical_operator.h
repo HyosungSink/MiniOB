@@ -25,6 +25,7 @@ class InsertLogicalOperator : public LogicalOperator
 {
 public:
   InsertLogicalOperator(Table *table, vector<Value> values);
+  InsertLogicalOperator(Table *table, vector<vector<Value>> value_rows);
   virtual ~InsertLogicalOperator() = default;
 
   LogicalOperatorType type() const override { return LogicalOperatorType::INSERT; }
@@ -32,10 +33,12 @@ public:
   OpType get_op_type() const override { return OpType::LOGICALINSERT; }
 
   Table               *table() const { return table_; }
-  const vector<Value> &values() const { return values_; }
-  vector<Value>       &values() { return values_; }
+  const vector<Value> &values() const { return value_rows_.front(); }
+  vector<Value>       &values() { return value_rows_.front(); }
+  const vector<vector<Value>> &value_rows() const { return value_rows_; }
+  vector<vector<Value>>       &value_rows() { return value_rows_; }
 
 private:
-  Table        *table_ = nullptr;
-  vector<Value> values_;
+  Table                 *table_ = nullptr;
+  vector<vector<Value>>  value_rows_;
 };
