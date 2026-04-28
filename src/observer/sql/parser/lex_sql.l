@@ -133,6 +133,7 @@ FIELDS                                  RETURN_TOKEN(FIELDS);
 TERMINATED                              RETURN_TOKEN(TERMINATED);
 ENCLOSED                                RETURN_TOKEN(ENCLOSED);
 NOT                                     RETURN_TOKEN(NOT);
+IN                                      RETURN_TOKEN(IN);
 NULL                                    RETURN_TOKEN(NULL_T);
 UNIQUE                                  RETURN_TOKEN(UNIQUE);
 {ID}                                    yylval->cstring=strdup(yytext); static_cast<std::vector<char*>*>(yyextra)->push_back(yylval->cstring); RETURN_TOKEN(ID);

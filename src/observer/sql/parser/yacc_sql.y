@@ -130,6 +130,7 @@ UnboundFunctionExpr *create_function_expression(const char *function_name,
         TERMINATED
         ENCLOSED
         NOT
+        IN
         NULL_T
         UNIQUE
         EQ
@@ -862,6 +863,22 @@ condition:
       $$->left_expr.reset($1);
       $$->right_expr.reset($3);
       $$->comp = $2;
+    }
+    | expression IN LBRACE expression_list RBRACE
+    {
+      $$ = new ConditionSqlNode;
+      $$->left_expr.reset(new InExpr(unique_ptr<Expression>($1), std::move(*$4), false));
+      $$->right_expr.reset(new ValueExpr(Value(true)));
+      $$->comp = EQUAL_TO;
+      delete $4;
+    }
+    | expression NOT IN LBRACE expression_list RBRACE
+    {
+      $$ = new ConditionSqlNode;
+      $$->left_expr.reset(new InExpr(unique_ptr<Expression>($1), std::move(*$5), true));
+      $$->right_expr.reset(new ValueExpr(Value(true)));
+      $$->comp = EQUAL_TO;
+      delete $5;
     }
     ;
 

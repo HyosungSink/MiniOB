@@ -64,6 +64,7 @@ private:
       unique_ptr<Expression> &comparison_expr, vector<unique_ptr<Expression>> &bound_expressions);
   RC bind_conjunction_expression(
       unique_ptr<Expression> &conjunction_expr, vector<unique_ptr<Expression>> &bound_expressions);
+  RC bind_in_expression(unique_ptr<Expression> &in_expr, vector<unique_ptr<Expression>> &bound_expressions);
   RC bind_arithmetic_expression(
       unique_ptr<Expression> &arithmetic_expr, vector<unique_ptr<Expression>> &bound_expressions);
   RC bind_function_expression(

@@ -111,6 +111,10 @@ RC ExpressionBinder::bind_expression(unique_ptr<Expression> &expr, vector<unique
       return bind_conjunction_expression(expr, bound_expressions);
     } break;
 
+    case ExprType::IN_LIST: {
+      return bind_in_expression(expr, bound_expressions);
+    } break;
+
     case ExprType::ARITHMETIC: {
       return bind_arithmetic_expression(expr, bound_expressions);
     } break;
@@ -349,6 +353,77 @@ RC ExpressionBinder::bind_conjunction_expression(
 
   bound_expressions.emplace_back(std::move(expr));
 
+  return RC::SUCCESS;
+}
+
+RC ExpressionBinder::bind_in_expression(unique_ptr<Expression> &expr, vector<unique_ptr<Expression>> &bound_expressions)
+{
+  if (nullptr == expr) {
+    return RC::SUCCESS;
+  }
+
+  auto in_expr = static_cast<InExpr *>(expr.get());
+
+  vector<unique_ptr<Expression>> child_bound_expressions;
+  unique_ptr<Expression>        &left_expr = in_expr->left();
+  RC rc = bind_expression(left_expr, child_bound_expressions);
+  if (OB_FAIL(rc)) {
+    return rc;
+  }
+  if (child_bound_expressions.size() != 1) {
+    LOG_WARN("invalid left children number of IN expression: %d", child_bound_expressions.size());
+    return RC::INVALID_ARGUMENT;
+  }
+
+  unique_ptr<Expression> &left = child_bound_expressions[0];
+  if (left.get() != left_expr.get()) {
+    left_expr.reset(left.release());
+  }
+
+  vector<unique_ptr<Expression>> &values = in_expr->values();
+  for (unique_ptr<Expression> &value_expr : values) {
+    child_bound_expressions.clear();
+    rc = bind_expression(value_expr, child_bound_expressions);
+    if (OB_FAIL(rc)) {
+      return rc;
+    }
+    if (child_bound_expressions.size() != 1) {
+      LOG_WARN("invalid value children number of IN expression: %d", child_bound_expressions.size());
+      return RC::INVALID_ARGUMENT;
+    }
+
+    unique_ptr<Expression> &value = child_bound_expressions[0];
+    if (value.get() != value_expr.get()) {
+      value_expr.reset(value.release());
+    }
+
+    if (value_expr->value_type() == AttrType::UNDEFINED || left_expr->value_type() == AttrType::UNDEFINED ||
+        value_expr->value_type() == left_expr->value_type()) {
+      continue;
+    }
+
+    int cast_cost = DataType::type_instance(value_expr->value_type())->cast_cost(left_expr->value_type());
+    if (cast_cost == INT32_MAX) {
+      LOG_WARN("unsupported IN list cast from %s to %s",
+          attr_type_to_string(value_expr->value_type()),
+          attr_type_to_string(left_expr->value_type()));
+      return RC::UNSUPPORTED;
+    }
+
+    auto cast_expr = make_unique<CastExpr>(std::move(value_expr), left_expr->value_type());
+    if (cast_expr->child()->type() == ExprType::VALUE) {
+      Value cast_value;
+      rc = cast_expr->try_get_value(cast_value);
+      if (OB_FAIL(rc)) {
+        return rc;
+      }
+      value_expr = make_unique<ValueExpr>(cast_value);
+    } else {
+      value_expr = std::move(cast_expr);
+    }
+  }
+
+  bound_expressions.emplace_back(std::move(expr));
   return RC::SUCCESS;
 }
 
