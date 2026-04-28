@@ -128,6 +128,7 @@ UnboundFunctionExpr *create_function_expression(const char *function_name,
         FIELDS
         TERMINATED
         ENCLOSED
+        NOT
         NULL_T
         UNIQUE
         EQ
@@ -192,6 +193,7 @@ UnboundFunctionExpr *create_function_expression(const char *function_name,
 %type <rel_attr>            rel_attr
 %type <attr_infos>          attr_def_list
 %type <attr_info>           attr_def
+%type <number>              attr_nullability
 %type <value_list>          value_list
 %type <condition_list>      where
 %type <condition_list>      condition_list
@@ -405,19 +407,34 @@ attr_def_list:
     ;
     
 attr_def:
-    ID type LBRACE number RBRACE 
+    ID type LBRACE number RBRACE attr_nullability
     {
       $$ = new AttrInfoSqlNode;
       $$->type = (AttrType)$2;
       $$->name = $1;
       $$->length = $4;
     }
-    | ID type
+    | ID type attr_nullability
     {
       $$ = new AttrInfoSqlNode;
       $$->type = (AttrType)$2;
       $$->name = $1;
       $$->length = 4;
+    }
+    ;
+
+attr_nullability:
+    /* empty */
+    {
+      $$ = 0;
+    }
+    | NULL_T
+    {
+      $$ = 0;
+    }
+    | NOT NULL_T
+    {
+      $$ = 1;
     }
     ;
 number:
