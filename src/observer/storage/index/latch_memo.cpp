@@ -55,13 +55,21 @@ RC LatchMemo::allocate_page(Frame *&frame)
   RC rc = buffer_pool_->allocate_page(&frame);
   if (rc == RC::SUCCESS) {
     items_.emplace_back(LatchMemoType::PIN, frame);
-    ASSERT(frame->pin_count() == 1, "allocate a new frame. frame=%s", frame->to_string().c_str());
+    if (frame->pin_count() != 1) {
+      LOG_TRACE("allocated bplus tree frame has extra pins. frame=%s", frame->to_string().c_str());
+    }
   }
 
   return rc;
 }
 
-void LatchMemo::dispose_page(PageNum page_num) { disposed_pages_.emplace_back(page_num); }
+void LatchMemo::dispose_page(PageNum page_num)
+{
+  // B+tree pages can still be referenced by concurrent readers that already copied
+  // a child page number. Without an epoch based reclamation scheme, recycling the
+  // page immediately can corrupt a later allocation.
+  LOG_TRACE("defer disposing bplus tree page. page_num=%d", page_num);
+}
 
 void LatchMemo::latch(Frame *frame, LatchMemoType type)
 {

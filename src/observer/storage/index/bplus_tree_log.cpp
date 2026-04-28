@@ -222,14 +222,14 @@ RC BplusTreeLogger::__redo(LSN lsn, BplusTreeMiniTransaction &mtr, BplusTreeHand
     // frame->set_lsn(lsn);
   }
 
-  if (OB_SUCC(rc)) {
-    for (Frame *frame : frames) {
+  for (Frame *frame : frames) {
+    if (OB_SUCC(rc)) {
       frame->set_lsn(lsn);
-      frame->unpin();
     }
+    frame->unpin();
   }
 
-  return RC::SUCCESS;
+  return rc;
 }
 
 string BplusTreeLogger::log_entry_to_string(const LogEntry &entry)

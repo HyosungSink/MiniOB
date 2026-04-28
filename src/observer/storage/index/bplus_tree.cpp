@@ -1309,11 +1309,13 @@ RC BplusTreeHandler::insert_entry_into_parent(BplusTreeMiniTransaction &mtr, Fra
 
     // create new root page
     Frame *root_frame = nullptr;
-    rc = disk_buffer_pool_->allocate_page(&root_frame);
+    rc = mtr.latch_memo().allocate_page(root_frame);
     if (OB_FAIL(rc)) {
       LOG_WARN("failed to allocate new root page. rc=%d:%s", rc, strrc(rc));
       return rc;
     }
+
+    mtr.latch_memo().xlatch(root_frame);
 
     InternalIndexNodeHandler root_node(mtr, file_header_, root_frame);
     root_node.init_empty();
@@ -1326,11 +1328,8 @@ RC BplusTreeHandler::insert_entry_into_parent(BplusTreeMiniTransaction &mtr, Fra
     // disk_buffer_pool_->unpin_page(frame);
     // disk_buffer_pool_->unpin_page(new_frame);
 
-    root_frame->write_latch();  // 在root页面更新之后，别人就可以访问到了，这时候就要加上锁
     update_root_page_num_locked(mtr, root_frame->page_num());
     root_frame->mark_dirty();
-    root_frame->write_unlatch();
-    disk_buffer_pool_->unpin_page(root_frame);
 
     return RC::SUCCESS;
 
@@ -1498,6 +1497,8 @@ MemPoolItem::item_unique_ptr BplusTreeHandler::make_key(const char *user_key, co
 
 RC BplusTreeHandler::insert_entry(const char *user_key, const RID *rid)
 {
+  scoped_lock operation_guard(operation_lock_);
+
   if (user_key == nullptr || rid == nullptr) {
     LOG_WARN("Invalid arguments, key is empty or rid is empty");
     return RC::INVALID_ARGUMENT;
@@ -1785,6 +1786,8 @@ RC BplusTreeHandler::delete_entry_internal(BplusTreeMiniTransaction &mtr, Frame 
 
 RC BplusTreeHandler::delete_entry(const char *user_key, const RID *rid)
 {
+  scoped_lock operation_guard(operation_lock_);
+
   MemPoolItem::item_unique_ptr pkey = mem_pool_item_->alloc_unique_ptr();
   if (nullptr == pkey) {
     LOG_WARN("Failed to alloc memory for key. size=%d", file_header_.key_length);

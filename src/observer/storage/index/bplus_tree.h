@@ -644,6 +644,7 @@ protected:
   // 在调整根节点时，需要加上这个锁。
   // 这个锁可以使用递归读写锁，但是这里偷懒先不改
   common::SharedMutex root_lock_;
+  mutex               operation_lock_;
 
   KeyComparator key_comparator_;
   KeyPrinter    key_printer_;
