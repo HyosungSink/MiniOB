@@ -16,6 +16,7 @@ See the Mulan PSL v2 for more details. */
 #include "common/lang/string.h"
 #include "common/log/log.h"
 #include "common/sys/rc.h"
+#include "sql/expr/expression_iterator.h"
 #include "sql/parser/expression_binder.h"
 #include "storage/db/db.h"
 #include "storage/table/table.h"
@@ -94,6 +95,24 @@ RC get_table_and_field(Db *db, Table *default_table, unordered_map<string, Table
   return RC::SUCCESS;
 }
 
+static RC reject_aggregate_expression(Expression &expr)
+{
+  if (expr.type() == ExprType::AGGREGATION) {
+    LOG_WARN("aggregate expression is not allowed in filter");
+    return RC::INVALID_ARGUMENT;
+  }
+
+  function<RC(unique_ptr<Expression> &)> check_child = [&](unique_ptr<Expression> &child) -> RC {
+    if (child->type() == ExprType::AGGREGATION) {
+      LOG_WARN("aggregate expression is not allowed in filter");
+      return RC::INVALID_ARGUMENT;
+    }
+    return ExpressionIterator::iterate_child_expr(*child, check_child);
+  };
+
+  return ExpressionIterator::iterate_child_expr(expr, check_child);
+}
+
 RC FilterStmt::create_filter_unit(Db *db, Table *default_table, unordered_map<string, Table *> *tables,
     const ConditionSqlNode &condition, FilterUnit *&filter_unit, BinderContext *binder_context)
 {
@@ -129,6 +148,12 @@ RC FilterStmt::create_filter_unit(Db *db, Table *default_table, unordered_map<st
     filter_unit = nullptr;
     return RC::INVALID_ARGUMENT;
   }
+  rc = reject_aggregate_expression(*left_bound_expressions[0]);
+  if (OB_FAIL(rc)) {
+    delete filter_unit;
+    filter_unit = nullptr;
+    return rc;
+  }
   filter_unit->set_left(std::move(left_bound_expressions[0]));
 
   unique_ptr<Expression> right_expr = condition.right_expr->copy();
@@ -143,6 +168,12 @@ RC FilterStmt::create_filter_unit(Db *db, Table *default_table, unordered_map<st
     delete filter_unit;
     filter_unit = nullptr;
     return RC::INVALID_ARGUMENT;
+  }
+  rc = reject_aggregate_expression(*right_bound_expressions[0]);
+  if (OB_FAIL(rc)) {
+    delete filter_unit;
+    filter_unit = nullptr;
+    return rc;
   }
   filter_unit->set_right(std::move(right_bound_expressions[0]));
 
