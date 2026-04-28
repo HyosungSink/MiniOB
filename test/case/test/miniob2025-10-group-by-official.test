@@ -17,6 +17,8 @@ INSERT INTO aggregation_func VALUES (20, 1, 6.0, 'BOT', '2026-05-06');
 INSERT INTO aggregation_func VALUES (40, 1, 1.0, '4D5F', '2015-06-10');
 INSERT INTO aggregation_func VALUES (40, 1, 6.0, 'U', '2008-01-29');
 
+SELECT min(price) FROM aggregation_func WHERE num < 1;
+
 SELECT count(*,num) FROM aggregation_func;
 
 SELECT id FROM aggregation_func where min(num) > 1;
