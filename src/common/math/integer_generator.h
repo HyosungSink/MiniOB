@@ -14,6 +14,7 @@ See the Mulan PSL v2 for more details. */
 
 #pragma once
 
+#include "common/lang/mutex.h"
 #include "common/lang/random.h"
 
 namespace common {
@@ -27,13 +28,18 @@ public:
   IntegerGenerator(IntegerGenerator &&)                 = delete;
   IntegerGenerator &operator=(const IntegerGenerator &) = delete;
 
-  int next() { return distrib_(rd_); }
+  int next()
+  {
+    lock_guard<mutex> guard(lock_);
+    return distrib_(rd_);
+  }
   int min() const { return distrib_.min(); }
   int max() const { return distrib_.max(); }
 
 private:
   random_device              rd_;
   uniform_int_distribution<> distrib_;
+  mutex                      lock_;
 };
 
 }  // namespace common
