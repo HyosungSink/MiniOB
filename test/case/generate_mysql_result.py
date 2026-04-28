@@ -99,9 +99,10 @@ class MysqlMiniobResultGenerator:
     if isinstance(value, decimal.Decimal):
       return format(value.normalize(), "f").rstrip("0").rstrip(".") or "0"
     if isinstance(value, float):
-      if math.isfinite(value) and value.is_integer():
-        return str(int(value))
-      return str(value)
+      if not math.isfinite(value):
+        return str(value)
+      rounded = decimal.Decimal(str(value)).quantize(decimal.Decimal("0.01"), rounding=decimal.ROUND_HALF_UP)
+      return format(rounded.normalize(), "f").rstrip("0").rstrip(".") or "0"
     if isinstance(value, bytes):
       return value.decode("utf-8", errors="replace")
     return str(value)
