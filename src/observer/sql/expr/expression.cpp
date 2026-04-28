@@ -735,11 +735,11 @@ RC FunctionExpr::eval_arguments(const vector<Value> &arguments, Value &value) co
     case Type::ROUND: {
       float input = arguments[0].get_float();
       if (arguments.size() == 1) {
-        value.set_int(static_cast<int>(std::trunc(input)));
+        value.set_int(static_cast<int>(std::nearbyint(input)));
       } else {
         int   precision = arguments[1].get_int();
         float scale     = std::pow(10.0f, static_cast<float>(precision));
-        value.set_float(std::trunc(input * scale) / scale);
+        value.set_float(std::nearbyint(input * scale) / scale);
       }
     } break;
     case Type::DATE_FORMAT: {
