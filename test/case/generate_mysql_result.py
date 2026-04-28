@@ -112,6 +112,11 @@ def write_line(output: list[str], text: str):
   output.append(text.upper())
 
 
+def normalize_sql_result(lines: list[str]) -> list[str]:
+  text = "\n".join(lines).strip()
+  return text.split("\n") if text else []
+
+
 def render_case(socket_path: str, case_path: Path) -> str:
   output: list[str] = []
   with MysqlMiniobResultGenerator(socket_path, case_path.stem) as runner:
@@ -137,7 +142,7 @@ def render_case(socket_path: str, case_path: Path) -> str:
           runner.switch_connection(arg)
         elif command == "sort":
           write_line(output, arg)
-          for result_line in sorted(runner.run_sql(arg)):
+          for result_line in sorted(normalize_sql_result(runner.run_sql(arg))):
             write_line(output, result_line)
         elif command.startswith("ensure"):
           write_line(output, command_line)
@@ -150,7 +155,7 @@ def render_case(socket_path: str, case_path: Path) -> str:
           re.match(r"analyze\s+table\s+", line, flags=re.IGNORECASE):
         write_line(output, "SUCCESS")
         continue
-      for result_line in runner.run_sql(line):
+      for result_line in normalize_sql_result(runner.run_sql(line)):
         write_line(output, result_line)
 
   return "\n".join(output) + "\n"
