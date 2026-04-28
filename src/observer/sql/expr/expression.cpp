@@ -371,6 +371,11 @@ RC ArithmeticExpr::calc_value(const Value &left_value, const Value &right_value,
 {
   RC rc = RC::SUCCESS;
 
+  if (left_value.is_null() || (right_ && right_value.is_null())) {
+    value.set_null();
+    return rc;
+  }
+
   const AttrType target_type = value_type();
   value.set_type(target_type);
 
@@ -491,10 +496,6 @@ RC ArithmeticExpr::get_value(const Tuple &tuple, Value &value) const
     }
   }
   rc = calc_value(left_value, right_value, value);
-  if (OB_SUCC(rc) && arithmetic_type_ == Type::DIV && right_value.get_float() > -EPSILON &&
-      right_value.get_float() < EPSILON) {
-    value.set_string("NULL");
-  }
   return rc;
 }
 
