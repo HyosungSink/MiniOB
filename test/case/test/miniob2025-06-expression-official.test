@@ -1,0 +1,27 @@
+-- echo official miniob2025-06-expression-official
+# -- 创建空表
+create table empty_table(id int, col1 int);
+insert into empty_table VALUES (4, 6);
+insert into empty_table VALUES (5, 3);
+
+# -- 创建实验表并插入数据
+create table exp_table(id int, col1 int, col2 int, col3 float, col4 float);
+
+create table exp_table2(id int, col1 int);
+
+insert into exp_table VALUES (6, 5, 6, 4.82, 9.4);
+insert into exp_table VALUES (1, 9, 6, 3.21, 9.04);
+insert into exp_table VALUES (7, 9, 6, 5.48, 1.63);
+insert into exp_table VALUES (3, 10, 3, 2.1, 5.6);
+insert into exp_table VALUES (4, 8, 5, 3.5, 7.2);
+insert into exp_table VALUES (5, 12, 4, 6.3, 8.9);
+
+insert into exp_table2 VALUES (101, 3);
+insert into exp_table2 VALUES (102, 7);
+insert into exp_table2 VALUES (103, 9);
+insert into exp_table2 VALUES (104, 5);
+insert into exp_table2 VALUES (105, 12);
+insert into exp_table2 VALUES (106, 8);
+
+# -- 最终查询
+select exp_table.id, 1*exp_table2.col1/(exp_table.col2+5) from exp_table, exp_table2 where 4*exp_table2.col1/(exp_table.col2+6)>1;

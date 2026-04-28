@@ -1,0 +1,7 @@
+-- echo official miniob2025-06-expression-div-official
+CREATE TABLE test_div(id INT);
+INSERT INTO test_div VALUES (1);
+SELECT * FROM test_div WHERE 4/1 = 4;
+SELECT * FROM test_div WHERE 9 = 4/1;
+DROP TABLE test_div;
+# exit;
