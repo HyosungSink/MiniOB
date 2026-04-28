@@ -24,18 +24,20 @@ class Table;
 class UpdateLogicalOperator : public LogicalOperator
 {
 public:
-  UpdateLogicalOperator(Table *table, const FieldMeta *field_meta, const Value &value);
+  UpdateLogicalOperator(Table *table, const vector<const FieldMeta *> &field_metas, const vector<Value> &values);
   ~UpdateLogicalOperator() override = default;
 
   LogicalOperatorType type() const override { return LogicalOperatorType::UPDATE; }
   OpType              get_op_type() const override { return OpType::LOGICALUPDATE; }
 
-  Table           *table() const { return table_; }
-  const FieldMeta *field_meta() const { return field_meta_; }
-  const Value     &value() const { return value_; }
+  Table                         *table() const { return table_; }
+  const vector<const FieldMeta *> &field_metas() const { return field_metas_; }
+  const vector<Value>           &values() const { return values_; }
+  const FieldMeta               *field_meta() const { return field_metas_.empty() ? nullptr : field_metas_.front(); }
+  const Value                   &value() const { return values_.front(); }
 
 private:
-  Table           *table_      = nullptr;
-  const FieldMeta *field_meta_ = nullptr;
-  Value            value_;
+  Table                    *table_ = nullptr;
+  vector<const FieldMeta *> field_metas_;
+  vector<Value>             values_;
 };

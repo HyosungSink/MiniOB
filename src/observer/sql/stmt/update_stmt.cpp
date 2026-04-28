@@ -19,8 +19,9 @@ See the Mulan PSL v2 for more details. */
 #include "storage/db/db.h"
 #include "storage/table/table.h"
 
-UpdateStmt::UpdateStmt(Table *table, const FieldMeta *field_meta, const Value &value, FilterStmt *filter_stmt)
-    : table_(table), field_meta_(field_meta), value_(value), filter_stmt_(filter_stmt)
+UpdateStmt::UpdateStmt(
+    Table *table, const vector<const FieldMeta *> &field_metas, const vector<Value> &values, FilterStmt *filter_stmt)
+    : table_(table), field_metas_(field_metas), values_(values), filter_stmt_(filter_stmt)
 {}
 
 UpdateStmt::~UpdateStmt()
@@ -36,8 +37,9 @@ RC UpdateStmt::create(Db *db, const UpdateSqlNode &update, Stmt *&stmt)
   stmt = nullptr;
 
   const char *table_name = update.relation_name.c_str();
-  if (db == nullptr || common::is_blank(table_name) || common::is_blank(update.attribute_name.c_str())) {
-    LOG_WARN("invalid update statement. db=%p, table=%s, field=%s", db, table_name, update.attribute_name.c_str());
+  if (db == nullptr || common::is_blank(table_name) || update.assignments.empty()) {
+    LOG_WARN("invalid update statement. db=%p, table=%s, assignment_num=%d",
+        db, table_name, static_cast<int>(update.assignments.size()));
     return RC::INVALID_ARGUMENT;
   }
 
@@ -47,22 +49,32 @@ RC UpdateStmt::create(Db *db, const UpdateSqlNode &update, Stmt *&stmt)
     return RC::SCHEMA_TABLE_NOT_EXIST;
   }
 
-  const FieldMeta *field_meta = table->table_meta().field(update.attribute_name.c_str());
-  if (field_meta == nullptr) {
-    LOG_WARN("no such field. table=%s, field=%s", table_name, update.attribute_name.c_str());
-    return RC::SCHEMA_FIELD_NOT_EXIST;
-  }
+  vector<const FieldMeta *> field_metas;
+  vector<Value>             values;
+  field_metas.reserve(update.assignments.size());
+  values.reserve(update.assignments.size());
 
-  Value value;
   RC rc = RC::SUCCESS;
-  if (update.value.attr_type() == field_meta->type()) {
-    value = update.value;
-  } else {
-    rc = Value::cast_to(update.value, field_meta->type(), value);
-    if (OB_FAIL(rc)) {
-      LOG_WARN("failed to cast update value. table=%s, field=%s, rc=%s", table_name, field_meta->name(), strrc(rc));
-      return rc;
+  for (const UpdateAssignmentSqlNode &assignment : update.assignments) {
+    const FieldMeta *field_meta = table->table_meta().field(assignment.attribute_name.c_str());
+    if (field_meta == nullptr) {
+      LOG_WARN("no such field. table=%s, field=%s", table_name, assignment.attribute_name.c_str());
+      return RC::SCHEMA_FIELD_NOT_EXIST;
     }
+
+    Value value;
+    if (assignment.value.attr_type() == field_meta->type()) {
+      value = assignment.value;
+    } else {
+      rc = Value::cast_to(assignment.value, field_meta->type(), value);
+      if (OB_FAIL(rc)) {
+        LOG_WARN("failed to cast update value. table=%s, field=%s, rc=%s", table_name, field_meta->name(), strrc(rc));
+        return rc;
+      }
+    }
+
+    field_metas.push_back(field_meta);
+    values.push_back(value);
   }
 
   unordered_map<string, Table *> table_map;
@@ -76,6 +88,6 @@ RC UpdateStmt::create(Db *db, const UpdateSqlNode &update, Stmt *&stmt)
     return rc;
   }
 
-  stmt = new UpdateStmt(table, field_meta, value, filter_stmt);
+  stmt = new UpdateStmt(table, field_metas, values, filter_stmt);
   return RC::SUCCESS;
 }
