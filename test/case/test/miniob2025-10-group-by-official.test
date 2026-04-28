@@ -77,3 +77,17 @@ create table t_group_by (id int not null, score int not null, name char(1) null)
 insert into t_group_by VALUES (1, 4, 'B'), (1, 5, 'A'),(5, 3, 'C'), (5, 5, 'D'),(9, 3, 'M'), (2, 6, 'E'), (2, 2, 'F');
 
 select id, max(score) from t_group_by group by id having count(*)>1 and max(score)>4;
+
+# -- AVG over FLOAT keeps MiniOB float output precision
+DROP TABLE aggregation_func;
+CREATE TABLE aggregation_func(id int, num int, price float, addr char(4), birthday date);
+INSERT INTO aggregation_func VALUES (1, 1, 8.0, 'A', '2000-01-01');
+INSERT INTO aggregation_func VALUES (2, 1, 8.0, 'A', '2000-01-01');
+INSERT INTO aggregation_func VALUES (3, 1, 8.0, 'A', '2000-01-01');
+INSERT INTO aggregation_func VALUES (4, 1, 8.0, 'A', '2000-01-01');
+INSERT INTO aggregation_func VALUES (5, 1, 8.0, 'A', '2000-01-01');
+INSERT INTO aggregation_func VALUES (6, 1, 8.0, 'A', '2000-01-01');
+INSERT INTO aggregation_func VALUES (7, 1, 8.0, 'A', '2000-01-01');
+INSERT INTO aggregation_func VALUES (8, 1, 8.0, 'A', '2000-01-01');
+INSERT INTO aggregation_func VALUES (9, 1, 13.5, 'A', '2000-01-01');
+SELECT avg(price) FROM aggregation_func WHERE birthday > '1991-02-04';
