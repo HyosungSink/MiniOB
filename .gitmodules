@@ -16,3 +16,7 @@
 [submodule "deps/3rd/cppjieba"]
 	path = deps/3rd/cppjieba
 	url = https://github.com/yanyiwu/cppjieba
+[submodule "mysql-server"]
+	path = mysql-server
+	url = git@github.com:HuXin0817/mysql-server.git
+	ignore = untracked

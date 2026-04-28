@@ -1,5 +1,4 @@
 deps/3rd/*
-mysql-server/
 .vscode
 !.vscode/tasks.json
 !.vscode/launch.json
