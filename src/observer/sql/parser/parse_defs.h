@@ -54,6 +54,12 @@ enum CompOp
   NO_OP
 };
 
+enum class ConditionConjunction
+{
+  AND,
+  OR
+};
+
 /**
  * @brief 表示一个条件比较
  * @ingroup SQLParser
@@ -64,6 +70,7 @@ enum CompOp
  */
 struct ConditionSqlNode
 {
+  ConditionConjunction conjunction = ConditionConjunction::AND;  ///< conjunction with previous condition
   int left_is_attr;              ///< TRUE if left-hand side is an attribute
                                  ///< 1时，操作符左边是属性名，0时，是属性值
   Value          left_value;     ///< left-hand side value if left_is_attr = FALSE

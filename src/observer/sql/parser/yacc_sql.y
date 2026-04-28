@@ -98,6 +98,7 @@ UnboundAggregateExpr *create_aggregate_expression(const char *aggregate_name,
         FROM
         WHERE
         AND
+        OR
         SET
         ON
         LOAD
@@ -622,19 +623,22 @@ where:
     }
     ;
 condition_list:
-    /* empty */
-    {
-      $$ = nullptr;
-    }
-    | condition {
+    condition {
       $$ = new vector<ConditionSqlNode>;
       $$->emplace_back(*$1);
       delete $1;
     }
-    | condition AND condition_list {
-      $$ = $3;
-      $$->emplace_back(*$1);
-      delete $1;
+    | condition_list AND condition {
+      $$ = $1;
+      $3->conjunction = ConditionConjunction::AND;
+      $$->emplace_back(*$3);
+      delete $3;
+    }
+    | condition_list OR condition {
+      $$ = $1;
+      $3->conjunction = ConditionConjunction::OR;
+      $$->emplace_back(*$3);
+      delete $3;
     }
     ;
 condition:
