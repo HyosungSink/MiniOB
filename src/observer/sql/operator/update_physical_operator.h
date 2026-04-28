@@ -26,7 +26,7 @@ class Trx;
 class UpdatePhysicalOperator : public PhysicalOperator
 {
 public:
-  UpdatePhysicalOperator(Table *table, const FieldMeta *field_meta, const Value &value);
+  UpdatePhysicalOperator(Table *table, const vector<const FieldMeta *> &field_metas, const vector<Value> &values);
   ~UpdatePhysicalOperator() override = default;
 
   PhysicalOperatorType type() const override { return PhysicalOperatorType::UPDATE; }
@@ -42,8 +42,8 @@ private:
   RC make_updated_record(const Record &old_record, Record &new_record) const;
 
 private:
-  Table           *table_      = nullptr;
-  const FieldMeta *field_meta_ = nullptr;
-  Value            value_;
-  vector<Record>   records_;
+  Table                    *table_ = nullptr;
+  vector<const FieldMeta *> field_metas_;
+  vector<Value>             values_;
+  vector<Record>            records_;
 };

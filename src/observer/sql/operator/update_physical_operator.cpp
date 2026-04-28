@@ -15,8 +15,9 @@ See the Mulan PSL v2 for more details. */
 #include "storage/table/table.h"
 #include "storage/trx/trx.h"
 
-UpdatePhysicalOperator::UpdatePhysicalOperator(Table *table, const FieldMeta *field_meta, const Value &value)
-    : table_(table), field_meta_(field_meta), value_(value)
+UpdatePhysicalOperator::UpdatePhysicalOperator(
+    Table *table, const vector<const FieldMeta *> &field_metas, const vector<Value> &values)
+    : table_(table), field_metas_(field_metas), values_(values)
 {}
 
 RC UpdatePhysicalOperator::open(Trx *trx)
@@ -110,18 +111,28 @@ RC UpdatePhysicalOperator::make_updated_record(const Record &old_record, Record 
   }
   new_record.set_rid(old_record.rid());
 
-  rc = new_record.reset_filed(field_meta_->offset(), field_meta_->len());
-  if (OB_FAIL(rc)) {
-    return rc;
+  for (size_t i = 0; i < field_metas_.size(); i++) {
+    const FieldMeta *field_meta = field_metas_[i];
+    const Value     &value      = values_[i];
+
+    rc = new_record.reset_filed(field_meta->offset(), field_meta->len());
+    if (OB_FAIL(rc)) {
+      return rc;
+    }
+
+    int copy_len = value.length();
+    if (field_meta->type() == AttrType::CHARS) {
+      copy_len = min(field_meta->len(), value.length() + 1);
+    }
+    copy_len = min(copy_len, field_meta->len());
+
+    rc = new_record.set_field(field_meta->offset(), copy_len, value.data());
+    if (OB_FAIL(rc)) {
+      return rc;
+    }
   }
 
-  int copy_len = value_.length();
-  if (field_meta_->type() == AttrType::CHARS) {
-    copy_len = min(field_meta_->len(), value_.length() + 1);
-  }
-  copy_len = min(copy_len, field_meta_->len());
-
-  return new_record.set_field(field_meta_->offset(), copy_len, value_.data());
+  return RC::SUCCESS;
 }
 
 RC UpdatePhysicalOperator::next()
