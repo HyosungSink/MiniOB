@@ -57,6 +57,11 @@ public:
   Value &operator=(Value &&other);
 
   void reset();
+  void set_null();
+  bool is_null() const { return attr_type_ == AttrType::UNDEFINED; }
+
+  static void set_null_data(char *data, int length, AttrType type);
+  static bool is_null_data(const char *data, int length, AttrType type);
 
   static RC add(const Value &left, const Value &right, Value &result)
   {

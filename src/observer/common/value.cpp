@@ -20,6 +20,10 @@ See the Mulan PSL v2 for more details. */
 #include "common/lang/string.h"
 #include "common/log/log.h"
 
+#include <algorithm>
+#include <cmath>
+#include <limits>
+
 Value::Value(int val) { set_int(val); }
 
 Value::Value(float val) { set_float(val); }
@@ -108,6 +112,64 @@ void Value::reset()
   attr_type_ = AttrType::UNDEFINED;
   length_    = 0;
   own_data_  = false;
+}
+
+void Value::set_null()
+{
+  reset();
+  attr_type_ = AttrType::UNDEFINED;
+}
+
+void Value::set_null_data(char *data, int length, AttrType type)
+{
+  switch (type) {
+    case AttrType::CHARS:
+    case AttrType::VECTORS: {
+      memset(data, 0xff, length);
+    } break;
+    case AttrType::FLOATS: {
+      float value = std::numeric_limits<float>::quiet_NaN();
+      memcpy(data, &value, sizeof(value));
+    } break;
+    case AttrType::DATES: {
+      int value = 0;
+      memcpy(data, &value, sizeof(value));
+    } break;
+    default: {
+      int value = std::numeric_limits<int>::min();
+      memcpy(data, &value, std::min<int>(length, sizeof(value)));
+    } break;
+  }
+}
+
+bool Value::is_null_data(const char *data, int length, AttrType type)
+{
+  switch (type) {
+    case AttrType::CHARS:
+    case AttrType::VECTORS: {
+      for (int i = 0; i < length; i++) {
+        if (static_cast<unsigned char>(data[i]) != 0xff) {
+          return false;
+        }
+      }
+      return true;
+    }
+    case AttrType::FLOATS: {
+      float value = 0;
+      memcpy(&value, data, sizeof(value));
+      return std::isnan(value);
+    }
+    case AttrType::DATES: {
+      int value = 0;
+      memcpy(&value, data, sizeof(value));
+      return value == 0;
+    }
+    default: {
+      int value = 0;
+      memcpy(&value, data, std::min<int>(length, sizeof(value)));
+      return value == std::numeric_limits<int>::min();
+    }
+  }
 }
 
 void Value::set_data(char *data, int length)
@@ -261,6 +323,10 @@ char *Value::data() const
 
 string Value::to_string() const
 {
+  if (is_null()) {
+    return "NULL";
+  }
+
   string res;
   RC     rc = DataType::type_instance(this->attr_type_)->to_string(*this, res);
   if (OB_FAIL(rc)) {

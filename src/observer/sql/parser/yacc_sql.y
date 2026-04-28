@@ -117,6 +117,7 @@ UnboundAggregateExpr *create_aggregate_expression(const char *aggregate_name,
         FIELDS
         TERMINATED
         ENCLOSED
+        NULL_T
         EQ
         LT
         GT
@@ -466,6 +467,10 @@ value:
       char *tmp = common::substr($1,1,strlen($1)-2);
       $$ = new Value(tmp);
       free(tmp);
+    }
+    | NULL_T {
+      $$ = new Value();
+      $$->set_null();
     }
     ;
 storage_format:
