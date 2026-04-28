@@ -151,6 +151,21 @@ RC LogicalPlanGenerator::create_plan(SelectStmt *select_stmt, unique_ptr<Logical
     last_oper = &group_by_oper;
   }
 
+  unique_ptr<LogicalOperator> having_oper;
+  rc = create_plan(select_stmt->having_filter_stmt(), having_oper);
+  if (OB_FAIL(rc)) {
+    LOG_WARN("failed to create having logical plan. rc=%s", strrc(rc));
+    return rc;
+  }
+
+  if (having_oper) {
+    if (*last_oper) {
+      having_oper->add_child(std::move(*last_oper));
+    }
+
+    last_oper = &having_oper;
+  }
+
   unique_ptr<LogicalOperator> project_oper = make_unique<ProjectLogicalOperator>(std::move(select_stmt->query_expressions()));
   if (*last_oper) {
     project_oper->add_child(std::move(*last_oper));
@@ -346,6 +361,27 @@ RC LogicalPlanGenerator::create_group_by_plan(SelectStmt *select_stmt, unique_pt
   vector<unique_ptr<Expression>> &group_by_expressions = select_stmt->group_by();
   vector<Expression *> aggregate_expressions;
   vector<unique_ptr<Expression>> &query_expressions = select_stmt->query_expressions();
+
+  auto visit_having_expressions = [&](function<RC(unique_ptr<Expression>&)> &visitor) -> RC {
+    FilterStmt *having_stmt = select_stmt->having_filter_stmt();
+    if (having_stmt == nullptr) {
+      return RC::SUCCESS;
+    }
+
+    for (FilterUnit *filter_unit : having_stmt->filter_units()) {
+      RC rc = visitor(filter_unit->left().expression);
+      if (OB_FAIL(rc)) {
+        return rc;
+      }
+
+      rc = visitor(filter_unit->right().expression);
+      if (OB_FAIL(rc)) {
+        return rc;
+      }
+    }
+    return RC::SUCCESS;
+  };
+
   function<RC(unique_ptr<Expression>&)> collector = [&](unique_ptr<Expression> &expr) -> RC {
     RC rc = RC::SUCCESS;
     if (expr->type() == ExprType::AGGREGATION) {
@@ -391,14 +427,26 @@ RC LogicalPlanGenerator::create_group_by_plan(SelectStmt *select_stmt, unique_pt
   for (unique_ptr<Expression> &expression : query_expressions) {
     bind_group_by_expr(expression);
   }
+  RC rc = visit_having_expressions(bind_group_by_expr);
+  if (OB_FAIL(rc)) {
+    return rc;
+  }
 
   for (unique_ptr<Expression> &expression : query_expressions) {
     find_unbound_column(expression);
+  }
+  rc = visit_having_expressions(find_unbound_column);
+  if (OB_FAIL(rc)) {
+    return rc;
   }
 
   // collect all aggregate expressions
   for (unique_ptr<Expression> &expression : query_expressions) {
     collector(expression);
+  }
+  rc = visit_having_expressions(collector);
+  if (OB_FAIL(rc)) {
+    return rc;
   }
 
   if (group_by_expressions.empty() && aggregate_expressions.empty()) {
