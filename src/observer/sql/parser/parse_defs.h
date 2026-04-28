@@ -134,6 +134,7 @@ struct InsertSqlNode
 {
   string        relation_name;  ///< Relation to insert into
   vector<Value> values;         ///< 要插入的值
+  vector<vector<Value>> value_rows; ///< rows to insert
 };
 
 /**
