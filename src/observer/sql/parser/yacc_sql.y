@@ -110,6 +110,7 @@ UnboundAggregateExpr *create_aggregate_expression(const char *aggregate_name,
         PRIMARY
         KEY
         ANALYZE
+        AS
         FIELDS
         TERMINATED
         ENCLOSED
@@ -134,7 +135,8 @@ UnboundAggregateExpr *create_aggregate_expression(const char *aggregate_name,
   vector<Value> *                            value_list;
   vector<ConditionSqlNode> *                 condition_list;
   vector<RelAttrSqlNode> *                   rel_attr_list;
-  vector<string> *                           relation_list;
+  RelationSqlNode *                          relation;
+  vector<RelationSqlNode> *                  relation_list;
   vector<string> *                           key_list;
   char *                                     cstring;
   int                                        number;
@@ -150,6 +152,7 @@ UnboundAggregateExpr *create_aggregate_expression(const char *aggregate_name,
 %destructor { delete $$; } <value_list>
 %destructor { delete $$; } <condition_list>
 // %destructor { delete $$; } <rel_attr_list>
+%destructor { delete $$; } <relation>
 %destructor { delete $$; } <relation_list>
 %destructor { delete $$; } <key_list>
 
@@ -164,7 +167,8 @@ UnboundAggregateExpr *create_aggregate_expression(const char *aggregate_name,
 %type <condition>           condition
 %type <value>               value
 %type <number>              number
-%type <cstring>             relation
+%type <relation>            relation
+%type <cstring>             opt_alias
 %type <comp>                comp_op
 %type <rel_attr>            rel_attr
 %type <attr_infos>          attr_def_list
@@ -593,23 +597,43 @@ rel_attr:
     ;
 
 relation:
-    ID {
+    ID opt_alias {
+      $$ = new RelationSqlNode;
+      $$->relation_name = $1;
+      if ($2 != nullptr) {
+        $$->alias = $2;
+      }
+    }
+    ;
+opt_alias:
+    /* empty */
+    {
+      $$ = nullptr;
+    }
+    | AS ID
+    {
+      $$ = $2;
+    }
+    | ID
+    {
       $$ = $1;
     }
     ;
 rel_list:
     relation {
-      $$ = new vector<string>();
-      $$->push_back($1);
+      $$ = new vector<RelationSqlNode>();
+      $$->push_back(*$1);
+      delete $1;
     }
     | relation COMMA rel_list {
       if ($3 != nullptr) {
         $$ = $3;
       } else {
-        $$ = new vector<string>;
+        $$ = new vector<RelationSqlNode>;
       }
 
-      $$->insert($$->begin(), $1);
+      $$->insert($$->begin(), *$1);
+      delete $1;
     }
     ;
 

@@ -39,6 +39,12 @@ struct RelAttrSqlNode
   string attribute_name;  ///< attribute name              属性名
 };
 
+struct RelationSqlNode
+{
+  string relation_name;
+  string alias;
+};
+
 /**
  * @brief 描述比较运算符
  * @ingroup SQLParser
@@ -96,7 +102,7 @@ struct ConditionSqlNode
 struct SelectSqlNode
 {
   vector<unique_ptr<Expression>> expressions;  ///< 查询的表达式
-  vector<string>                 relations;    ///< 查询的表
+  vector<RelationSqlNode>        relations;    ///< 查询的表
   vector<ConditionSqlNode>       conditions;   ///< 查询条件，使用AND串联起来多个条件
   vector<unique_ptr<Expression>> group_by;     ///< group by clause
 };
