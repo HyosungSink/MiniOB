@@ -1,0 +1,82 @@
+-- echo official miniob2025-13-null-official
+# -- INITIALIZATION
+CREATE TABLE null_table(id int not null, num int null, price float not null, birthday date null);
+CREATE TABLE null_table2(id int not null, num int null, price float not null, birthday date null);
+CREATE INDEX index_num on null_table(num);
+
+INSERT INTO null_table VALUES (1, 5, 34.78, '2008-08-28');
+INSERT INTO null_table VALUES (4, 7, 13.01, '2022-08-13');
+INSERT INTO null_table VALUES (4, 7, 39.50, '2014-07-01');
+INSERT INTO null_table VALUES (5, 15, 40.00, NULL);
+INSERT INTO null_table VALUES (7, 1, 14.72, '2007-03-18');
+INSERT INTO null_table VALUES (7, 1, 23.96, '2022-08-25');
+INSERT INTO null_table VALUES (7, 6, 17.09, '2019-07-18');
+INSERT INTO null_table VALUES (7, 7, 11.04, '2013-05-11');
+INSERT INTO null_table VALUES (7, NULL, 24.41, '2012-05-21');
+INSERT INTO null_table VALUES (7, 2, 24.41, '2020-11-27');
+INSERT INTO null_table VALUES (8, 6, 47.90, '2008-02-17');
+INSERT INTO null_table VALUES (9, null, 33.18, '2009-08-13');
+
+SELECT * FROM null_table;
+# '''
+# correct output:
+# 1 |    5 | 34.78 | 2008-08-28
+# 4 |    7 | 13.01 | 2022-08-13
+# 4 |    7 |  39.5 | 2014-07-01
+# 5 |   15 |    40 | NULL
+# 7 |    1 | 14.72 | 2007-03-18
+# 7 |    1 | 23.96 | 2022-08-25
+# 7 |    6 | 17.09 | 2019-07-18
+# 7 |    7 | 11.04 | 2013-05-11
+# 7 | NULL | 24.41 | 2012-05-21
+# 7 |    2 | 24.41 | 2020-11-27
+# 8 |    6 |  47.9 | 2008-02-17
+# 9 | NULL | 33.18 | 2009-08-13
+# '''
+
+# -- unique index
+CREATE TABLE null_table5(id int null, num int not null);
+CREATE UNIQUE INDEX index_id on null_table5(id);
+
+INSERT INTO null_table5 VALUES(1,1);
+# '''
+# correct output:
+# success
+# '''
+INSERT INTO null_table5 VALUES(1,1);
+# '''
+# correct output:
+# failure
+# '''
+INSERT INTO null_table5 VALUES(null,1);
+# '''
+# correct output:
+# success
+# '''
+INSERT INTO null_table5 VALUES(1,null);
+# '''
+# correct output:
+# failure
+# '''
+
+# -- null in join
+CREATE TABLE null_table6(id1 int null, id2 int null, num int not null);
+
+CREATE UNIQUE INDEX index_id on null_table6(id1,id2);
+
+INSERT INTO null_table6 VALUES(1,null,1);
+INSERT INTO null_table6 VALUES(2,null,2);
+INSERT INTO null_table6 VALUES(null,null,1);
+INSERT INTO null_table6 VALUES(null,null,2);
+
+# -- null in join
+UPDATE null_table6 set id1=2 where id1 IS NULL and id2 is NULL;
+
+SELECT * FROM null_table6;
+# '''
+# correct output:
+# 1 | NULL | 1
+# 2 | NULL | 2
+# 2 | NULL | 1
+# 2 | NULL | 2
+# '''

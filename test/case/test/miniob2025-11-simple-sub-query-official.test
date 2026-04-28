@@ -1,0 +1,175 @@
+-- echo official miniob2025-11-simple-sub-query-official
+# -- 功能 1：IN（不涉及类型转换）
+DROP TABLE ssq1_in_main;
+DROP TABLE ssq1_in_sub;
+
+CREATE TABLE ssq1_in_main (id INT, col1 INT, feat1 FLOAT);
+CREATE TABLE ssq1_in_sub (id INT);
+
+INSERT INTO ssq1_in_main VALUES (21, 92, 58.18),(60, 30, 88.18),(78, 23, 96.35),(92, 25, 81.57),(10, 11, 10.00);
+INSERT INTO ssq1_in_sub VALUES (21),(60),(92);
+
+SELECT id, col1, feat1 FROM ssq1_in_main WHERE id IN (SELECT id FROM ssq1_in_sub) ORDER BY id;
+
+# '''
+# 正确输出：
+# 21 | 92 | 58.18
+# 60 | 30 | 88.18
+# 92 | 25 | 81.57
+# '''
+
+SELECT * FROM ssq1_in_main WHERE id in (21,21,60);
+
+# '''
+# 正确输出：
+# 21 | 92 | 58.18
+# 60 | 30 | 88.18
+# '''
+
+# -- 功能 2：NOT IN + NULL 语义（有 NULL → 结果为空）
+DROP TABLE ssq1_notin_main;
+DROP TABLE ssq1_notin_sub;
+
+CREATE TABLE ssq1_notin_main (id INT);
+CREATE TABLE ssq1_notin_sub (id INT);
+
+INSERT INTO ssq1_notin_main VALUES (1),(2),(3);
+INSERT INTO ssq1_notin_sub VALUES (NULL),(2);
+
+# -- 期望：NOT IN 子查询含 NULL → 谓词 UNKNOWN → 返回空集
+SELECT id FROM ssq1_notin_main WHERE id NOT IN (SELECT id FROM ssq1_notin_sub) ORDER BY id;
+
+# -- 正确输出：
+# -- <空集>
+
+# -- 正确写法（演示）：显式过滤掉 NULL 才有结果
+SELECT id FROM ssq1_notin_main WHERE id NOT IN (SELECT id FROM ssq1_notin_sub WHERE id IS NOT NULL) ORDER BY id;
+
+# -- 正确输出：
+# -- 1
+# -- 3
+
+# -- 功能 3：与子查询结果做比较（标量子查询：聚合返回单值）
+DROP TABLE ssq1_cmp_main;
+DROP TABLE ssq1_cmp_sub;
+
+CREATE TABLE ssq1_cmp_main (id INT, feat1 FLOAT);
+CREATE TABLE ssq1_cmp_sub (val FLOAT);
+
+INSERT INTO ssq1_cmp_main VALUES (1, 1.5),(2, 3.9),(3, 4.1),(4, 9.0);
+INSERT INTO ssq1_cmp_sub VALUES (1.0),(2.0),(3.0),(9.0),(5.0);
+
+# -- 子查询：AVG(val) = (1+2+3+9+5)/5 = 4.0
+# -- 期望：返回 feat1 > 4.0 的行
+SELECT id, feat1 FROM ssq1_cmp_main WHERE feat1 > (SELECT AVG(val) FROM ssq1_cmp_sub) ORDER BY feat1, id;
+
+# '''
+# -- 正确输出：
+# 3 | 4.1
+# 4 | 9.0
+# '''
+
+# -- 功能 4：多行子查询的比较（ANY / ALL）
+DROP TABLE ssq1_anyall_main;
+DROP TABLE ssq1_anyall_sub;
+
+CREATE TABLE ssq1_anyall_main (id INT, feat1 FLOAT);
+CREATE TABLE ssq1_anyall_sub (val FLOAT, grp CHAR(1));
+
+INSERT INTO ssq1_anyall_main VALUES (1, 2.5),(2, 3.0),(3, 3.1),(4, 8.9),(5, 9.0);
+INSERT INTO ssq1_anyall_sub VALUES (3.0, 'B'),(9.0, 'B');
+
+# -- > ANY({3.0, 9.0}) 等价于 (>3.0 OR >9.0) → 实际就是 >3.0
+# -- 期望：id ∈ {3,4,5}
+SELECT id, feat1 FROM ssq1_anyall_main WHERE feat1 > ANY (SELECT val FROM ssq1_anyall_sub WHERE grp='B') ORDER BY id;
+
+# -- 正确输出：
+# -- 3 | 3.1
+# -- 4 | 8.9
+# -- 5 | 9.0
+
+# -- < ALL({3.0, 9.0}) 等价于 (<3.0 AND <9.0) → 实际就是 <3.0
+# -- 期望：id = 1
+SELECT id, feat1 FROM ssq1_anyall_main WHERE feat1 < ALL (SELECT val FROM ssq1_anyall_sub WHERE grp='B') ORDER BY id;
+
+# -- 正确输出：
+# -- 1 | 2.5
+
+
+# -- 功能 5：子查询中带聚合（多行转单值 / 多行派生后再 IN）
+DROP TABLE ssq1_aggr_main;
+DROP TABLE ssq1_aggr_sub;
+
+CREATE TABLE ssq1_aggr_main (id INT, x FLOAT);
+CREATE TABLE ssq1_aggr_sub (id INT, grp CHAR(1), val FLOAT);
+
+INSERT INTO ssq1_aggr_main VALUES (3, 1.0),(5, 2.0),(7, 3.0);
+INSERT INTO ssq1_aggr_sub VALUES(1, 'A', 1.0),(2, 'A', 2.0),(3, 'B', 3.0),(4, 'B', 9.0),(5, 'C', 5.0);
+
+# -- 取各组的 MAX(val)，保留 MAX(val) >= 5.0 的组（B=9, C=5）
+# -- 用每组的最小 id 作为代表，得到 {3,5}，再与主表 IN 匹配
+# -- 期望：返回 (3,1.0) 与 (5,2.0)
+SELECT m.id, m.x FROM ssq1_aggr_main AS m WHERE m.id IN (SELECT id FROM (SELECT MIN(id) AS id, grp, MAX(val) AS mv FROM ssq1_aggr_sub GROUP BY grp HAVING MAX(val) >= 5.0) t) ORDER BY m.id;
+
+# -- 正确输出：
+# -- 3 | 1.0
+# -- 5 | 2.0
+
+
+# -- 功能 6：不同类型值比较（INT vs FLOAT）
+DROP TABLE ssq1_typemain_num;
+DROP TABLE ssq1_typesub_num;
+
+CREATE TABLE ssq1_typemain_num (id INT, f FLOAT);
+CREATE TABLE ssq1_typesub_num (g FLOAT);
+
+INSERT INTO ssq1_typemain_num VALUES (1, 4.0),(2, 4.1),(3, 9.73);
+INSERT INTO ssq1_typesub_num VALUES (4.9),(6.5),(9.73);
+
+# -- 比较：f >= (SELECT MAX(g) FROM ssq1_typesub_num WHERE g >= 6)
+# -- MAX(g) = 9.73 → 期望返回 (3,9.73)
+SELECT id, f FROM ssq1_typemain_num WHERE f >= (SELECT MAX(g) FROM ssq1_typesub_num WHERE g >= 6) ORDER BY id;
+
+# -- 正确输出：
+# -- 3 | 9.73
+
+
+# -- 功能 7：不同类型值比较（DATE / CHAR 日期字面量，不做关联）
+DROP TABLE ssq1_type_date_main;
+DROP TABLE ssq1_type_date_sub;
+
+CREATE TABLE ssq1_type_date_main (id INT, tag CHAR(8));
+CREATE TABLE ssq1_type_date_sub (id INT, d_str CHAR(10));
+
+INSERT INTO ssq1_type_date_main VALUES (1, 'alpha'),(2, 'beta'),(3, 'gamma');
+INSERT INTO ssq1_type_date_sub VALUES (1, '2024-01-01'),(2, '2020-03-26'),(99, '2030-01-01');
+
+# -- 以日期字符串阈值筛选子查询（无关联），作为 IN 集合
+# -- 期望：IN 集合返回 id∈{1,2}，与主表相交 → 返回 id=1,2
+SELECT id, tag FROM ssq1_type_date_main WHERE id IN (SELECT id FROM ssq1_type_date_sub WHERE d_str <= '2024-12-31') ORDER BY id;
+
+# '''
+# -- 正确输出：
+# 1 | alpha
+# 2 | beta
+# '''
+
+# -- 功能 8
+# -- 干净重建
+
+DROP TABLE ssq_2;
+DROP TABLE ssq_3;
+
+CREATE TABLE ssq_2(id INT, col2 INT, feat2 FLOAT);
+CREATE TABLE ssq_3(id INT, col3 INT, feat3 FLOAT);
+
+INSERT INTO ssq_2 VALUES (82, 9, 96.58),(89, 54, 94.89),(95, 64, 72.75);
+
+INSERT INTO ssq_3 VALUES (1, 0, 72.00),(2, 0, 90.00);
+
+SELECT * FROM ssq_2 WHERE (SELECT MIN(ssq_3.feat3) FROM ssq_3) <= feat2 ORDER BY id;
+
+# -- 期望输出：
+# -- 82 | 9  | 96.58
+# -- 89 | 54 | 94.89
+# -- 95 | 64 | 72.75
