@@ -9,6 +9,7 @@ MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
 See the Mulan PSL v2 for more details. */
 
 #include "common/lang/comparator.h"
+#include "common/lang/sstream.h"
 #include "common/log/log.h"
 #include "common/type/char_type.h"
 #include "common/type/date_type.h"
@@ -31,11 +32,29 @@ RC CharType::cast_to(const Value &val, AttrType type, Value &result) const
 {
   switch (type) {
     case AttrType::INTS: {
-      result.set_int(val.get_int());
+      stringstream deserialize_stream;
+      deserialize_stream.clear();
+      deserialize_stream.str(val.get_string());
+
+      int int_value = 0;
+      deserialize_stream >> int_value;
+      if (!deserialize_stream || !deserialize_stream.eof()) {
+        return RC::SCHEMA_FIELD_TYPE_MISMATCH;
+      }
+      result.set_int(int_value);
       return RC::SUCCESS;
     }
     case AttrType::FLOATS: {
-      result.set_float(val.get_float());
+      stringstream deserialize_stream;
+      deserialize_stream.clear();
+      deserialize_stream.str(val.get_string());
+
+      float float_value = 0;
+      deserialize_stream >> float_value;
+      if (!deserialize_stream || !deserialize_stream.eof()) {
+        return RC::SCHEMA_FIELD_TYPE_MISMATCH;
+      }
+      result.set_float(float_value);
       return RC::SUCCESS;
     }
     case AttrType::DATES: {

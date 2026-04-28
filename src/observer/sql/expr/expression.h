@@ -263,10 +263,10 @@ private:
 class CastExpr : public Expression
 {
 public:
-  CastExpr(unique_ptr<Expression> child, AttrType cast_type);
+  CastExpr(unique_ptr<Expression> child, AttrType cast_type, bool loose_numeric = false);
   virtual ~CastExpr();
 
-  unique_ptr<Expression> copy() const override { return make_unique<CastExpr>(child_->copy(), cast_type_); }
+  unique_ptr<Expression> copy() const override { return make_unique<CastExpr>(child_->copy(), cast_type_, loose_numeric_); }
 
   ExprType type() const override { return ExprType::CAST; }
 
@@ -285,6 +285,7 @@ private:
 private:
   unique_ptr<Expression> child_;      ///< 从这个表达式转换
   AttrType               cast_type_;  ///< 想要转换成这个类型
+  bool                   loose_numeric_ = false;
 };
 
 /**

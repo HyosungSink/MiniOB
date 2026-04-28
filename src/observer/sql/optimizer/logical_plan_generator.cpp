@@ -184,7 +184,10 @@ RC LogicalPlanGenerator::create_plan(FilterStmt *filter_stmt, unique_ptr<Logical
       auto right_to_left_cost = implicit_cast_cost(right->value_type(), left->value_type());
       if (left_to_right_cost <= right_to_left_cost && left_to_right_cost != INT32_MAX) {
         ExprType left_type = left->type();
-        auto cast_expr = make_unique<CastExpr>(std::move(left), right->value_type());
+        AttrType from_type = left->value_type();
+        AttrType to_type   = right->value_type();
+        auto cast_expr = make_unique<CastExpr>(
+            std::move(left), to_type, from_type == AttrType::CHARS && is_numerical_type(to_type));
         if (left_type == ExprType::VALUE) {
           Value left_val;
           if (OB_FAIL(rc = cast_expr->try_get_value(left_val)))
@@ -198,7 +201,10 @@ RC LogicalPlanGenerator::create_plan(FilterStmt *filter_stmt, unique_ptr<Logical
         }
       } else if (right_to_left_cost < left_to_right_cost && right_to_left_cost != INT32_MAX) {
         ExprType right_type = right->type();
-        auto cast_expr = make_unique<CastExpr>(std::move(right), left->value_type());
+        AttrType from_type = right->value_type();
+        AttrType to_type   = left->value_type();
+        auto cast_expr = make_unique<CastExpr>(
+            std::move(right), to_type, from_type == AttrType::CHARS && is_numerical_type(to_type));
         if (right_type == ExprType::VALUE) {
           Value right_val;
           if (OB_FAIL(rc = cast_expr->try_get_value(right_val)))

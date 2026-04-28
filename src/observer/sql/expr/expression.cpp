@@ -72,7 +72,8 @@ RC ValueExpr::get_column(Chunk &chunk, Column &column)
 }
 
 /////////////////////////////////////////////////////////////////////////////////
-CastExpr::CastExpr(unique_ptr<Expression> child, AttrType cast_type) : child_(std::move(child)), cast_type_(cast_type)
+CastExpr::CastExpr(unique_ptr<Expression> child, AttrType cast_type, bool loose_numeric)
+    : child_(std::move(child)), cast_type_(cast_type), loose_numeric_(loose_numeric)
 {}
 
 CastExpr::~CastExpr() {}
@@ -83,6 +84,16 @@ RC CastExpr::cast(const Value &value, Value &cast_value) const
   if (this->value_type() == value.attr_type()) {
     cast_value = value;
     return rc;
+  }
+  if (loose_numeric_ && value.attr_type() == AttrType::CHARS) {
+    if (cast_type_ == AttrType::INTS) {
+      cast_value.set_int(value.get_int());
+      return rc;
+    }
+    if (cast_type_ == AttrType::FLOATS) {
+      cast_value.set_float(value.get_float());
+      return rc;
+    }
   }
   rc = Value::cast_to(value, cast_type_, cast_value);
   return rc;
