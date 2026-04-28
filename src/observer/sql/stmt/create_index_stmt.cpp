@@ -47,6 +47,7 @@ RC CreateIndexStmt::create(Db *db, const CreateIndexSqlNode &create_index, Stmt 
   }
 
   const FieldMeta *field_meta = nullptr;
+  vector<const FieldMeta *> field_metas;
   for (const string &attribute_name : attribute_names) {
     const FieldMeta *current_field_meta = table->table_meta().field(attribute_name.c_str());
     if (nullptr == current_field_meta) {
@@ -57,6 +58,7 @@ RC CreateIndexStmt::create(Db *db, const CreateIndexSqlNode &create_index, Stmt 
     if (field_meta == nullptr) {
       field_meta = current_field_meta;
     }
+    field_metas.push_back(current_field_meta);
   }
 
   if (nullptr == field_meta) {
@@ -69,6 +71,6 @@ RC CreateIndexStmt::create(Db *db, const CreateIndexSqlNode &create_index, Stmt 
     return RC::SCHEMA_INDEX_NAME_REPEAT;
   }
 
-  stmt = new CreateIndexStmt(table, field_meta, create_index.index_name, create_index.unique);
+  stmt = new CreateIndexStmt(table, field_meta, std::move(field_metas), create_index.index_name, create_index.unique);
   return RC::SUCCESS;
 }
