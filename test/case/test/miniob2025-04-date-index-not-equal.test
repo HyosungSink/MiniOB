@@ -1,0 +1,11 @@
+-- echo miniob2025 04 date indexed not equal regression
+create table date_table(id int, u_date date);
+create index index_id on date_table(u_date);
+insert into date_table values (1, '2020-01-21');
+insert into date_table values (2, '2020-10-21');
+insert into date_table values (3, '2020-1-01');
+insert into date_table values (6, '2016-02-29');
+insert into date_table values (7, '1970-01-01');
+insert into date_table values (10, '1950-02-02');
+insert into date_table values (11, '2000-01-01');
+-- sort select * from date_table where u_date<>'2000-01-01' and u_date < '2019-12-21';
