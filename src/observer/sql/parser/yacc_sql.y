@@ -821,6 +821,14 @@ relation:
         $$->alias = $2;
       }
     }
+    | LBRACE select_stmt RBRACE opt_alias {
+      $$ = new RelationSqlNode;
+      $$->relation_name = token_name(sql_string, &@$);
+      if ($4 != nullptr) {
+        $$->alias = $4;
+      }
+      delete $2;
+    }
     ;
 opt_alias:
     /* empty */

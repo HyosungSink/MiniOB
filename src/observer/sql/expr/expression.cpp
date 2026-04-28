@@ -28,6 +28,8 @@ See the Mulan PSL v2 for more details. */
 
 #include <cmath>
 #include <cstdio>
+#include <cctype>
+#include <cstring>
 #include <strings.h>
 
 using namespace std;
@@ -427,6 +429,294 @@ SubqueryExpr::SubqueryExpr(string sql, AttrType value_type, int value_length, At
     : sql_(std::move(sql)), value_type_(value_type), value_length_(value_length), cast_type_(cast_type)
 {}
 
+static string trim_copy(const string &text)
+{
+  size_t begin = 0;
+  while (begin < text.size() && isspace(static_cast<unsigned char>(text[begin]))) {
+    begin++;
+  }
+  size_t end = text.size();
+  while (end > begin && isspace(static_cast<unsigned char>(text[end - 1]))) {
+    end--;
+  }
+  return text.substr(begin, end - begin);
+}
+
+static bool word_equals_at(const string &text, size_t pos, const char *word)
+{
+  const size_t len = strlen(word);
+  if (pos + len > text.size()) {
+    return false;
+  }
+  for (size_t i = 0; i < len; i++) {
+    if (toupper(static_cast<unsigned char>(text[pos + i])) != toupper(static_cast<unsigned char>(word[i]))) {
+      return false;
+    }
+  }
+
+  bool left_ok = pos == 0 ||
+                 (!isalnum(static_cast<unsigned char>(text[pos - 1])) && text[pos - 1] != '_');
+  bool right_ok = pos + len == text.size() ||
+                  (!isalnum(static_cast<unsigned char>(text[pos + len])) && text[pos + len] != '_');
+  return left_ok && right_ok;
+}
+
+static size_t find_top_level_word(const string &text, const char *word, size_t start = 0)
+{
+  int  depth = 0;
+  char quote = 0;
+  for (size_t i = start; i < text.size(); i++) {
+    char ch = text[i];
+    if (quote != 0) {
+      if (ch == quote) {
+        quote = 0;
+      }
+      continue;
+    }
+    if (ch == '\'' || ch == '"') {
+      quote = ch;
+      continue;
+    }
+    if (ch == '(') {
+      depth++;
+      continue;
+    }
+    if (ch == ')') {
+      depth--;
+      continue;
+    }
+    if (depth == 0 && word_equals_at(text, i, word)) {
+      return i;
+    }
+  }
+  return string::npos;
+}
+
+static size_t find_matching_paren(const string &text, size_t open_pos)
+{
+  int  depth = 0;
+  char quote = 0;
+  for (size_t i = open_pos; i < text.size(); i++) {
+    char ch = text[i];
+    if (quote != 0) {
+      if (ch == quote) {
+        quote = 0;
+      }
+      continue;
+    }
+    if (ch == '\'' || ch == '"') {
+      quote = ch;
+      continue;
+    }
+    if (ch == '(') {
+      depth++;
+    } else if (ch == ')') {
+      depth--;
+      if (depth == 0) {
+        return i;
+      }
+    }
+  }
+  return string::npos;
+}
+
+static vector<string> split_select_items(const string &select_list)
+{
+  vector<string> items;
+  size_t start = 0;
+  int    depth = 0;
+  char   quote = 0;
+  for (size_t i = 0; i < select_list.size(); i++) {
+    char ch = select_list[i];
+    if (quote != 0) {
+      if (ch == quote) {
+        quote = 0;
+      }
+      continue;
+    }
+    if (ch == '\'' || ch == '"') {
+      quote = ch;
+      continue;
+    }
+    if (ch == '(') {
+      depth++;
+    } else if (ch == ')') {
+      depth--;
+    } else if (ch == ',' && depth == 0) {
+      items.push_back(trim_copy(select_list.substr(start, i - start)));
+      start = i + 1;
+    }
+  }
+  items.push_back(trim_copy(select_list.substr(start)));
+  return items;
+}
+
+static RC execute_select_sql(const string &sql, vector<TupleCellSpec> &specs, vector<vector<Value>> &rows)
+{
+  Session *session = Session::current_session();
+  if (session == nullptr) {
+    return RC::INTERNAL;
+  }
+  Db *db = session->get_current_db();
+  if (db == nullptr) {
+    return RC::SCHEMA_DB_NOT_EXIST;
+  }
+
+  ParsedSqlResult parsed_sql_result;
+  RC rc = parse(sql.c_str(), &parsed_sql_result);
+  if (OB_FAIL(rc)) {
+    return rc;
+  }
+  if (parsed_sql_result.sql_nodes().size() != 1 || parsed_sql_result.sql_nodes().front()->flag != SCF_SELECT) {
+    return RC::SQL_SYNTAX;
+  }
+
+  Stmt *raw_stmt = nullptr;
+  rc = Stmt::create_stmt(db, *parsed_sql_result.sql_nodes().front(), raw_stmt);
+  unique_ptr<Stmt> stmt(raw_stmt);
+  if (OB_FAIL(rc)) {
+    return rc;
+  }
+
+  LogicalPlanGenerator logical_plan_generator;
+  unique_ptr<LogicalOperator> logical_operator;
+  rc = logical_plan_generator.create(stmt.get(), logical_operator);
+  if (OB_FAIL(rc)) {
+    return rc;
+  }
+
+  PhysicalPlanGenerator physical_plan_generator;
+  unique_ptr<PhysicalOperator> physical_operator;
+  rc = physical_plan_generator.create(*logical_operator, physical_operator, session);
+  if (OB_FAIL(rc)) {
+    return rc;
+  }
+
+  TupleSchema schema;
+  physical_operator->tuple_schema(schema);
+  specs.clear();
+  for (int i = 0; i < schema.cell_num(); i++) {
+    specs.push_back(schema.cell_at(i));
+  }
+
+  Trx *trx = session->current_trx();
+  trx->start_if_need();
+  rc = physical_operator->open(trx);
+  if (OB_FAIL(rc)) {
+    return rc;
+  }
+
+  while ((rc = physical_operator->next()) == RC::SUCCESS) {
+    Tuple *tuple = physical_operator->current_tuple();
+    if (tuple == nullptr) {
+      physical_operator->close();
+      return RC::INTERNAL;
+    }
+
+    vector<Value> row;
+    for (int i = 0; i < tuple->cell_num(); i++) {
+      Value cell;
+      rc = tuple->cell_at(i, cell);
+      if (OB_FAIL(rc)) {
+        physical_operator->close();
+        return rc;
+      }
+      row.push_back(std::move(cell));
+    }
+    rows.push_back(std::move(row));
+  }
+
+  RC close_rc = physical_operator->close();
+  if (rc == RC::RECORD_EOF) {
+    rc = close_rc;
+  }
+  return rc;
+}
+
+static string unqualify_column_name(string item)
+{
+  item = trim_copy(item);
+  size_t dot_pos = item.rfind('.');
+  if (dot_pos != string::npos) {
+    item = item.substr(dot_pos + 1);
+  }
+  return trim_copy(item);
+}
+
+static RC materialize_derived_select(const string &sql, vector<Value> &values, AttrType cast_type)
+{
+  const string trimmed = trim_copy(sql);
+  if (!word_equals_at(trimmed, 0, "SELECT")) {
+    return RC::SQL_SYNTAX;
+  }
+
+  size_t from_pos = find_top_level_word(trimmed, "FROM", strlen("SELECT"));
+  if (from_pos == string::npos) {
+    return RC::SQL_SYNTAX;
+  }
+
+  string select_list = trimmed.substr(strlen("SELECT"), from_pos - strlen("SELECT"));
+  size_t derived_open = trimmed.find('(', from_pos + strlen("FROM"));
+  if (derived_open == string::npos) {
+    return RC::SQL_SYNTAX;
+  }
+  size_t derived_close = find_matching_paren(trimmed, derived_open);
+  if (derived_close == string::npos) {
+    return RC::SQL_SYNTAX;
+  }
+
+  const string inner_sql = trimmed.substr(derived_open + 1, derived_close - derived_open - 1);
+  vector<TupleCellSpec> inner_specs;
+  vector<vector<Value>> inner_rows;
+  RC rc = execute_select_sql(inner_sql, inner_specs, inner_rows);
+  if (OB_FAIL(rc)) {
+    return rc;
+  }
+
+  vector<int> projection_indexes;
+  for (const string &raw_item : split_select_items(select_list)) {
+    string item = unqualify_column_name(raw_item);
+    if (item == "*") {
+      for (size_t i = 0; i < inner_specs.size(); i++) {
+        projection_indexes.push_back(static_cast<int>(i));
+      }
+      continue;
+    }
+
+    int found_index = -1;
+    for (size_t i = 0; i < inner_specs.size(); i++) {
+      const TupleCellSpec &spec = inner_specs[i];
+      if (0 == strcasecmp(item.c_str(), spec.alias()) || 0 == strcasecmp(item.c_str(), spec.field_name())) {
+        found_index = static_cast<int>(i);
+        break;
+      }
+    }
+    if (found_index < 0) {
+      return RC::SCHEMA_FIELD_MISSING;
+    }
+    projection_indexes.push_back(found_index);
+  }
+
+  if (projection_indexes.size() != 1) {
+    return RC::INVALID_ARGUMENT;
+  }
+
+  values.clear();
+  for (const vector<Value> &row : inner_rows) {
+    Value value = row[projection_indexes[0]];
+    if (cast_type != AttrType::UNDEFINED && !value.is_null() && value.attr_type() != cast_type) {
+      Value cast_value;
+      rc = Value::cast_to(value, cast_type, cast_value);
+      if (OB_FAIL(rc)) {
+        return rc;
+      }
+      value = std::move(cast_value);
+    }
+    values.push_back(std::move(value));
+  }
+  return RC::SUCCESS;
+}
+
 RC SubqueryExpr::materialize() const
 {
   if (materialized_) {
@@ -451,11 +741,11 @@ RC SubqueryExpr::materialize() const
   ParsedSqlResult parsed_sql_result;
   RC rc = parse(sql_.c_str(), &parsed_sql_result);
   if (OB_FAIL(rc)) {
-    materialize_rc_ = rc;
+    materialize_rc_ = materialize_derived_select(sql_, values_, cast_type_);
     return materialize_rc_;
   }
   if (parsed_sql_result.sql_nodes().size() != 1 || parsed_sql_result.sql_nodes().front()->flag != SCF_SELECT) {
-    materialize_rc_ = RC::SQL_SYNTAX;
+    materialize_rc_ = materialize_derived_select(sql_, values_, cast_type_);
     return materialize_rc_;
   }
 
@@ -463,7 +753,7 @@ RC SubqueryExpr::materialize() const
   rc = Stmt::create_stmt(db, *parsed_sql_result.sql_nodes().front(), raw_stmt);
   unique_ptr<Stmt> stmt(raw_stmt);
   if (OB_FAIL(rc)) {
-    materialize_rc_ = rc;
+    materialize_rc_ = materialize_derived_select(sql_, values_, cast_type_);
     return materialize_rc_;
   }
 

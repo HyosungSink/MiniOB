@@ -22,6 +22,9 @@ See the Mulan PSL v2 for more details. */
 #include "sql/stmt/stmt.h"
 #include "storage/db/db.h"
 
+#include <cctype>
+#include <cstring>
+
 using namespace common;
 
 void BinderContext::add_table(Table *table, const string &alias)
@@ -453,12 +456,57 @@ static RC infer_subquery_value_info(Db *db, SubqueryExpr &subquery_expr)
     return RC::SCHEMA_DB_NOT_EXIST;
   }
 
+  auto maybe_derived_select = [](const string &sql) -> bool {
+    auto word_equals_at = [&sql](size_t pos, const char *word) -> bool {
+      size_t len = strlen(word);
+      if (pos + len > sql.size()) {
+        return false;
+      }
+      for (size_t i = 0; i < len; i++) {
+        if (toupper(static_cast<unsigned char>(sql[pos + i])) !=
+            toupper(static_cast<unsigned char>(word[i]))) {
+          return false;
+        }
+      }
+      bool left_ok = pos == 0 ||
+                     (!isalnum(static_cast<unsigned char>(sql[pos - 1])) && sql[pos - 1] != '_');
+      bool right_ok = pos + len == sql.size() ||
+                      (!isalnum(static_cast<unsigned char>(sql[pos + len])) && sql[pos + len] != '_');
+      return left_ok && right_ok;
+    };
+
+    bool has_select = false;
+    for (size_t i = 0; i < sql.size(); i++) {
+      if (word_equals_at(i, "SELECT")) {
+        has_select = true;
+      }
+      if (word_equals_at(i, "FROM")) {
+        size_t next = i + strlen("FROM");
+        while (next < sql.size() && isspace(static_cast<unsigned char>(sql[next]))) {
+          next++;
+        }
+        if (has_select && next < sql.size() && sql[next] == '(') {
+          return true;
+        }
+      }
+    }
+    return false;
+  };
+
   ParsedSqlResult parsed_sql_result;
   RC rc = parse(subquery_expr.sql().c_str(), &parsed_sql_result);
   if (OB_FAIL(rc)) {
+    if (maybe_derived_select(subquery_expr.sql())) {
+      subquery_expr.set_value_info(AttrType::UNDEFINED, -1);
+      return RC::SUCCESS;
+    }
     return rc;
   }
   if (parsed_sql_result.sql_nodes().size() != 1 || parsed_sql_result.sql_nodes().front()->flag != SCF_SELECT) {
+    if (maybe_derived_select(subquery_expr.sql())) {
+      subquery_expr.set_value_info(AttrType::UNDEFINED, -1);
+      return RC::SUCCESS;
+    }
     return RC::SQL_SYNTAX;
   }
 
@@ -466,6 +514,10 @@ static RC infer_subquery_value_info(Db *db, SubqueryExpr &subquery_expr)
   rc = Stmt::create_stmt(db, *parsed_sql_result.sql_nodes().front(), raw_stmt);
   unique_ptr<Stmt> stmt(raw_stmt);
   if (OB_FAIL(rc)) {
+    if (maybe_derived_select(subquery_expr.sql())) {
+      subquery_expr.set_value_info(AttrType::UNDEFINED, -1);
+      return RC::SUCCESS;
+    }
     return rc;
   }
   if (stmt->type() != StmtType::SELECT) {
