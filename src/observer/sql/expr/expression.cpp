@@ -1009,6 +1009,35 @@ RC InSubqueryExpr::prepare() const
 
 ////////////////////////////////////////////////////////////////////////////////
 
+ExistsSubqueryExpr::ExistsSubqueryExpr(unique_ptr<SubqueryExpr> subquery, bool not_exists)
+    : subquery_(std::move(subquery)), not_exists_(not_exists)
+{}
+
+RC ExistsSubqueryExpr::get_value(const Tuple &tuple, Value &value) const
+{
+  const vector<Value> *subquery_values = nullptr;
+  RC rc = subquery_->materialized_values(tuple, subquery_values);
+  if (OB_FAIL(rc)) {
+    return rc;
+  }
+
+  const bool exists = subquery_values != nullptr && !subquery_values->empty();
+  value.set_boolean(not_exists_ ? !exists : exists);
+  return RC::SUCCESS;
+}
+
+RC ExistsSubqueryExpr::prepare() const
+{
+  if (subquery_->correlated()) {
+    return RC::SUCCESS;
+  }
+
+  const vector<Value> *subquery_values = nullptr;
+  return subquery_->materialized_values(subquery_values);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
 IsNullExpr::IsNullExpr(unique_ptr<Expression> child, bool not_null)
     : child_(std::move(child)), not_null_(not_null)
 {}

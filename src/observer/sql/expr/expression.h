@@ -54,6 +54,7 @@ enum class ExprType
   IN_LIST,      ///< IN/NOT IN value list predicate
   SUBQUERY,     ///< scalar subquery
   IN_SUBQUERY,  ///< IN/NOT IN subquery predicate
+  EXISTS_SUBQUERY, ///< EXISTS/NOT EXISTS subquery predicate
   IS_NULL,      ///< IS NULL/IS NOT NULL predicate
   COMP_SUBQUERY, ///< quantified subquery comparison
 };
@@ -513,6 +514,32 @@ private:
   unique_ptr<Expression>  left_;
   unique_ptr<SubqueryExpr> subquery_;
   bool                    not_in_ = false;
+};
+
+class ExistsSubqueryExpr : public Expression
+{
+public:
+  ExistsSubqueryExpr(unique_ptr<SubqueryExpr> subquery, bool not_exists);
+  virtual ~ExistsSubqueryExpr() = default;
+
+  unique_ptr<Expression> copy() const override
+  {
+    return make_unique<ExistsSubqueryExpr>(
+        unique_ptr<SubqueryExpr>(static_cast<SubqueryExpr *>(subquery_->copy().release())), not_exists_);
+  }
+
+  ExprType type() const override { return ExprType::EXISTS_SUBQUERY; }
+  AttrType value_type() const override { return AttrType::BOOLEANS; }
+
+  RC get_value(const Tuple &tuple, Value &value) const override;
+  RC prepare() const override;
+
+  SubqueryExpr &subquery() { return *subquery_; }
+  bool not_exists() const { return not_exists_; }
+
+private:
+  unique_ptr<SubqueryExpr> subquery_;
+  bool                     not_exists_ = false;
 };
 
 class IsNullExpr : public Expression
