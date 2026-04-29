@@ -93,6 +93,12 @@ RC parse_vector_function_value(const char *function_name, const char *literal, V
         HAVING
         TABLE
         TABLES
+        ALTER
+        ADD
+        COLUMN
+        CHANGE
+        RENAME
+        TO
         INDEX
         LIKE
         CALC
@@ -260,6 +266,7 @@ RC parse_vector_function_value(const char *function_name, const char *literal, V
 %type <sql_node>            delete_stmt
 %type <sql_node>            create_table_stmt
 %type <sql_node>            drop_table_stmt
+%type <sql_node>            alter_table_stmt
 %type <sql_node>            analyze_table_stmt
 %type <sql_node>            show_tables_stmt
 %type <sql_node>            desc_table_stmt
@@ -303,6 +310,7 @@ command_wrapper:
   | desc_table_stmt
   | create_index_stmt
   | drop_index_stmt
+  | alter_table_stmt
   | sync_stmt
   | begin_stmt
   | commit_stmt
@@ -354,6 +362,40 @@ drop_table_stmt:    /*drop table 语句的语法解析树*/
       $$ = new ParsedSqlNode(SCF_DROP_TABLE);
       $$->drop_table.relation_name = $3;
     };
+
+alter_table_stmt:
+    ALTER TABLE ID ADD COLUMN attr_def
+    {
+      $$ = new ParsedSqlNode(SCF_ALTER_TABLE);
+      $$->alter_table.relation_name = $3;
+      $$->alter_table.action = AlterTableAction::ADD_COLUMN;
+      $$->alter_table.attr_info = *$6;
+      delete $6;
+    }
+    | ALTER TABLE ID DROP COLUMN ID
+    {
+      $$ = new ParsedSqlNode(SCF_ALTER_TABLE);
+      $$->alter_table.relation_name = $3;
+      $$->alter_table.action = AlterTableAction::DROP_COLUMN;
+      $$->alter_table.old_attribute_name = $6;
+    }
+    | ALTER TABLE ID CHANGE COLUMN ID attr_def
+    {
+      $$ = new ParsedSqlNode(SCF_ALTER_TABLE);
+      $$->alter_table.relation_name = $3;
+      $$->alter_table.action = AlterTableAction::CHANGE_COLUMN;
+      $$->alter_table.old_attribute_name = $6;
+      $$->alter_table.attr_info = *$7;
+      delete $7;
+    }
+    | ALTER TABLE ID RENAME TO ID
+    {
+      $$ = new ParsedSqlNode(SCF_ALTER_TABLE);
+      $$->alter_table.relation_name = $3;
+      $$->alter_table.action = AlterTableAction::RENAME_TABLE;
+      $$->alter_table.new_relation_name = $6;
+    }
+    ;
 
 analyze_table_stmt:  /* analyze table 语法的语法解析树*/
     ANALYZE TABLE ID {

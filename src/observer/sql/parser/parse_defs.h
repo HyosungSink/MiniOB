@@ -214,6 +214,23 @@ struct DropTableSqlNode
   string relation_name;  ///< 要删除的表名
 };
 
+enum class AlterTableAction
+{
+  ADD_COLUMN,
+  DROP_COLUMN,
+  CHANGE_COLUMN,
+  RENAME_TABLE
+};
+
+struct AlterTableSqlNode
+{
+  string           relation_name;
+  AlterTableAction action = AlterTableAction::ADD_COLUMN;
+  AttrInfoSqlNode  attr_info;
+  string           old_attribute_name;
+  string           new_relation_name;
+};
+
 /**
  * @brief 描述一个analyze table语句
  * @ingroup SQLParser
@@ -322,6 +339,7 @@ enum SqlCommandFlag
   SCF_DELETE,
   SCF_CREATE_TABLE,
   SCF_DROP_TABLE,
+  SCF_ALTER_TABLE,
   SCF_ANALYZE_TABLE,
   SCF_CREATE_INDEX,
   SCF_DROP_INDEX,
@@ -354,6 +372,7 @@ public:
   UpdateSqlNode       update;
   CreateTableSqlNode  create_table;
   DropTableSqlNode    drop_table;
+  AlterTableSqlNode   alter_table;
   AnalyzeTableSqlNode analyze_table;
   CreateIndexSqlNode  create_index;
   DropIndexSqlNode    drop_index;
