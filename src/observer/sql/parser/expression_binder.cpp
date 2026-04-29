@@ -1021,6 +1021,28 @@ RC ExpressionBinder::bind_scalar_function(const char *function_name,
       if (metric_type != AttrType::CHARS && !is_null_literal_type(metric_type)) {
         return RC::INVALID_ARGUMENT;
       }
+
+      Value metric_value;
+      if (OB_SUCC(bound_arguments[2]->try_get_value(metric_value)) && !metric_value.is_null()) {
+        const string metric = metric_value.get_string();
+        if (0 != strcasecmp(metric.c_str(), "EUCLIDEAN") && 0 != strcasecmp(metric.c_str(), "COSINE") &&
+            0 != strcasecmp(metric.c_str(), "DOT")) {
+          return RC::INVALID_ARGUMENT;
+        }
+      }
+
+      int left_length  = bound_arguments[0]->value_length();
+      int right_length = bound_arguments[1]->value_length();
+      Value vector_value;
+      if (left_length < 0 && OB_SUCC(bound_arguments[0]->try_get_value(vector_value)) && !vector_value.is_null()) {
+        left_length = vector_value.length();
+      }
+      if (right_length < 0 && OB_SUCC(bound_arguments[1]->try_get_value(vector_value)) && !vector_value.is_null()) {
+        right_length = vector_value.length();
+      }
+      if (left_length > 0 && right_length > 0 && left_length != right_length) {
+        return RC::INVALID_ARGUMENT;
+      }
     } break;
     case FunctionExpr::Type::CONCAT: {
       if (bound_arguments.empty()) {
