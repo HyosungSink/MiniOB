@@ -93,6 +93,7 @@ CREATE                                  RETURN_TOKEN(CREATE);
 DROP                                    RETURN_TOKEN(DROP);
 TABLE                                   RETURN_TOKEN(TABLE);
 TABLES                                  RETURN_TOKEN(TABLES);
+VIEW                                    RETURN_TOKEN(VIEW);
 ALTER                                   RETURN_TOKEN(ALTER);
 ADD                                     RETURN_TOKEN(ADD);
 COLUMN                                  RETURN_TOKEN(COLUMN);

@@ -126,6 +126,13 @@ struct SelectSqlNode
   vector<bool>                   union_all;
 };
 
+struct CreateViewSqlNode
+{
+  string        relation_name;
+  string        select_sql;
+  SelectSqlNode select;
+};
+
 /**
  * @brief 算术表达式计算的语法树
  * @ingroup SQLParser
@@ -143,6 +150,7 @@ struct CalcSqlNode
 struct InsertSqlNode
 {
   string        relation_name;  ///< Relation to insert into
+  vector<string> attribute_names;
   vector<Value> values;         ///< 要插入的值
   vector<vector<Value>> value_rows; ///< rows to insert
 };
@@ -338,6 +346,7 @@ enum SqlCommandFlag
   SCF_UPDATE,
   SCF_DELETE,
   SCF_CREATE_TABLE,
+  SCF_CREATE_VIEW,
   SCF_DROP_TABLE,
   SCF_ALTER_TABLE,
   SCF_ANALYZE_TABLE,
@@ -370,6 +379,7 @@ public:
   InsertSqlNode       insertion;
   DeleteSqlNode       deletion;
   UpdateSqlNode       update;
+  CreateViewSqlNode   create_view;
   CreateTableSqlNode  create_table;
   DropTableSqlNode    drop_table;
   AlterTableSqlNode   alter_table;

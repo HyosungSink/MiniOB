@@ -93,6 +93,7 @@ RC parse_vector_function_value(const char *function_name, const char *literal, V
         HAVING
         TABLE
         TABLES
+        VIEW
         ALTER
         ADD
         COLUMN
@@ -266,6 +267,7 @@ RC parse_vector_function_value(const char *function_name, const char *literal, V
 %type <sql_node>            update_stmt
 %type <sql_node>            delete_stmt
 %type <sql_node>            create_table_stmt
+%type <sql_node>            create_view_stmt
 %type <sql_node>            drop_table_stmt
 %type <sql_node>            alter_table_stmt
 %type <sql_node>            analyze_table_stmt
@@ -305,6 +307,7 @@ command_wrapper:
   | update_stmt
   | delete_stmt
   | create_table_stmt
+  | create_view_stmt
   | drop_table_stmt
   | analyze_table_stmt
   | show_tables_stmt
@@ -473,6 +476,17 @@ create_table_stmt:    /*create table 语句的语法解析树*/
       }
     }
     ;
+
+create_view_stmt:
+    CREATE VIEW ID AS select_stmt
+    {
+      $$ = new ParsedSqlNode(SCF_CREATE_VIEW);
+      $$->create_view.relation_name = $3;
+      $$->create_view.select_sql = token_name(sql_string, &@5);
+      $$->create_view.select = std::move($5->selection);
+      delete $5;
+    }
+    ;
     
 attr_def_list:
     attr_def
@@ -577,6 +591,18 @@ insert_stmt:        /*insert   语句的语法解析树*/
         $$->insertion.values = $$->insertion.value_rows.front();
       }
       delete $5;
+    }
+    | INSERT INTO ID LBRACE attr_list RBRACE VALUES insert_value_rows
+    {
+      $$ = new ParsedSqlNode(SCF_INSERT);
+      $$->insertion.relation_name = $3;
+      $$->insertion.attribute_names.swap(*$5);
+      $$->insertion.value_rows.swap(*$8);
+      if (!$$->insertion.value_rows.empty()) {
+        $$->insertion.values = $$->insertion.value_rows.front();
+      }
+      delete $5;
+      delete $8;
     }
     ;
 
