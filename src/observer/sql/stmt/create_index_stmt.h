@@ -31,12 +31,16 @@ public:
       const FieldMeta *field_meta,
       vector<const FieldMeta *> field_metas,
       const string &index_name,
-      bool unique)
+      bool unique,
+      bool fulltext,
+      const string &parser_name)
       : table_(table),
         field_meta_(field_meta),
         field_metas_(std::move(field_metas)),
         index_name_(index_name),
-        unique_(unique)
+        unique_(unique),
+        fulltext_(fulltext),
+        parser_name_(parser_name)
   {}
 
   virtual ~CreateIndexStmt() = default;
@@ -48,6 +52,8 @@ public:
   const vector<const FieldMeta *> &field_metas() const { return field_metas_; }
   const string    &index_name() const { return index_name_; }
   bool             unique() const { return unique_; }
+  bool             fulltext() const { return fulltext_; }
+  const string    &parser_name() const { return parser_name_; }
 
 public:
   static RC create(Db *db, const CreateIndexSqlNode &create_index, Stmt *&stmt);
@@ -58,4 +64,6 @@ private:
   vector<const FieldMeta *> field_metas_;
   string           index_name_;
   bool             unique_ = false;
+  bool             fulltext_ = false;
+  string           parser_name_;
 };

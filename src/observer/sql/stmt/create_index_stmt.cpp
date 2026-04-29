@@ -65,12 +65,25 @@ RC CreateIndexStmt::create(Db *db, const CreateIndexSqlNode &create_index, Stmt 
     return RC::INVALID_ARGUMENT;
   }
 
+  if (create_index.fulltext) {
+    if (attribute_names.size() != 1 || field_meta->type() != AttrType::CHARS ||
+        0 != strcasecmp(create_index.parser_name.c_str(), "jieba")) {
+      return RC::INVALID_ARGUMENT;
+    }
+  }
+
   Index *index = table->find_index(create_index.index_name.c_str());
   if (nullptr != index) {
     LOG_WARN("index with name(%s) already exists. table name=%s", create_index.index_name.c_str(), table_name);
     return RC::SCHEMA_INDEX_NAME_REPEAT;
   }
 
-  stmt = new CreateIndexStmt(table, field_meta, std::move(field_metas), create_index.index_name, create_index.unique);
+  stmt = new CreateIndexStmt(table,
+      field_meta,
+      std::move(field_metas),
+      create_index.index_name,
+      create_index.unique,
+      create_index.fulltext,
+      create_index.parser_name);
   return RC::SUCCESS;
 }
