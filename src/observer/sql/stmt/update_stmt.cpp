@@ -21,6 +21,65 @@ See the Mulan PSL v2 for more details. */
 #include "storage/db/db.h"
 #include "storage/table/table.h"
 
+static unique_ptr<Expression> copy_rewrite_view_expr(const Expression &expr, const ViewDefinition &view)
+{
+  if (expr.type() == ExprType::UNBOUND_FIELD) {
+    const UnboundFieldExpr &field_expr = static_cast<const UnboundFieldExpr &>(expr);
+    const bool              from_view  = common::is_blank(field_expr.table_name()) ||
+                            0 == strcasecmp(field_expr.table_name(), view.view_name.c_str());
+    if (from_view) {
+      const string *base_column = view.base_column_for(field_expr.field_name());
+      if (base_column != nullptr) {
+        auto rewritten = make_unique<UnboundFieldExpr>("", *base_column);
+        rewritten->set_name(*base_column);
+        return rewritten;
+      }
+    }
+  }
+
+  return expr.copy();
+}
+
+static RC create_view_update_stmt(Db *db, const UpdateSqlNode &update, const ViewDefinition &view, Stmt *&stmt)
+{
+  if (!view.updatable) {
+    return RC::INVALID_ARGUMENT;
+  }
+
+  UpdateSqlNode base_update;
+  base_update.relation_name = view.base_table_name;
+
+  for (const UpdateAssignmentSqlNode &assignment : update.assignments) {
+    const string *base_column = view.base_column_for(assignment.attribute_name);
+    if (base_column == nullptr) {
+      return RC::SCHEMA_FIELD_NOT_EXIST;
+    }
+
+    UpdateAssignmentSqlNode base_assignment;
+    base_assignment.attribute_name = *base_column;
+    base_assignment.value          = assignment.value;
+    if (assignment.expression != nullptr) {
+      base_assignment.expression = copy_rewrite_view_expr(*assignment.expression, view);
+    }
+    base_update.assignments.emplace_back(std::move(base_assignment));
+  }
+
+  for (const ConditionSqlNode &condition : update.conditions) {
+    ConditionSqlNode base_condition;
+    base_condition.conjunction = condition.conjunction;
+    base_condition.comp        = condition.comp;
+    if (condition.left_expr != nullptr) {
+      base_condition.left_expr = copy_rewrite_view_expr(*condition.left_expr, view);
+    }
+    if (condition.right_expr != nullptr) {
+      base_condition.right_expr = copy_rewrite_view_expr(*condition.right_expr, view);
+    }
+    base_update.conditions.emplace_back(std::move(base_condition));
+  }
+
+  return UpdateStmt::create(db, base_update, stmt);
+}
+
 UpdateStmt::UpdateStmt(
     Table *table,
     const vector<const FieldMeta *> &field_metas,
@@ -46,6 +105,11 @@ RC UpdateStmt::create(Db *db, const UpdateSqlNode &update, Stmt *&stmt)
     LOG_WARN("invalid update statement. db=%p, table=%s, assignment_num=%d",
         db, table_name, static_cast<int>(update.assignments.size()));
     return RC::INVALID_ARGUMENT;
+  }
+
+  const ViewDefinition *view = db->find_view(table_name);
+  if (view != nullptr) {
+    return create_view_update_stmt(db, update, *view, stmt);
   }
 
   Table *table = db->find_table(table_name);
