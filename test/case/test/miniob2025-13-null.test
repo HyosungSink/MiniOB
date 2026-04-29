@@ -12,6 +12,21 @@ select count(*), count(age), count(score) from null_t;
 update null_t set age=null where id=1;
 -- sort select id, age from null_t;
 
+-- echo null update assignment expressions
+create table null_table3(id int not null, num int null);
+create table null_table4(id int not null, num int null, name char(10) null);
+insert into null_table3 values(6, null);
+insert into null_table3 values(7, 7);
+insert into null_table4 values(4, 4, 'n4');
+insert into null_table4 values(4, 4, 'n4');
+insert into null_table4 values(3, 2, 'n2');
+update null_table4 set num=null where id=4;
+update null_table4 set name=null where num is null;
+update null_table4 set num=1 where id=4;
+update null_table4 set id=null where num is null;
+update null_table4 set num=(select null_table3.num from null_table3 where null_table3.id=6) where id=3;
+-- sort select id, num, name from null_table4;
+
 -- echo null boundary errors
 insert into null_t values(null, 1, 1.0, 'x');
 select id from null_t where missing_col is null;
