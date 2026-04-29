@@ -25,6 +25,20 @@ alter table alter_base drop column score;
 -- sort select * from alter_base;
 select * from alter_base where score=20;
 
+-- echo self rename after change column
+create table alter_table_1(id int);
+create index i_id on alter_table_1(id);
+insert into alter_table_1 values(2);
+insert into alter_table_1 values(9);
+alter table alter_table_1 add column col int;
+alter table alter_table_1 drop column id;
+delete from alter_table_1;
+create index i_col on alter_table_1(col);
+alter table alter_table_1 change column col id int;
+select id from alter_table_1;
+alter table alter_table_1 rename to alter_table_1;
+select id from alter_table_1;
+
 -- echo rename table
 alter table alter_base rename to alter_renamed;
 -- sort select * from alter_renamed;
