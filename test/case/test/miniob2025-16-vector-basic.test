@@ -12,6 +12,7 @@ select distance(string_to_vector('[1, 0, 0]'), string_to_vector('[0, 1, 0]'), 'D
 
 -- echo vector distance formatting regression
 select distance(string_to_vector('[5.7,-7.74,-2.11,-0.31,-4.05]'), string_to_vector('[3.05,-2.13,0.3,-0.2,-1.14]'), 'COSINE') as dist_cosine;
+select distance(string_to_vector('[-0.29,-2.87,-3.55,5.64,4.85]'), string_to_vector('[6.5,6.69,0.37,6.73,0.84]'), 'COSINE') as dist_cosine;
 
 -- echo vector basic boundary checks
 insert into vector_basic_t values(4, string_to_vector('[1, x, 3]'));
