@@ -1120,6 +1120,19 @@ RC ExpressionBinder::bind_scalar_function(const char *function_name,
         return RC::INVALID_ARGUMENT;
       }
     } break;
+    case FunctionExpr::Type::MATCH_AGAINST: {
+      if (bound_arguments.size() != 2) {
+        return RC::INVALID_ARGUMENT;
+      }
+      AttrType text_type  = type_at(0);
+      AttrType query_type = type_at(1);
+      if (text_type != AttrType::CHARS && !is_null_literal_type(text_type)) {
+        return RC::INVALID_ARGUMENT;
+      }
+      if (query_type != AttrType::CHARS && !is_null_literal_type(query_type)) {
+        return RC::INVALID_ARGUMENT;
+      }
+    } break;
     case FunctionExpr::Type::CONCAT: {
       if (bound_arguments.empty()) {
         return RC::INVALID_ARGUMENT;
