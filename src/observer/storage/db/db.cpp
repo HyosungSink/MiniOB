@@ -22,6 +22,7 @@ See the Mulan PSL v2 for more details. */
 #include "common/os/path.h"
 #include "common/global_context.h"
 #include "storage/common/meta_util.h"
+#include "storage/record/record_scanner.h"
 #include "storage/table/table.h"
 #include "storage/table/table_meta.h"
 #include "storage/trx/trx.h"
@@ -242,6 +243,172 @@ RC Db::drop_table(const char *table_name)
   }
 
   LOG_INFO("drop table success. db=%s, table=%s", name_.c_str(), table_name);
+  return RC::SUCCESS;
+}
+
+static AttrInfoSqlNode attr_info_from_field(const FieldMeta &field)
+{
+  AttrInfoSqlNode attr;
+  attr.type     = field.type();
+  attr.name     = field.name();
+  attr.length   = field.type() == AttrType::VECTORS ? field.len() / sizeof(float) : field.len();
+  attr.nullable = field.nullable();
+  return attr;
+}
+
+static RC collect_table_rows(Table *table, vector<vector<Value>> &rows)
+{
+  RecordScanner *scanner = nullptr;
+  RC rc = table->get_record_scanner(scanner, nullptr, ReadWriteMode::READ_ONLY);
+  if (OB_FAIL(rc)) {
+    return rc;
+  }
+
+  rc = scanner->open_scan();
+  if (OB_FAIL(rc)) {
+    scanner->close_scan();
+    delete scanner;
+    return rc;
+  }
+
+  const TableMeta &meta = table->table_meta();
+  Record record;
+  while ((rc = scanner->next(record)) == RC::SUCCESS) {
+    vector<Value> row;
+    for (int i = meta.sys_field_num(); i < meta.field_num(); i++) {
+      const FieldMeta *field = meta.field(i);
+      const char *field_data = record.data() + field->offset();
+      Value value;
+      if (Value::is_null_data(field_data, field->len(), field->type())) {
+        value.set_null();
+      } else {
+        value.set_type(field->type());
+        value.set_data(field_data, field->len());
+      }
+      row.emplace_back(std::move(value));
+    }
+    rows.emplace_back(std::move(row));
+  }
+
+  scanner->close_scan();
+  delete scanner;
+  return rc == RC::RECORD_EOF ? RC::SUCCESS : rc;
+}
+
+RC Db::alter_table(const AlterTableSqlNode &alter_table)
+{
+  Table *table = find_table(alter_table.relation_name.c_str());
+  if (table == nullptr) {
+    return RC::SCHEMA_TABLE_NOT_EXIST;
+  }
+
+  const TableMeta &old_meta = table->table_meta();
+  const StorageFormat storage_format = old_meta.storage_format();
+  vector<AttrInfoSqlNode> new_attrs;
+  vector<int>             old_indexes;
+  for (int i = old_meta.sys_field_num(); i < old_meta.field_num(); i++) {
+    const FieldMeta *field = old_meta.field(i);
+    if (!field->visible()) {
+      continue;
+    }
+    new_attrs.push_back(attr_info_from_field(*field));
+    old_indexes.push_back(i - old_meta.sys_field_num());
+  }
+
+  string target_table_name = alter_table.relation_name;
+  switch (alter_table.action) {
+    case AlterTableAction::ADD_COLUMN: {
+      if (old_meta.field(alter_table.attr_info.name.c_str()) != nullptr) {
+        return RC::INVALID_ARGUMENT;
+      }
+      new_attrs.push_back(alter_table.attr_info);
+      old_indexes.push_back(-1);
+    } break;
+    case AlterTableAction::DROP_COLUMN: {
+      bool found = false;
+      vector<AttrInfoSqlNode> filtered_attrs;
+      vector<int> filtered_indexes;
+      for (size_t i = 0; i < new_attrs.size(); i++) {
+        if (new_attrs[i].name == alter_table.old_attribute_name) {
+          found = true;
+          continue;
+        }
+        filtered_attrs.push_back(new_attrs[i]);
+        filtered_indexes.push_back(old_indexes[i]);
+      }
+      if (!found || filtered_attrs.empty()) {
+        return RC::SCHEMA_FIELD_NOT_EXIST;
+      }
+      new_attrs.swap(filtered_attrs);
+      old_indexes.swap(filtered_indexes);
+    } break;
+    case AlterTableAction::CHANGE_COLUMN: {
+      if (old_meta.field(alter_table.old_attribute_name.c_str()) == nullptr) {
+        return RC::SCHEMA_FIELD_NOT_EXIST;
+      }
+      if (alter_table.old_attribute_name != alter_table.attr_info.name &&
+          old_meta.field(alter_table.attr_info.name.c_str()) != nullptr) {
+        return RC::INVALID_ARGUMENT;
+      }
+      bool found = false;
+      for (AttrInfoSqlNode &attr : new_attrs) {
+        if (attr.name == alter_table.old_attribute_name) {
+          attr = alter_table.attr_info;
+          found = true;
+          break;
+        }
+      }
+      if (!found) {
+        return RC::SCHEMA_FIELD_NOT_EXIST;
+      }
+    } break;
+    case AlterTableAction::RENAME_TABLE: {
+      if (find_table(alter_table.new_relation_name.c_str()) != nullptr) {
+        return RC::SCHEMA_TABLE_EXIST;
+      }
+      target_table_name = alter_table.new_relation_name;
+    } break;
+  }
+
+  vector<vector<Value>> old_rows;
+  RC rc = collect_table_rows(table, old_rows);
+  if (OB_FAIL(rc)) {
+    return rc;
+  }
+
+  rc = drop_table(alter_table.relation_name.c_str());
+  if (OB_FAIL(rc)) {
+    return rc;
+  }
+
+  rc = create_table(
+      target_table_name.c_str(), span<const AttrInfoSqlNode>(new_attrs.data(), new_attrs.size()), {}, storage_format);
+  if (OB_FAIL(rc)) {
+    return rc;
+  }
+
+  Table *new_table = find_table(target_table_name.c_str());
+  for (const vector<Value> &old_row : old_rows) {
+    vector<Value> new_row;
+    for (int old_index : old_indexes) {
+      if (old_index < 0) {
+        Value value;
+        value.set_null();
+        new_row.emplace_back(std::move(value));
+      } else {
+        new_row.push_back(old_row[old_index]);
+      }
+    }
+    Record new_record;
+    rc = new_table->make_record(static_cast<int>(new_row.size()), new_row.data(), new_record);
+    if (OB_FAIL(rc)) {
+      return rc;
+    }
+    rc = new_table->insert_record(new_record);
+    if (OB_FAIL(rc)) {
+      return rc;
+    }
+  }
   return RC::SUCCESS;
 }
 

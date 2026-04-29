@@ -75,6 +75,8 @@ public:
    */
   RC drop_table(const char *table_name);
 
+  RC alter_table(const AlterTableSqlNode &alter_table);
+
   /**
    * @brief 根据表名查找表
    */
