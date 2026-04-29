@@ -217,10 +217,24 @@ RC ExpressionBinder::bind_star_expression(
   }
 
   auto star_expr = static_cast<StarExpr *>(expr.get());
+  const char *table_name = star_expr->table_name();
+  const char *expr_name  = expr->name();
+
+  bool has_alias = false;
+  if (is_blank(table_name) || 0 == strcmp(table_name, "*")) {
+    has_alias = !is_blank(expr_name);
+  } else {
+    string default_name = string(table_name) + ".*";
+    has_alias = is_blank(expr_name) || 0 != strcasecmp(expr_name, default_name.c_str());
+  }
+
+  if (has_alias) {
+    LOG_INFO("star expression does not support alias: %s", expr_name);
+    return RC::INVALID_ARGUMENT;
+  }
 
   vector<Table *> tables_to_wildcard;
 
-  const char *table_name = star_expr->table_name();
   if (!is_blank(table_name) && 0 != strcmp(table_name, "*")) {
     Table *table = context_.find_table(table_name);
     if (nullptr == table) {
