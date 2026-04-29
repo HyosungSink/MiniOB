@@ -161,7 +161,7 @@ RC VectorType::distance(const Value &left, const Value &right, const string &met
       const float diff = left_data[i] - right_data[i];
       distance += diff * diff;
     }
-    result.set_float(sqrtf(distance), 16);
+    result.set_float(sqrtf(distance));
     return RC::SUCCESS;
   }
 
@@ -170,7 +170,7 @@ RC VectorType::distance(const Value &left, const Value &right, const string &met
     for (int i = 0; i < left_dim; i++) {
       distance += left_data[i] * right_data[i];
     }
-    result.set_float(distance, 16);
+    result.set_float(distance);
     return RC::SUCCESS;
   }
 
@@ -189,7 +189,7 @@ RC VectorType::distance(const Value &left, const Value &right, const string &met
     }
 
     const float cosine = dot / (sqrtf(left_norm) * sqrtf(right_norm));
-    result.set_float(1.0f - cosine, 16);
+    result.set_float(1.0f - cosine);
     return RC::SUCCESS;
   }
 
