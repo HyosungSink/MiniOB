@@ -363,6 +363,9 @@ RC Db::alter_table(const AlterTableSqlNode &alter_table)
       }
     } break;
     case AlterTableAction::RENAME_TABLE: {
+      if (alter_table.new_relation_name == alter_table.relation_name) {
+        return RC::SUCCESS;
+      }
       if (find_table(alter_table.new_relation_name.c_str()) != nullptr) {
         return RC::SCHEMA_TABLE_EXIST;
       }
