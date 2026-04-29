@@ -1,0 +1,71 @@
+FROM ubuntu:22.04 AS dev-base
+
+ARG DEBIAN_FRONTEND=noninteractive
+ARG UID=1000
+ARG GID=1000
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+      build-essential \
+      bison \
+      ca-certificates \
+      clang-format \
+      clangd \
+      cmake \
+      curl \
+      diffutils \
+      flex \
+      g++-11 \
+      gcc-11 \
+      gdb \
+      git \
+      less \
+      lcov \
+      libaio-dev \
+      libncurses-dev \
+      libreadline-dev \
+      libssl-dev \
+      libtirpc-dev \
+      lldb \
+      locales \
+      make \
+      mariadb-client \
+      ninja-build \
+      openssh-client \
+      pkg-config \
+      procps \
+      python3 \
+      python3-pip \
+      python3-psutil \
+      python3-pymysql \
+      python3-venv \
+      rsync \
+      sudo \
+      sysbench \
+      texinfo \
+      tzdata \
+      vim \
+      wget \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN locale-gen en_US.UTF-8 \
+    && if ! getent group "${GID}" >/dev/null; then groupadd --gid "${GID}" miniob; fi \
+    && useradd --uid "${UID}" --gid "${GID}" --create-home --shell /bin/bash miniob \
+    && echo "miniob ALL=(ALL) NOPASSWD:ALL" >/etc/sudoers.d/miniob \
+    && chmod 0440 /etc/sudoers.d/miniob
+
+ENV LANG=en_US.UTF-8 \
+    LC_ALL=en_US.UTF-8 \
+    CC=gcc-11 \
+    CXX=g++-11
+
+WORKDIR /workspace/miniob
+USER miniob
+
+CMD ["/bin/bash"]
+
+FROM dev-base AS with-source
+
+USER root
+COPY --chown=miniob:miniob . /workspace/miniob
+USER miniob
