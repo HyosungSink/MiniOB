@@ -24,6 +24,7 @@ See the Mulan PSL v2 for more details. */
 #include "sql/parser/expression_binder.h"
 #include "sql/parser/parse.h"
 #include "sql/stmt/stmt.h"
+#include "common/type/vector_type.h"
 #include "storage/db/db.h"
 #include "storage/trx/trx.h"
 
@@ -1405,6 +1406,9 @@ AttrType FunctionExpr::value_type() const
     case Type::LENGTH: return AttrType::INTS;
     case Type::ROUND: return arguments_.size() == 1 ? AttrType::INTS : AttrType::FLOATS;
     case Type::DATE_FORMAT: return AttrType::CHARS;
+    case Type::STRING_TO_VECTOR: return AttrType::VECTORS;
+    case Type::VECTOR_TO_STRING: return AttrType::CHARS;
+    case Type::DISTANCE: return AttrType::FLOATS;
   }
   return AttrType::UNDEFINED;
 }
@@ -1415,6 +1419,7 @@ int FunctionExpr::value_length() const
     case AttrType::INTS: return sizeof(int);
     case AttrType::FLOATS: return sizeof(float);
     case AttrType::CHARS: return 64;
+    case AttrType::VECTORS: return -1;
     default: return -1;
   }
 }
@@ -1519,6 +1524,20 @@ RC FunctionExpr::eval_arguments(const vector<Value> &arguments, Value &value) co
       }
       value.set_string(format_date_value(date_value.get_date(), arguments[1].get_string()).c_str());
     } break;
+    case Type::STRING_TO_VECTOR: {
+      return VectorType::parse_vector_literal(arguments[0].get_string(), value);
+    } break;
+    case Type::VECTOR_TO_STRING: {
+      string text;
+      RC rc = DataType::type_instance(AttrType::VECTORS)->to_string(arguments[0], text);
+      if (OB_FAIL(rc)) {
+        return rc;
+      }
+      value.set_string(text.c_str());
+    } break;
+    case Type::DISTANCE: {
+      return VectorType::distance(arguments[0], arguments[1], arguments[2].get_string(), value);
+    } break;
   }
 
   return RC::SUCCESS;
@@ -1566,6 +1585,18 @@ RC FunctionExpr::type_from_string(const char *type_str, FunctionExpr::Type &type
   }
   if (0 == strcasecmp(type_str, "date_format")) {
     type = Type::DATE_FORMAT;
+    return RC::SUCCESS;
+  }
+  if (0 == strcasecmp(type_str, "string_to_vector") || 0 == strcasecmp(type_str, "to_vector")) {
+    type = Type::STRING_TO_VECTOR;
+    return RC::SUCCESS;
+  }
+  if (0 == strcasecmp(type_str, "vector_to_string") || 0 == strcasecmp(type_str, "from_vector")) {
+    type = Type::VECTOR_TO_STRING;
+    return RC::SUCCESS;
+  }
+  if (0 == strcasecmp(type_str, "distance") || 0 == strcasecmp(type_str, "vector_distance")) {
+    type = Type::DISTANCE;
     return RC::SUCCESS;
   }
   return RC::INVALID_ARGUMENT;

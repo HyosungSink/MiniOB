@@ -691,6 +691,9 @@ public:
     LENGTH,
     ROUND,
     DATE_FORMAT,
+    STRING_TO_VECTOR,
+    VECTOR_TO_STRING,
+    DISTANCE,
   };
 
 public:

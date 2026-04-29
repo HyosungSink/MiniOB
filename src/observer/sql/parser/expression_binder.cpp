@@ -989,9 +989,60 @@ RC ExpressionBinder::bind_scalar_function(const char *function_name,
         return RC::INVALID_ARGUMENT;
       }
     } break;
+    case FunctionExpr::Type::STRING_TO_VECTOR: {
+      if (bound_arguments.size() != 1) {
+        return RC::INVALID_ARGUMENT;
+      }
+      AttrType text_type = type_at(0);
+      if (text_type != AttrType::CHARS && !is_null_literal_type(text_type)) {
+        return RC::INVALID_ARGUMENT;
+      }
+    } break;
+    case FunctionExpr::Type::VECTOR_TO_STRING: {
+      if (bound_arguments.size() != 1) {
+        return RC::INVALID_ARGUMENT;
+      }
+      AttrType vector_type = type_at(0);
+      if (vector_type != AttrType::VECTORS && !is_null_literal_type(vector_type)) {
+        return RC::INVALID_ARGUMENT;
+      }
+    } break;
+    case FunctionExpr::Type::DISTANCE: {
+      if (bound_arguments.size() != 3) {
+        return RC::INVALID_ARGUMENT;
+      }
+      AttrType left_type = type_at(0);
+      AttrType right_type = type_at(1);
+      AttrType metric_type = type_at(2);
+      if ((left_type != AttrType::VECTORS && !is_null_literal_type(left_type)) ||
+          (right_type != AttrType::VECTORS && !is_null_literal_type(right_type))) {
+        return RC::INVALID_ARGUMENT;
+      }
+      if (metric_type != AttrType::CHARS && !is_null_literal_type(metric_type)) {
+        return RC::INVALID_ARGUMENT;
+      }
+    } break;
   }
 
   auto function_expr = make_unique<FunctionExpr>(function_type, std::move(bound_arguments));
+  bool all_constant_arguments = true;
+  for (const unique_ptr<Expression> &argument : function_expr->arguments()) {
+    Value constant_value;
+    rc = argument->try_get_value(constant_value);
+    if (OB_FAIL(rc)) {
+      all_constant_arguments = false;
+      break;
+    }
+  }
+
+  if (all_constant_arguments) {
+    Value constant_value;
+    rc = function_expr->try_get_value(constant_value);
+    if (OB_FAIL(rc)) {
+      return rc;
+    }
+  }
+
   function_expr->set_name(expression_name);
   bound_expressions.emplace_back(std::move(function_expr));
   return RC::SUCCESS;
