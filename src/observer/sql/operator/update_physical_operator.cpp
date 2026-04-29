@@ -140,9 +140,6 @@ RC UpdatePhysicalOperator::make_updated_record(const Record &old_record, Record 
     }
 
     if (value.is_null()) {
-      if (!field_meta->nullable()) {
-        return RC::SCHEMA_FIELD_TYPE_MISMATCH;
-      }
       Value::set_null_data(new_record.data() + field_meta->offset(), field_meta->len(), field_meta->type());
       continue;
     }

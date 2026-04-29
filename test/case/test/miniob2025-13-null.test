@@ -27,6 +27,17 @@ update null_table4 set id=null where num is null;
 update null_table4 set num=(select null_table3.num from null_table3 where null_table3.id=6) where id=3;
 -- sort select id, num, name from null_table4;
 
+-- echo null update-select regression
+create table null_table7(id int not null, num int null);
+create table null_table8(id int not null, num int null, name char(10) null);
+insert into null_table7 values(3, null);
+insert into null_table8 values(2, 2, 'n2');
+insert into null_table8 values(7, 7, 'n7');
+update null_table8 set num=null where id=2;
+update null_table8 set name=null where num is null;
+update null_table8 set id=null where num is null;
+update null_table8 set num=(select null_table7.num from null_table7 where null_table7.id=3) where id=7;
+
 -- echo null boundary errors
 insert into null_t values(null, 1, 1.0, 'x');
 select id from null_t where missing_col is null;

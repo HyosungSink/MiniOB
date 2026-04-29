@@ -886,7 +886,12 @@ RC SubqueryExpr::get_value(const Tuple &tuple, Value &value) const
     return rc;
   }
 
-  if (values_.size() != 1) {
+  if (values_.empty()) {
+    value.set_null();
+    return RC::SUCCESS;
+  }
+
+  if (values_.size() > 1) {
     LOG_WARN("scalar subquery should return one row. actual rows=%d", values_.size());
     return RC::INVALID_ARGUMENT;
   }
@@ -906,7 +911,7 @@ RC SubqueryExpr::prepare() const
     return rc;
   }
 
-  if (values_.size() != 1) {
+  if (values_.size() > 1) {
     LOG_WARN("scalar subquery should return one row. actual rows=%d", values_.size());
     return RC::INVALID_ARGUMENT;
   }
@@ -925,7 +930,11 @@ RC SubqueryExpr::try_get_value(Value &value) const
     return rc;
   }
 
-  value = values_[0];
+  if (values_.empty()) {
+    value.set_null();
+  } else {
+    value = values_[0];
+  }
   return RC::SUCCESS;
 }
 
