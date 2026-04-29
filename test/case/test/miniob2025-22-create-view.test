@@ -17,6 +17,16 @@ select age from view_t1 where id=4;
 delete from view_simple where id=4;
 -- sort select * from view_t1;
 
+-- echo view insert count stays current
+create table create_view_t1(id int, age int, name char(10));
+insert into create_view_t1 values(10, 10, 'seed1');
+insert into create_view_t1 values(20, 20, 'seed2');
+create view create_view_v1 as select * from create_view_t1;
+insert into create_view_v1 values(193, 193, 'TJ4JHV');
+insert into create_view_v1 values(83, 83, '2DLDAT9GLO');
+insert into create_view_v1 values(177, 177, 'Q09KYCS');
+select count(*) from create_view_v1;
+
 -- echo view with aliases and filters
 create view view_alias as select id as vid, name as vname from view_t1 where age>=20;
 -- sort select * from view_alias;
