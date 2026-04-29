@@ -1101,6 +1101,25 @@ RC ExpressionBinder::bind_scalar_function(const char *function_name,
         return RC::INVALID_ARGUMENT;
       }
     } break;
+    case FunctionExpr::Type::TOKENIZE: {
+      if (bound_arguments.size() != 2) {
+        return RC::INVALID_ARGUMENT;
+      }
+      AttrType text_type   = type_at(0);
+      AttrType parser_type = type_at(1);
+      if (text_type != AttrType::CHARS && !is_null_literal_type(text_type)) {
+        return RC::INVALID_ARGUMENT;
+      }
+      if (parser_type != AttrType::CHARS && !is_null_literal_type(parser_type)) {
+        return RC::INVALID_ARGUMENT;
+      }
+
+      Value parser_value;
+      if (OB_SUCC(bound_arguments[1]->try_get_value(parser_value)) && !parser_value.is_null() &&
+          0 != strcasecmp(parser_value.get_string().c_str(), "jieba")) {
+        return RC::INVALID_ARGUMENT;
+      }
+    } break;
     case FunctionExpr::Type::CONCAT: {
       if (bound_arguments.empty()) {
         return RC::INVALID_ARGUMENT;

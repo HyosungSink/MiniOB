@@ -25,8 +25,8 @@ See the Mulan PSL v2 for more details. */
 #include "sql/parser/parse.h"
 #include "sql/stmt/stmt.h"
 #include "common/type/vector_type.h"
-#include "storage/db/db.h"
 #include "storage/tokenizer/jieba_tokenizer.h"
+#include "storage/db/db.h"
 #include "storage/trx/trx.h"
 
 #include <cmath>
