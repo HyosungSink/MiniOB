@@ -38,6 +38,7 @@ class BinderContext;
   DEFINE_ENUM_ITEM(DELETE)        \
   DEFINE_ENUM_ITEM(CREATE_TABLE)  \
   DEFINE_ENUM_ITEM(DROP_TABLE)    \
+  DEFINE_ENUM_ITEM(ALTER_TABLE)   \
   DEFINE_ENUM_ITEM(ANALYZE_TABLE) \
   DEFINE_ENUM_ITEM(CREATE_INDEX)  \
   DEFINE_ENUM_ITEM(DROP_INDEX)    \
@@ -92,4 +93,17 @@ public:
   static RC create_stmt(Db *db, ParsedSqlNode &sql_node, Stmt *&stmt, const BinderContext *parent_context = nullptr);
 
 private:
+};
+
+class AlterTableStmt : public Stmt
+{
+public:
+  explicit AlterTableStmt(const AlterTableSqlNode &alter_table) : alter_table_(alter_table) {}
+
+  StmtType type() const override { return StmtType::ALTER_TABLE; }
+
+  const AlterTableSqlNode &alter_table() const { return alter_table_; }
+
+private:
+  AlterTableSqlNode alter_table_;
 };
