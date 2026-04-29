@@ -102,6 +102,11 @@ RC parse_vector_function_value(const char *function_name, const char *literal, V
         TO
         INDEX
         LIKE
+        FULLTEXT
+        PARSER
+        WITH
+        MATCH
+        AGAINST
         CALC
         SELECT
         DESC
@@ -399,6 +404,20 @@ alter_table_stmt:
       $$->alter_table.relation_name = $3;
       $$->alter_table.action = AlterTableAction::RENAME_TABLE;
       $$->alter_table.new_relation_name = $6;
+    }
+    | ALTER TABLE ID ADD FULLTEXT INDEX ID LBRACE attr_list RBRACE WITH PARSER ID
+    {
+      $$ = new ParsedSqlNode(SCF_CREATE_INDEX);
+      CreateIndexSqlNode &create_index = $$->create_index;
+      create_index.fulltext = true;
+      create_index.index_name = $7;
+      create_index.relation_name = $3;
+      create_index.attribute_names.swap(*$9);
+      if (!create_index.attribute_names.empty()) {
+        create_index.attribute_name = create_index.attribute_names.front();
+      }
+      create_index.parser_name = $13;
+      delete $9;
     }
     ;
 
@@ -1018,6 +1037,17 @@ expression:
       arguments.emplace_back($3);
       $$ = new UnboundFunctionExpr("like", std::move(arguments));
       $$->set_name(token_name(sql_string, &@$));
+    }
+    | MATCH LBRACE rel_attr RBRACE AGAINST LBRACE value RBRACE
+    {
+      RelAttrSqlNode *node = $3;
+      vector<unique_ptr<Expression>> arguments;
+      arguments.emplace_back(new UnboundFieldExpr(node->relation_name, node->attribute_name));
+      arguments.emplace_back(new ValueExpr(*$7));
+      $$ = new UnboundFunctionExpr("match_against", std::move(arguments));
+      $$->set_name(token_name(sql_string, &@$));
+      delete node;
+      delete $7;
     }
     | expression IS NULL_T
     {

@@ -262,6 +262,8 @@ struct CreateIndexSqlNode
   string         attribute_name;   ///< First attribute name
   vector<string> attribute_names;  ///< Attribute names
   bool           unique = false;   ///< Whether the index is unique
+  bool           fulltext = false; ///< Whether the index is a full-text index
+  string         parser_name;      ///< Full-text parser name
 };
 
 /**
