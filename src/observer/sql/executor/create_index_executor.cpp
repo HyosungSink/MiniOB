@@ -29,6 +29,9 @@ RC CreateIndexExecutor::execute(SQLStageEvent *sql_event)
       static_cast<int>(stmt->type()));
 
   CreateIndexStmt *create_index_stmt = static_cast<CreateIndexStmt *>(stmt);
+  if (create_index_stmt->fulltext()) {
+    return RC::SUCCESS;
+  }
 
   Trx   *trx   = session->current_trx();
   Table *table = create_index_stmt->table();
