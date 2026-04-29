@@ -362,6 +362,12 @@ RC MvccTrx::rollback()
             return rc;
           }
         }
+        rc = table->get_record(rid, record);
+        if (OB_FAIL(rc)) {
+          LOG_WARN("failed to get inserted record while rollback. table=%s, rid=%s, rc=%s",
+              table->name(), rid.to_string().c_str(), strrc(rc));
+          return rc;
+        }
         rc = table->delete_record(record);
         ASSERT(rc == RC::SUCCESS, "failed to delete record while rollback. rid=%s, rc=%s",
                rid.to_string().c_str(), strrc(rc));
