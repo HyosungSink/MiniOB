@@ -12,6 +12,7 @@
 #include "sql/parser/yacc_sql.hpp"
 #include "sql/parser/lex_sql.h"
 #include "sql/expr/expression.h"
+#include "common/type/vector_type.h"
 
 using namespace std;
 
@@ -60,6 +61,14 @@ UnboundFunctionExpr *create_function_expression(const char *function_name,
   expr->set_name(token_name(sql_string, llocp));
   delete arguments;
   return expr;
+}
+
+RC parse_vector_function_value(const char *function_name, const char *literal, Value &value)
+{
+  if (0 != strcasecmp(function_name, "string_to_vector") && 0 != strcasecmp(function_name, "to_vector")) {
+    return RC::INVALID_ARGUMENT;
+  }
+  return VectorType::parse_vector_literal(literal, value);
 }
 
 %}
@@ -213,6 +222,9 @@ UnboundFunctionExpr *create_function_expression(const char *function_name,
 %type <number>              attr_nullability
 %type <value_list>          value_list
 %type <value_rows>          value_rows
+%type <value>               insert_value
+%type <value_list>          insert_value_list
+%type <value_rows>          insert_value_rows
 %type <condition_list>      where
 %type <condition_list>      having
 %type <condition_list>      condition_list
@@ -503,7 +515,7 @@ attr_list:
     ;
 
 insert_stmt:        /*insert   语句的语法解析树*/
-    INSERT INTO ID VALUES value_rows
+    INSERT INTO ID VALUES insert_value_rows
     {
       $$ = new ParsedSqlNode(SCF_INSERT);
       $$->insertion.relation_name = $3;
@@ -512,6 +524,53 @@ insert_stmt:        /*insert   语句的语法解析树*/
         $$->insertion.values = $$->insertion.value_rows.front();
       }
       delete $5;
+    }
+    ;
+
+insert_value_rows:
+    LBRACE insert_value_list RBRACE
+    {
+      $$ = new vector<vector<Value>>;
+      $$->emplace_back(*$2);
+      delete $2;
+    }
+    | insert_value_rows COMMA LBRACE insert_value_list RBRACE
+    {
+      $$ = $1;
+      $$->emplace_back(*$4);
+      delete $4;
+    }
+    ;
+
+insert_value_list:
+    insert_value
+    {
+      $$ = new vector<Value>;
+      $$->emplace_back(*$1);
+      delete $1;
+    }
+    | insert_value_list COMMA insert_value {
+      $$ = $1;
+      $$->emplace_back(*$3);
+      delete $3;
+    }
+    ;
+
+insert_value:
+    value
+    {
+      $$ = $1;
+    }
+    | ID LBRACE SSS RBRACE {
+      char *tmp = common::substr($3, 1, strlen($3) - 2);
+      Value vector_value;
+      RC rc = parse_vector_function_value($1, tmp, vector_value);
+      free(tmp);
+      if (rc != RC::SUCCESS) {
+        yyerror(&@1, sql_string, sql_result, scanner, "invalid vector literal");
+        YYERROR;
+      }
+      $$ = new Value(std::move(vector_value));
     }
     ;
 
