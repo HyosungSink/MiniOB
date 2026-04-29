@@ -56,7 +56,7 @@ RC CountAggregator::evaluate(Value &result)
 
 AvgAggregator::AvgAggregator(AttrType value_type)
 {
-  precision_ = value_type == AttrType::INTS ? 4 : 2;
+  precision_  = 2;
 }
 
 RC AvgAggregator::accumulate(const Value &value)
