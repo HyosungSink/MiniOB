@@ -88,6 +88,9 @@ UnboundFunctionExpr *create_function_expression(const char *function_name,
         CALC
         SELECT
         DESC
+        ORDER
+        ASC
+        LIMIT
         SHOW
         SYNC
         INSERT
@@ -160,6 +163,8 @@ UnboundFunctionExpr *create_function_expression(const char *function_name,
   vector<vector<Value>> *                    value_rows;
   vector<ConditionSqlNode> *                 condition_list;
   vector<RelAttrSqlNode> *                   rel_attr_list;
+  OrderBySqlNode *                           order_by;
+  vector<OrderBySqlNode> *                   order_by_list;
   vector<UpdateAssignmentSqlNode> *          update_assignment_list;
   RelationSqlNode *                          relation;
   TableRefsSqlNode *                         table_refs;
@@ -178,6 +183,8 @@ UnboundFunctionExpr *create_function_expression(const char *function_name,
 %destructor { delete $$; } <value_list>
 %destructor { delete $$; } <value_rows>
 %destructor { delete $$; } <condition_list>
+%destructor { delete $$; } <order_by>
+%destructor { delete $$; } <order_by_list>
 %destructor { delete $$; } <update_assignment_list>
 // %destructor { delete $$; } <rel_attr_list>
 %destructor { delete $$; } <relation>
@@ -209,6 +216,11 @@ UnboundFunctionExpr *create_function_expression(const char *function_name,
 %type <condition_list>      where
 %type <condition_list>      having
 %type <condition_list>      condition_list
+%type <order_by>            order_by_item
+%type <order_by_list>       order_by
+%type <order_by_list>       order_by_list
+%type <number>              order_direction
+%type <number>              limit
 %type <update_assignment_list> update_assignment_list
 %type <table_refs>          table_refs
 %type <table_refs>          table_ref
@@ -627,9 +639,16 @@ update_assignment_list:
     }
     ;
 select_stmt:
-    select_query
+    select_query order_by limit
     {
       $$ = $1;
+
+      if ($2 != nullptr) {
+        $$->selection.order_by.swap(*$2);
+        delete $2;
+      }
+
+      $$->selection.limit = $3;
     }
     ;
 select_query:
@@ -838,6 +857,16 @@ expression:
     | function_expression {
       $$ = $1;
     }
+    | expression IS NULL_T
+    {
+      $$ = new IsNullExpr(unique_ptr<Expression>($1), false);
+      $$->set_name(token_name(sql_string, &@$));
+    }
+    | expression IS NOT NULL_T
+    {
+      $$ = new IsNullExpr(unique_ptr<Expression>($1), true);
+      $$->set_name(token_name(sql_string, &@$));
+    }
     ;
 
 function_expression:
@@ -1042,6 +1071,66 @@ having:
       $$ = nullptr;
     }
     | HAVING condition_list
+    {
+      $$ = $2;
+    }
+    ;
+order_by:
+    /* empty */
+    {
+      $$ = nullptr;
+    }
+    | ORDER BY order_by_list
+    {
+      $$ = $3;
+    }
+    ;
+order_by_list:
+    order_by_item
+    {
+      $$ = new vector<OrderBySqlNode>;
+      $$->emplace_back(std::move(*$1));
+      delete $1;
+    }
+    | order_by_item COMMA order_by_list
+    {
+      if ($3 != nullptr) {
+        $$ = $3;
+      } else {
+        $$ = new vector<OrderBySqlNode>;
+      }
+      $$->insert($$->begin(), std::move(*$1));
+      delete $1;
+    }
+    ;
+order_by_item:
+    expression order_direction
+    {
+      $$ = new OrderBySqlNode;
+      $$->expression.reset($1);
+      $$->asc = ($2 != 0);
+    }
+    ;
+order_direction:
+    /* empty */
+    {
+      $$ = 1;
+    }
+    | ASC
+    {
+      $$ = 1;
+    }
+    | DESC
+    {
+      $$ = 0;
+    }
+    ;
+limit:
+    /* empty */
+    {
+      $$ = -1;
+    }
+    | LIMIT number
     {
       $$ = $2;
     }

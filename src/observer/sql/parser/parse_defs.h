@@ -96,6 +96,12 @@ struct TableRefsSqlNode
   vector<ConditionSqlNode> conditions;
 };
 
+struct OrderBySqlNode
+{
+  unique_ptr<Expression> expression;
+  bool                   asc = true;
+};
+
 /**
  * @brief 描述一个select语句
  * @ingroup SQLParser
@@ -114,6 +120,8 @@ struct SelectSqlNode
   vector<ConditionSqlNode>       conditions;   ///< 查询条件，使用AND串联起来多个条件
   vector<unique_ptr<Expression>> group_by;     ///< group by clause
   vector<ConditionSqlNode>       having;       ///< having conditions
+  vector<OrderBySqlNode>         order_by;     ///< order by clause
+  int                            limit = -1;   ///< limit clause, -1 means no limit
   vector<SelectSqlNode>          union_selects;
   vector<bool>                   union_all;
 };

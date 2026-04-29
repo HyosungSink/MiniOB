@@ -115,6 +115,17 @@ RC SelectStmt::create(Db *db, SelectSqlNode &select_sql, Stmt *&stmt, const Bind
     }
   }
 
+  vector<unique_ptr<Expression>> order_by_expressions;
+  vector<bool>                   order_by_asc;
+  for (OrderBySqlNode &order_by : select_sql.order_by) {
+    RC rc = expression_binder.bind_expression(order_by.expression, order_by_expressions);
+    if (OB_FAIL(rc)) {
+      LOG_INFO("bind order by expression failed. rc=%s", strrc(rc));
+      return rc;
+    }
+    order_by_asc.push_back(order_by.asc);
+  }
+
   Table *default_table = nullptr;
   if (tables.size() == 1) {
     default_table = tables[0];
@@ -158,6 +169,9 @@ RC SelectStmt::create(Db *db, SelectSqlNode &select_sql, Stmt *&stmt, const Bind
   select_stmt->filter_stmt_ = filter_stmt;
   select_stmt->having_filter_stmt_ = having_filter_stmt;
   select_stmt->group_by_.swap(group_by_expressions);
+  select_stmt->order_by_.swap(order_by_expressions);
+  select_stmt->order_by_asc_.swap(order_by_asc);
+  select_stmt->limit_ = select_sql.limit;
   select_stmt->has_outer_reference_ = binder_context.has_outer_reference() ||
                                       (filter_stmt != nullptr && filter_stmt->has_outer_reference()) ||
                                       (having_filter_stmt != nullptr && having_filter_stmt->has_outer_reference());
@@ -173,8 +187,8 @@ RC SelectStmt::create(Db *db, SelectSqlNode &select_sql, Stmt *&stmt, const Bind
 
     unique_ptr<SelectStmt> union_select_stmt(static_cast<SelectStmt *>(union_stmt));
     if (union_select_stmt->query_expressions().size() != select_stmt->query_expressions_.size()) {
-      delete select_stmt;
       LOG_WARN("union select column count mismatch");
+      delete select_stmt;
       return RC::INVALID_ARGUMENT;
     }
 
@@ -182,8 +196,8 @@ RC SelectStmt::create(Db *db, SelectSqlNode &select_sql, Stmt *&stmt, const Bind
       AttrType left_type  = select_stmt->query_expressions_[i]->value_type();
       AttrType right_type = union_select_stmt->query_expressions()[i]->value_type();
       if (left_type != AttrType::UNDEFINED && right_type != AttrType::UNDEFINED && left_type != right_type) {
-        delete select_stmt;
         LOG_WARN("union select column type mismatch");
+        delete select_stmt;
         return RC::INVALID_ARGUMENT;
       }
     }
