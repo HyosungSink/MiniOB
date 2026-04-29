@@ -28,6 +28,10 @@ See the Mulan PSL v2 for more details. */
 #include "sql/executor/trx_begin_executor.h"
 #include "sql/executor/trx_end_executor.h"
 #include "sql/stmt/stmt.h"
+#include "event/session_event.h"
+#include "event/sql_event.h"
+#include "session/session.h"
+#include "storage/db/db.h"
 
 RC CommandExecutor::execute(SQLStageEvent *sql_event)
 {
@@ -48,6 +52,11 @@ RC CommandExecutor::execute(SQLStageEvent *sql_event)
     case StmtType::DROP_TABLE: {
       DropTableExecutor executor;
       rc = executor.execute(sql_event);
+    } break;
+
+    case StmtType::ALTER_TABLE: {
+      AlterTableStmt *alter_table_stmt = static_cast<AlterTableStmt *>(stmt);
+      rc = sql_event->session_event()->session()->get_current_db()->alter_table(alter_table_stmt->alter_table());
     } break;
 
     case StmtType::DROP_INDEX: {
