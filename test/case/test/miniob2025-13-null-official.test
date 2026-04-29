@@ -80,3 +80,30 @@ SELECT * FROM null_table6;
 # 2 | NULL | 1
 # 2 | NULL | 2
 # '''
+
+# -- avg nullable integer keeps MiniOB float output precision
+DROP TABLE null_table;
+CREATE TABLE null_table(id int not null, num int null, price float not null, birthday date null);
+CREATE INDEX index_num on null_table(num);
+INSERT INTO null_table VALUES (1, 5, 1.0, NULL);
+INSERT INTO null_table VALUES (2, 5, 1.0, NULL);
+INSERT INTO null_table VALUES (3, 5, 1.0, NULL);
+INSERT INTO null_table VALUES (4, 5, 1.0, NULL);
+INSERT INTO null_table VALUES (5, 5, 1.0, NULL);
+INSERT INTO null_table VALUES (6, 5, 1.0, NULL);
+INSERT INTO null_table VALUES (7, 5, 1.0, NULL);
+INSERT INTO null_table VALUES (8, 5, 1.0, NULL);
+INSERT INTO null_table VALUES (9, 5, 1.0, NULL);
+INSERT INTO null_table VALUES (10, 6, 1.0, NULL);
+INSERT INTO null_table VALUES (11, 6, 1.0, NULL);
+INSERT INTO null_table VALUES (12, 6, 1.0, NULL);
+INSERT INTO null_table VALUES (13, 6, 1.0, NULL);
+INSERT INTO null_table VALUES (14, 6, 1.0, NULL);
+INSERT INTO null_table VALUES (15, 6, 1.0, NULL);
+INSERT INTO null_table VALUES (16, 6, 1.0, NULL);
+INSERT INTO null_table VALUES (17, NULL, 1.0, NULL);
+SELECT avg(num) FROM null_table;
+# '''
+# correct output:
+# 5.44
+# '''
