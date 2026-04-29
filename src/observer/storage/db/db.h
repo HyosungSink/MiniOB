@@ -31,6 +31,22 @@ class LogHandler;
 class BufferPoolManager;
 class TrxKit;
 
+struct ViewColumnMapping
+{
+  string view_column;
+  string base_column;
+};
+
+struct ViewDefinition
+{
+  string                    view_name;
+  string                    base_table_name;
+  vector<ViewColumnMapping> columns;
+  bool                      updatable = false;
+
+  const string *base_column_for(const string &view_column) const;
+};
+
 /**
  * @brief 一个DB实例负责管理一批表
  * @details 当前DB的存储模式很简单，一个DB对应一个目录，所有的表和数据都放置在这个目录下。
@@ -76,6 +92,9 @@ public:
   RC drop_table(const char *table_name);
 
   RC alter_table(const AlterTableSqlNode &alter_table);
+
+  RC register_view(ViewDefinition &&view);
+  const ViewDefinition *find_view(const char *view_name) const;
 
   /**
    * @brief 根据表名查找表
@@ -144,6 +163,7 @@ private:
   string                         name_;                 ///< 数据库名称
   string                         path_;                 ///< 数据库文件存放的目录
   unordered_map<string, Table *> opened_tables_;        ///< 当前所有打开的表
+  unordered_map<string, ViewDefinition> views_;         ///< 当前进程内创建的视图定义
   unique_ptr<BufferPoolManager>  buffer_pool_manager_;  ///< 当前数据库的buffer pool管理器
   unique_ptr<LogHandler>         log_handler_;          ///< 当前数据库的日志处理器
   unique_ptr<TrxKit>             trx_kit_;              ///< 当前数据库的事务管理器

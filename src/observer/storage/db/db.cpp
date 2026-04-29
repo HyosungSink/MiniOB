@@ -31,6 +31,16 @@ See the Mulan PSL v2 for more details. */
 
 using namespace common;
 
+const string *ViewDefinition::base_column_for(const string &view_column) const
+{
+  for (const ViewColumnMapping &column : columns) {
+    if (column.view_column == view_column) {
+      return &column.base_column;
+    }
+  }
+  return nullptr;
+}
+
 Db::~Db()
 {
   for (auto &iter : opened_tables_) {
@@ -202,6 +212,7 @@ RC Db::drop_table(const char *table_name)
   }
 
   opened_tables_.erase(iter);
+  views_.erase(table_name);
   delete table;
 
   auto remove_file_if_exists = [](const string &file_name) -> RC {
@@ -244,6 +255,24 @@ RC Db::drop_table(const char *table_name)
 
   LOG_INFO("drop table success. db=%s, table=%s", name_.c_str(), table_name);
   return RC::SUCCESS;
+}
+
+RC Db::register_view(ViewDefinition &&view)
+{
+  if (common::is_blank(view.view_name.c_str())) {
+    return RC::INVALID_ARGUMENT;
+  }
+  views_[view.view_name] = std::move(view);
+  return RC::SUCCESS;
+}
+
+const ViewDefinition *Db::find_view(const char *view_name) const
+{
+  if (common::is_blank(view_name)) {
+    return nullptr;
+  }
+  auto iter = views_.find(view_name);
+  return iter == views_.end() ? nullptr : &iter->second;
 }
 
 static AttrInfoSqlNode attr_info_from_field(const FieldMeta &field)

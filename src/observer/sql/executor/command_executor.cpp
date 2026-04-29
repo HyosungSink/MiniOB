@@ -52,6 +52,31 @@ static size_t view_attr_length(const Expression &expression)
   return length > 0 ? static_cast<size_t>(length) : 4;
 }
 
+static ViewDefinition build_view_definition(const CreateViewStmt &create_view_stmt, SelectStmt &select_stmt)
+{
+  ViewDefinition view;
+  view.view_name = create_view_stmt.relation_name();
+  if (select_stmt.tables().empty() || !select_stmt.group_by().empty()) {
+    return view;
+  }
+
+  view.base_table_name = select_stmt.tables().front()->name();
+  for (const unique_ptr<Expression> &expression : select_stmt.query_expressions()) {
+    if (expression->type() != ExprType::FIELD) {
+      continue;
+    }
+
+    const FieldExpr *field_expr = static_cast<const FieldExpr *>(expression.get());
+    if (view.base_table_name != field_expr->table_name()) {
+      continue;
+    }
+
+    view.columns.push_back({expression->name(), field_expr->field_name()});
+  }
+  view.updatable = !view.columns.empty();
+  return view;
+}
+
 static RC parse_view_select(const string &select_sql, ParsedSqlResult &sql_result, ParsedSqlNode *&select_node)
 {
   RC rc = parse(select_sql.c_str(), &sql_result);
@@ -85,6 +110,7 @@ static RC create_materialized_view(SQLStageEvent *sql_event, const CreateViewStm
     return rc;
   }
   unique_ptr<SelectStmt> select_stmt(static_cast<SelectStmt *>(stmt));
+  ViewDefinition view_definition = build_view_definition(create_view_stmt, *select_stmt);
 
   vector<AttrInfoSqlNode> attrs;
   attrs.reserve(select_stmt->query_expressions().size());
@@ -163,6 +189,9 @@ static RC create_materialized_view(SQLStageEvent *sql_event, const CreateViewStm
   }
   if (OB_FAIL(rc)) {
     db->drop_table(create_view_stmt.relation_name().c_str());
+  }
+  if (OB_SUCC(rc)) {
+    rc = db->register_view(std::move(view_definition));
   }
   return rc;
 }
