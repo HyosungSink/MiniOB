@@ -46,6 +46,8 @@ public:
 
   vector<unique_ptr<Expression>> &query_expressions() { return query_expressions_; }
   vector<unique_ptr<Expression>> &group_by() { return group_by_; }
+  vector<unique_ptr<SelectStmt>> &union_stmts() { return union_stmts_; }
+  const vector<bool>             &union_all() const { return union_all_; }
   bool has_outer_reference() const { return has_outer_reference_; }
 
 private:
@@ -54,5 +56,7 @@ private:
   FilterStmt                    *filter_stmt_ = nullptr;
   FilterStmt                    *having_filter_stmt_ = nullptr;
   vector<unique_ptr<Expression>> group_by_;
+  vector<unique_ptr<SelectStmt>> union_stmts_;
+  vector<bool>                   union_all_;
   bool                           has_outer_reference_ = false;
 };

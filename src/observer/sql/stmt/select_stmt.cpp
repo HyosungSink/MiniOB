@@ -161,6 +161,36 @@ RC SelectStmt::create(Db *db, SelectSqlNode &select_sql, Stmt *&stmt, const Bind
   select_stmt->has_outer_reference_ = binder_context.has_outer_reference() ||
                                       (filter_stmt != nullptr && filter_stmt->has_outer_reference()) ||
                                       (having_filter_stmt != nullptr && having_filter_stmt->has_outer_reference());
+
+  for (SelectSqlNode &union_select : select_sql.union_selects) {
+    Stmt *union_stmt = nullptr;
+    rc = SelectStmt::create(db, union_select, union_stmt, parent_context);
+    if (OB_FAIL(rc)) {
+      delete select_stmt;
+      LOG_WARN("failed to create union select statement. rc=%s", strrc(rc));
+      return rc;
+    }
+
+    unique_ptr<SelectStmt> union_select_stmt(static_cast<SelectStmt *>(union_stmt));
+    if (union_select_stmt->query_expressions().size() != select_stmt->query_expressions_.size()) {
+      delete select_stmt;
+      LOG_WARN("union select column count mismatch");
+      return RC::INVALID_ARGUMENT;
+    }
+
+    for (size_t i = 0; i < select_stmt->query_expressions_.size(); i++) {
+      AttrType left_type  = select_stmt->query_expressions_[i]->value_type();
+      AttrType right_type = union_select_stmt->query_expressions()[i]->value_type();
+      if (left_type != AttrType::UNDEFINED && right_type != AttrType::UNDEFINED && left_type != right_type) {
+        delete select_stmt;
+        LOG_WARN("union select column type mismatch");
+        return RC::INVALID_ARGUMENT;
+      }
+    }
+
+    select_stmt->union_stmts_.emplace_back(std::move(union_select_stmt));
+  }
+  select_stmt->union_all_ = select_sql.union_all;
   stmt                      = select_stmt;
   return RC::SUCCESS;
 }

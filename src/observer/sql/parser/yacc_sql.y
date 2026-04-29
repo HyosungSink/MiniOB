@@ -76,6 +76,7 @@ UnboundFunctionExpr *create_function_expression(const char *function_name,
 
 //标识tokens
 %token  SEMICOLON
+        END 0 "end of file"
         BY
         CREATE
         DROP
@@ -114,6 +115,7 @@ UnboundFunctionExpr *create_function_expression(const char *function_name,
         OR
         ANY
         ALL
+        UNION
         INNER
         JOIN
         SET
@@ -191,6 +193,7 @@ UnboundFunctionExpr *create_function_expression(const char *function_name,
 /** type 定义了各种解析后的结果输出的是什么类型。类型对应了 union 中的定义的成员变量名称 **/
 %type <number>              type
 %type <number>              unique_opt
+%type <number>              union_all_opt
 %type <condition>           condition
 %type <value>               value
 %type <number>              number
@@ -224,6 +227,8 @@ UnboundFunctionExpr *create_function_expression(const char *function_name,
 %type <cstring>             enclosed_by
 %type <sql_node>            calc_stmt
 %type <sql_node>            select_stmt
+%type <sql_node>            select_query
+%type <sql_node>            select_core
 %type <sql_node>            insert_stmt
 %type <sql_node>            update_stmt
 %type <sql_node>            delete_stmt
@@ -252,7 +257,7 @@ UnboundFunctionExpr *create_function_expression(const char *function_name,
 %right UMINUS
 %%
 
-commands: command_wrapper opt_semicolon  //commands or sqls. parser starts here.
+commands: command_wrapper opt_semicolon END  //commands or sqls. parser starts here.
   {
     unique_ptr<ParsedSqlNode> sql_node = unique_ptr<ParsedSqlNode>($1);
     sql_result->add_sql_node(std::move(sql_node));
@@ -621,7 +626,36 @@ update_assignment_list:
       $$->insert($$->begin(), std::move(assignment));
     }
     ;
-select_stmt:        /*  select 语句的语法解析树*/
+select_stmt:
+    select_query
+    {
+      $$ = $1;
+    }
+    ;
+select_query:
+    select_core
+    {
+      $$ = $1;
+    }
+    | select_query UNION union_all_opt select_core
+    {
+      $$ = $1;
+      $$->selection.union_selects.emplace_back(std::move($4->selection));
+      $$->selection.union_all.emplace_back($3 != 0);
+      delete $4;
+    }
+    ;
+union_all_opt:
+    /* empty */
+    {
+      $$ = 0;
+    }
+    | ALL
+    {
+      $$ = 1;
+    }
+    ;
+select_core:        /*  select 语句的语法解析树*/
     SELECT select_expression_list FROM table_refs where group_by having
     {
       $$ = new ParsedSqlNode(SCF_SELECT);
