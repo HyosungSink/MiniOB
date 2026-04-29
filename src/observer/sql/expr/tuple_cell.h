@@ -30,6 +30,15 @@ public:
 
   bool equals(const TupleCellSpec &other) const
   {
+    if (!table_name_.empty() && !field_name_.empty() && !other.table_name_.empty() && !other.field_name_.empty()) {
+      return table_name_ == other.table_name_ && field_name_ == other.field_name_;
+    }
+    if (!alias_.empty() && !other.field_name_.empty() && alias_ == other.field_name_) {
+      return true;
+    }
+    if (!field_name_.empty() && !other.alias_.empty() && field_name_ == other.alias_) {
+      return true;
+    }
     return table_name_ == other.table_name_ && field_name_ == other.field_name_ && alias_ == other.alias_;
   }
 

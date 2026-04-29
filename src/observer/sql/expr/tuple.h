@@ -288,6 +288,11 @@ public:
 
   RC spec_at(int index, TupleCellSpec &spec) const override
   {
+    if (expressions_[index]->type() == ExprType::FIELD) {
+      const FieldExpr *field_expr = static_cast<const FieldExpr *>(expressions_[index].get());
+      spec = TupleCellSpec(field_expr->table_name(), field_expr->field_name(), expressions_[index]->name());
+      return RC::SUCCESS;
+    }
     spec = TupleCellSpec(expressions_[index]->name());
     return RC::SUCCESS;
   }
