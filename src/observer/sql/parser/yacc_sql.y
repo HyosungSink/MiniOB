@@ -113,6 +113,7 @@ RC parse_vector_function_value(const char *function_name, const char *literal, V
         TRX_ROLLBACK
         INT_T
         STRING_T
+        TEXT_T
         FLOAT_T
         DATES_T
         VECTOR_T
@@ -459,6 +460,14 @@ attr_def:
       $$->type = (AttrType)$2;
       $$->name = $1;
       $$->length = 4;
+      $$->nullable = ($3 == 0);
+    }
+    | ID TEXT_T attr_nullability
+    {
+      $$ = new AttrInfoSqlNode;
+      $$->type = AttrType::CHARS;
+      $$->name = $1;
+      $$->length = 4096;
       $$->nullable = ($3 == 0);
     }
     ;
