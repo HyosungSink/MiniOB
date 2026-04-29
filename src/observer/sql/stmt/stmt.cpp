@@ -38,6 +38,7 @@ bool stmt_type_ddl(StmtType type)
 {
   switch (type) {
     case StmtType::CREATE_TABLE:
+    case StmtType::CREATE_VIEW:
     case StmtType::DROP_TABLE:
     case StmtType::ALTER_TABLE:
     case StmtType::DROP_INDEX:
@@ -77,6 +78,11 @@ RC Stmt::create_stmt(Db *db, ParsedSqlNode &sql_node, Stmt *&stmt, const BinderC
 
     case SCF_CREATE_TABLE: {
       return CreateTableStmt::create(db, sql_node.create_table, stmt);
+    }
+
+    case SCF_CREATE_VIEW: {
+      stmt = new CreateViewStmt(sql_node.create_view);
+      return RC::SUCCESS;
     }
 
     case SCF_DROP_TABLE: {

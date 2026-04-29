@@ -37,6 +37,7 @@ class BinderContext;
   DEFINE_ENUM_ITEM(UPDATE)        \
   DEFINE_ENUM_ITEM(DELETE)        \
   DEFINE_ENUM_ITEM(CREATE_TABLE)  \
+  DEFINE_ENUM_ITEM(CREATE_VIEW)   \
   DEFINE_ENUM_ITEM(DROP_TABLE)    \
   DEFINE_ENUM_ITEM(ALTER_TABLE)   \
   DEFINE_ENUM_ITEM(ANALYZE_TABLE) \
@@ -106,4 +107,21 @@ public:
 
 private:
   AlterTableSqlNode alter_table_;
+};
+
+class CreateViewStmt : public Stmt
+{
+public:
+  explicit CreateViewStmt(const CreateViewSqlNode &create_view)
+      : relation_name_(create_view.relation_name), select_sql_(create_view.select_sql)
+  {}
+
+  StmtType type() const override { return StmtType::CREATE_VIEW; }
+
+  const string &relation_name() const { return relation_name_; }
+  const string &select_sql() const { return select_sql_; }
+
+private:
+  string relation_name_;
+  string select_sql_;
 };
