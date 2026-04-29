@@ -56,4 +56,5 @@ select count(*) as num, avg(t1.col1) score from table_alias_1 t1, table_alias_2 
 select a.id from alias_t1 as a, alias_t2 as a where a.id=1;
 select alias_t1.id from alias_t1 as a where a.id=1;
 select a.unknown_col from alias_t1 as a;
+select * as alias from table_alias_1 t1;
 select id as from alias_t1;
