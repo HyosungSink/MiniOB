@@ -17,6 +17,77 @@ See the Mulan PSL v2 for more details. */
 #include "storage/db/db.h"
 #include "storage/table/table.h"
 
+static RC field_index(const TableMeta &table_meta, const char *field_name, int &index)
+{
+  for (int i = table_meta.sys_field_num(); i < table_meta.field_num(); i++) {
+    const FieldMeta *field = table_meta.field(i);
+    if (0 == strcmp(field->name(), field_name)) {
+      index = i - table_meta.sys_field_num();
+      return RC::SUCCESS;
+    }
+  }
+  return RC::SCHEMA_FIELD_NOT_EXIST;
+}
+
+static RC create_view_insert_stmt(Db *db, const InsertSqlNode &inserts, const ViewDefinition &view, Stmt *&stmt)
+{
+  if (!view.updatable) {
+    return RC::INVALID_ARGUMENT;
+  }
+
+  Table *base_table = db->find_table(view.base_table_name.c_str());
+  if (base_table == nullptr) {
+    return RC::SCHEMA_TABLE_NOT_EXIST;
+  }
+
+  vector<vector<Value>> single_row;
+  const vector<vector<Value>> *value_rows = &inserts.value_rows;
+  if (value_rows->empty() && !inserts.values.empty()) {
+    single_row.emplace_back(inserts.values);
+    value_rows = &single_row;
+  }
+
+  const TableMeta &table_meta = base_table->table_meta();
+  const int        field_num  = table_meta.field_num() - table_meta.sys_field_num();
+  vector<string>   insert_columns = inserts.attribute_names;
+  if (insert_columns.empty()) {
+    for (const ViewColumnMapping &column : view.columns) {
+      insert_columns.push_back(column.view_column);
+    }
+  }
+
+  vector<vector<Value>> base_rows;
+  base_rows.reserve(value_rows->size());
+  for (const vector<Value> &row : *value_rows) {
+    if (insert_columns.size() != row.size()) {
+      return RC::SCHEMA_FIELD_MISSING;
+    }
+
+    vector<Value> base_row(field_num);
+    for (Value &value : base_row) {
+      value.set_null();
+    }
+
+    for (size_t i = 0; i < row.size(); i++) {
+      const string *base_column = view.base_column_for(insert_columns[i]);
+      if (base_column == nullptr) {
+        return RC::SCHEMA_FIELD_NOT_EXIST;
+      }
+
+      int index = -1;
+      RC rc = field_index(table_meta, base_column->c_str(), index);
+      if (OB_FAIL(rc)) {
+        return rc;
+      }
+      base_row[index] = row[i];
+    }
+    base_rows.emplace_back(std::move(base_row));
+  }
+
+  stmt = new InsertStmt(base_table, base_rows);
+  return RC::SUCCESS;
+}
+
 InsertStmt::InsertStmt(Table *table, const vector<vector<Value>> &value_rows)
     : table_(table), value_rows_(value_rows)
 {
@@ -40,6 +111,11 @@ RC InsertStmt::create(Db *db, const InsertSqlNode &inserts, Stmt *&stmt)
     LOG_WARN("invalid argument. db=%p, table_name=%p, value_num=%d",
         db, table_name, inserts.values.empty() ? 0 : static_cast<int>(inserts.values.size()));
     return RC::INVALID_ARGUMENT;
+  }
+
+  const ViewDefinition *view = db->find_view(table_name);
+  if (view != nullptr) {
+    return create_view_insert_stmt(db, inserts, *view, stmt);
   }
 
   // check whether the table exists
