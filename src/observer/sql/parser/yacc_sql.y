@@ -135,6 +135,7 @@ RC parse_vector_function_value(const char *function_name, const char *literal, V
         OR
         ANY
         ALL
+        EXISTS
         UNION
         INNER
         JOIN
@@ -1123,6 +1124,22 @@ condition:
       $$->right_expr.reset(new ValueExpr(Value(true)));
       $$->comp = EQUAL_TO;
       delete $5;
+    }
+    | EXISTS LBRACE select_stmt RBRACE
+    {
+      $$ = new ConditionSqlNode;
+      $$->left_expr.reset(new ExistsSubqueryExpr(make_unique<SubqueryExpr>(token_name(sql_string, &@3)), false));
+      $$->right_expr.reset(new ValueExpr(Value(true)));
+      $$->comp = EQUAL_TO;
+      delete $3;
+    }
+    | NOT EXISTS LBRACE select_stmt RBRACE
+    {
+      $$ = new ConditionSqlNode;
+      $$->left_expr.reset(new ExistsSubqueryExpr(make_unique<SubqueryExpr>(token_name(sql_string, &@4)), true));
+      $$->right_expr.reset(new ValueExpr(Value(true)));
+      $$->comp = EQUAL_TO;
+      delete $4;
     }
     | expression IS NULL_T
     {
