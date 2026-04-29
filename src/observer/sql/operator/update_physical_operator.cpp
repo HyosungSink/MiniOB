@@ -140,6 +140,10 @@ RC UpdatePhysicalOperator::make_updated_record(const Record &old_record, Record 
     }
 
     if (value.is_null()) {
+      if (!field_meta->nullable()) {
+        LOG_WARN("field can not be null. table name:%s, field name:%s", table_->name(), field_meta->name());
+        return RC::SCHEMA_FIELD_TYPE_MISMATCH;
+      }
       Value::set_null_data(new_record.data() + field_meta->offset(), field_meta->len(), field_meta->type());
       continue;
     }
