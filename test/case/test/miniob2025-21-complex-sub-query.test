@@ -32,3 +32,19 @@ select * from csq_1 where (select max(csq_2.feat2) from csq_2) > feat1 and exist
 -- echo complex sub query boundary errors
 select id from complex_user where score=(select amount from complex_order where uid=1);
 select id from complex_user where exists (select missing_col from complex_order where complex_order.uid=complex_user.id);
+
+-- echo nested correlated scalar subquery error
+drop table csq_1;
+drop table csq_2;
+drop table csq_3;
+drop table csq_4;
+create table csq_1(id int, col1 int, feat1 float);
+create table csq_2(id int, col2 int, feat2 float);
+create table csq_3(id int, col3 int, feat3 float);
+create table csq_4(id int, col4 int, feat4 float);
+insert into csq_1 values(65, 90, 81.41);
+insert into csq_2 values(2, 20, 3.0);
+insert into csq_3 values(2, 7, 1.0);
+insert into csq_4 values(9, 9, 1.0);
+insert into csq_4 values(10, 10, 1.0);
+select * from csq_1 where feat1 > (select min(csq_2.feat2) from csq_2 where csq_2.id in (select csq_3.id from csq_3 where csq_3.col3 <> (select csq_4.col4 from csq_4 where csq_4.id <> csq_1.id)));
