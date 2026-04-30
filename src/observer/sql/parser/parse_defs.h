@@ -129,6 +129,7 @@ struct SelectSqlNode
 struct CreateViewSqlNode
 {
   string        relation_name;
+  vector<string> attribute_names;
   string        select_sql;
   SelectSqlNode select;
 };

@@ -249,6 +249,7 @@ RC parse_vector_function_value(const char *function_name, const char *literal, V
 %type <cstring>             storage_format
 %type <key_list>            primary_key
 %type <key_list>            attr_list
+%type <key_list>            view_attr_list
 %type <expression>          expression
 %type <expression>          select_expression
 %type <expression>          aggregate_expression
@@ -478,13 +479,28 @@ create_table_stmt:    /*create table 语句的语法解析树*/
     ;
 
 create_view_stmt:
-    CREATE VIEW ID AS select_stmt
+    CREATE VIEW ID view_attr_list AS select_stmt
     {
       $$ = new ParsedSqlNode(SCF_CREATE_VIEW);
       $$->create_view.relation_name = $3;
-      $$->create_view.select_sql = token_name(sql_string, &@5);
-      $$->create_view.select = std::move($5->selection);
-      delete $5;
+      if ($4 != nullptr) {
+        $$->create_view.attribute_names.swap(*$4);
+        delete $4;
+      }
+      $$->create_view.select_sql = token_name(sql_string, &@6);
+      $$->create_view.select = std::move($6->selection);
+      delete $6;
+    }
+    ;
+
+view_attr_list:
+    /* empty */
+    {
+      $$ = nullptr;
+    }
+    | LBRACE attr_list RBRACE
+    {
+      $$ = $2;
     }
     ;
     

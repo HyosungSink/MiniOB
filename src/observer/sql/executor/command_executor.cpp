@@ -62,7 +62,9 @@ static ViewDefinition build_view_definition(const CreateViewStmt &create_view_st
   }
 
   view.base_table_name = select_stmt.tables().front()->name();
-  for (const unique_ptr<Expression> &expression : select_stmt.query_expressions()) {
+  const vector<string> &attribute_names = create_view_stmt.attribute_names();
+  for (size_t i = 0; i < select_stmt.query_expressions().size(); i++) {
+    const unique_ptr<Expression> &expression = select_stmt.query_expressions()[i];
     if (expression->type() != ExprType::FIELD) {
       continue;
     }
@@ -72,7 +74,8 @@ static ViewDefinition build_view_definition(const CreateViewStmt &create_view_st
       continue;
     }
 
-    view.columns.push_back({expression->name(), field_expr->field_name()});
+    const string view_column = i < attribute_names.size() ? attribute_names[i] : expression->name();
+    view.columns.push_back({view_column, field_expr->field_name()});
   }
   view.updatable = !view.columns.empty();
   if (view.updatable && select_stmt.tables().size() == 1 && select_stmt.filter_stmt()->filter_units().empty() &&
@@ -122,13 +125,18 @@ static RC create_materialized_view(SQLStageEvent *sql_event, const CreateViewStm
     return rc;
   }
   unique_ptr<SelectStmt> select_stmt(static_cast<SelectStmt *>(stmt));
+  const vector<string> &attribute_names = create_view_stmt.attribute_names();
+  if (!attribute_names.empty() && attribute_names.size() != select_stmt->query_expressions().size()) {
+    return RC::INVALID_ARGUMENT;
+  }
   ViewDefinition view_definition = build_view_definition(create_view_stmt, *select_stmt);
 
   vector<AttrInfoSqlNode> attrs;
   attrs.reserve(select_stmt->query_expressions().size());
-  for (const unique_ptr<Expression> &expression : select_stmt->query_expressions()) {
+  for (size_t i = 0; i < select_stmt->query_expressions().size(); i++) {
+    const unique_ptr<Expression> &expression = select_stmt->query_expressions()[i];
     AttrInfoSqlNode attr;
-    attr.name     = expression->name();
+    attr.name     = i < attribute_names.size() ? attribute_names[i] : expression->name();
     attr.type     = expression->value_type();
     attr.length   = view_attr_length(*expression);
     attr.nullable = true;

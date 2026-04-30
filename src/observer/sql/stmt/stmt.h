@@ -113,15 +113,19 @@ class CreateViewStmt : public Stmt
 {
 public:
   explicit CreateViewStmt(const CreateViewSqlNode &create_view)
-      : relation_name_(create_view.relation_name), select_sql_(create_view.select_sql)
+      : relation_name_(create_view.relation_name),
+        attribute_names_(create_view.attribute_names),
+        select_sql_(create_view.select_sql)
   {}
 
   StmtType type() const override { return StmtType::CREATE_VIEW; }
 
   const string &relation_name() const { return relation_name_; }
+  const vector<string> &attribute_names() const { return attribute_names_; }
   const string &select_sql() const { return select_sql_; }
 
 private:
   string relation_name_;
+  vector<string> attribute_names_;
   string select_sql_;
 };
