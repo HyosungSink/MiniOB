@@ -37,31 +37,40 @@ See the Mulan PSL v2 for more details. */
 
 using namespace std;
 
-static thread_local const Tuple *current_subquery_outer_tuple = nullptr;
+static thread_local vector<const Tuple *> current_subquery_outer_tuples;
 
 class ScopedSubqueryOuterTuple
 {
 public:
   explicit ScopedSubqueryOuterTuple(const Tuple *outer_tuple)
-      : previous_(current_subquery_outer_tuple)
   {
     if (outer_tuple != nullptr) {
-      current_subquery_outer_tuple = outer_tuple;
+      current_subquery_outer_tuples.push_back(outer_tuple);
+      pushed_ = true;
     }
   }
 
-  ~ScopedSubqueryOuterTuple() { current_subquery_outer_tuple = previous_; }
+  ~ScopedSubqueryOuterTuple()
+  {
+    if (pushed_) {
+      current_subquery_outer_tuples.pop_back();
+    }
+  }
 
 private:
-  const Tuple *previous_ = nullptr;
+  bool pushed_ = false;
 };
 
 RC FieldExpr::get_value(const Tuple &tuple, Value &value) const
 {
   TupleCellSpec spec(table_name(), field_name());
   RC rc = tuple.find_cell(spec, value);
-  if (rc == RC::NOTFOUND && current_subquery_outer_tuple != nullptr && current_subquery_outer_tuple != &tuple) {
-    rc = current_subquery_outer_tuple->find_cell(spec, value);
+  for (auto iter = current_subquery_outer_tuples.rbegin();
+       rc == RC::NOTFOUND && iter != current_subquery_outer_tuples.rend();
+       ++iter) {
+    if (*iter != &tuple) {
+      rc = (*iter)->find_cell(spec, value);
+    }
   }
   return rc;
 }
