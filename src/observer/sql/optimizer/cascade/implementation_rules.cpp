@@ -8,6 +8,7 @@ EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
 MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
 See the Mulan PSL v2 for more details. */
 
+#include "common/lang/unordered_set.h"
 #include "common/log/log.h"
 #include "sql/optimizer/cascade/implementation_rules.h"
 #include "sql/operator/table_get_logical_operator.h"
@@ -27,6 +28,74 @@ See the Mulan PSL v2 for more details. */
 #include "sql/operator/group_by_logical_operator.h"
 #include "sql/operator/scalar_group_by_physical_operator.h"
 #include "sql/operator/hash_group_by_physical_operator.h"
+#include "sql/operator/join_logical_operator.h"
+#include "sql/operator/nested_loop_join_physical_operator.h"
+#include "sql/operator/hash_join_physical_operator.h"
+
+static void copy_predicates(
+    const vector<unique_ptr<Expression>> &src, vector<unique_ptr<Expression>> &dst)
+{
+  for (const auto &expr : src) {
+    dst.emplace_back(expr->copy());
+  }
+}
+
+static void collect_logical_tables(LogicalOperator &oper, unordered_set<const Table *> &tables)
+{
+  if (oper.type() == LogicalOperatorType::TABLE_GET) {
+    auto &table_get = static_cast<TableGetLogicalOperator &>(oper);
+    tables.insert(table_get.table());
+    return;
+  }
+
+  for (auto &child : oper.children()) {
+    collect_logical_tables(*child, tables);
+  }
+}
+
+static bool is_field_from(Expression &expr, const unordered_set<const Table *> &tables)
+{
+  if (expr.type() != ExprType::FIELD) {
+    return false;
+  }
+  auto &field_expr = static_cast<FieldExpr &>(expr);
+  return tables.find(field_expr.field().table()) != tables.end();
+}
+
+static bool extract_hash_join_keys(JoinLogicalOperator &join_oper,
+    vector<unique_ptr<Expression>> &left_keys, vector<unique_ptr<Expression>> &right_keys)
+{
+  if (join_oper.children().size() != 2) {
+    return false;
+  }
+
+  unordered_set<const Table *> left_tables;
+  unordered_set<const Table *> right_tables;
+  collect_logical_tables(*join_oper.children()[0], left_tables);
+  collect_logical_tables(*join_oper.children()[1], right_tables);
+
+  for (auto &predicate : join_oper.get_join_predicates()) {
+    if (predicate->type() != ExprType::COMPARISON) {
+      continue;
+    }
+    auto &comparison = static_cast<ComparisonExpr &>(*predicate);
+    if (comparison.comp() != EQUAL_TO) {
+      continue;
+    }
+
+    Expression &left_expr  = *comparison.left();
+    Expression &right_expr = *comparison.right();
+    if (is_field_from(left_expr, left_tables) && is_field_from(right_expr, right_tables)) {
+      left_keys.emplace_back(left_expr.copy());
+      right_keys.emplace_back(right_expr.copy());
+    } else if (is_field_from(left_expr, right_tables) && is_field_from(right_expr, left_tables)) {
+      left_keys.emplace_back(right_expr.copy());
+      right_keys.emplace_back(left_expr.copy());
+    }
+  }
+
+  return !left_keys.empty();
+}
 
 // -------------------------------------------------------------------------------------------------
 // PhysicalSeqScan
@@ -194,6 +263,64 @@ void LogicalPredicateToPredicate::transform(OperatorNode* input,
   unique_ptr<Expression> expression = std::move(expressions.front());
   unique_ptr<PhysicalOperator> oper = unique_ptr<PhysicalOperator>(new PredicatePhysicalOperator(std::move(expression)));
   for (auto &child : predicate_oper->children()) {
+    oper->add_general_child(child.get());
+  }
+  transformed->emplace_back(std::move(oper));
+}
+
+// -------------------------------------------------------------------------------------------------
+// Physical Nested Loop Join
+// -------------------------------------------------------------------------------------------------
+LogicalInnerJoinToNLJoin::LogicalInnerJoinToNLJoin()
+{
+  type_ = RuleType::INNER_JOIN_TO_NL_JOIN;
+  match_pattern_ = unique_ptr<Pattern>(new Pattern(OpType::LOGICALINNERJOIN));
+  match_pattern_->add_child(new Pattern(OpType::LEAF));
+  match_pattern_->add_child(new Pattern(OpType::LEAF));
+}
+
+void LogicalInnerJoinToNLJoin::transform(OperatorNode *input,
+                         std::vector<std::unique_ptr<OperatorNode>> *transformed,
+                         OptimizerContext *context) const
+{
+  auto join_oper = dynamic_cast<JoinLogicalOperator *>(input);
+  vector<unique_ptr<Expression>> predicates;
+  copy_predicates(join_oper->get_join_predicates(), predicates);
+
+  unique_ptr<PhysicalOperator> oper(new NestedLoopJoinPhysicalOperator(std::move(predicates)));
+  for (auto &child : join_oper->children()) {
+    oper->add_general_child(child.get());
+  }
+  transformed->emplace_back(std::move(oper));
+}
+
+// -------------------------------------------------------------------------------------------------
+// Physical Hash Join
+// -------------------------------------------------------------------------------------------------
+LogicalInnerJoinToHashJoin::LogicalInnerJoinToHashJoin()
+{
+  type_ = RuleType::INNER_JOIN_TO_HASH_JOIN;
+  match_pattern_ = unique_ptr<Pattern>(new Pattern(OpType::LOGICALINNERJOIN));
+  match_pattern_->add_child(new Pattern(OpType::LEAF));
+  match_pattern_->add_child(new Pattern(OpType::LEAF));
+}
+
+void LogicalInnerJoinToHashJoin::transform(OperatorNode *input,
+                         std::vector<std::unique_ptr<OperatorNode>> *transformed,
+                         OptimizerContext *context) const
+{
+  auto join_oper = dynamic_cast<JoinLogicalOperator *>(input);
+  vector<unique_ptr<Expression>> left_keys;
+  vector<unique_ptr<Expression>> right_keys;
+  if (!extract_hash_join_keys(*join_oper, left_keys, right_keys)) {
+    return;
+  }
+
+  vector<unique_ptr<Expression>> predicates;
+  copy_predicates(join_oper->get_join_predicates(), predicates);
+  unique_ptr<PhysicalOperator> oper(
+      new HashJoinPhysicalOperator(std::move(left_keys), std::move(right_keys), std::move(predicates)));
+  for (auto &child : join_oper->children()) {
     oper->add_general_child(child.get());
   }
   transformed->emplace_back(std::move(oper));
