@@ -1,33 +1,33 @@
-# MiniOB Kernel Architecture
+# MiniOB 内核架构说明
 
-本文档描述当前仓库中的 MiniOB 内核实现，以 `src/observer` 为主，覆盖网络入口、SQL 编译执行、优化器、存储、事务、WAL、索引、LSM 和本地测试体系。内容基于当前代码状态，而不是上游 MiniOB 的抽象设计。
+本文档梳理当前仓库中的 MiniOB 内核实现，重点覆盖 `src/observer` 下的网络入口、会话管理、SQL 编译执行、优化器、算子、存储、事务、WAL、索引、LSM 以及本地测试体系。说明基于当前代码状态，而不是上游 MiniOB 的抽象设计。
 
-## 1. Overall Shape
+## 1. 整体架构
 
-MiniOB 当前是一个单进程数据库内核。`observer` 进程启动后初始化全局环境、打开默认 `sys` 数据库，然后监听 plain/MySQL/CLI 协议请求。每条 SQL 通过一条阶段式 pipeline 处理：读包、解析、绑定、重写优化、生成物理计划、执行并回写结果。
+MiniOB 当前是一个单进程数据库内核。`observer` 进程启动后完成全局初始化，打开默认 `sys` 数据库，然后监听 plain、MySQL 或 CLI 协议请求。每条 SQL 请求经过阶段式流水线处理：读取请求、解析 SQL、绑定语义、重写优化、生成物理计划、执行计划并返回结果。
 
 ```mermaid
 flowchart TD
-  Client[Client: plain/mysql/cli] --> Server[NetServer/CliServer]
-  Server --> Communicator[Communicator]
-  Communicator --> SessionEvent[SessionEvent]
-  SessionEvent --> SQLStageEvent[SQLStageEvent]
-  SQLStageEvent --> QueryCache[QueryCacheStage]
-  QueryCache --> Parse[ParseStage]
-  Parse --> Resolve[ResolveStage]
-  Resolve --> Optimize[OptimizeStage]
-  Optimize --> Execute[ExecuteStage]
-  Execute --> Result[SqlResult]
+  Client[客户端: plain/mysql/cli] --> Server[NetServer/CliServer]
+  Server --> Communicator[协议通信器 Communicator]
+  Communicator --> SessionEvent[会话事件 SessionEvent]
+  SessionEvent --> SQLStageEvent[SQL 事件 SQLStageEvent]
+  SQLStageEvent --> QueryCache[查询缓存占位 QueryCacheStage]
+  QueryCache --> Parse[解析 ParseStage]
+  Parse --> Resolve[绑定 ResolveStage]
+  Resolve --> Optimize[优化 OptimizeStage]
+  Optimize --> Execute[执行 ExecuteStage]
+  Execute --> Result[SQL 结果 SqlResult]
   Result --> Communicator
 
-  Execute --> Trx[Session current Trx]
-  Trx --> Table[Table]
-  Table --> Engine[HeapTableEngine / LsmTableEngine]
-  Engine --> Buffer[BufferPool / Record / Index]
-  Engine --> Clog[LogHandler]
+  Execute --> Trx[当前会话事务 Trx]
+  Trx --> Table[表 Table]
+  Table --> Engine[表引擎 HeapTableEngine/LsmTableEngine]
+  Engine --> Storage[BufferPool/Record/Index]
+  Engine --> Clog[提交日志 LogHandler]
 ```
 
-The main vertical dependency is:
+主要纵向依赖关系如下：
 
 ```text
 net/event/session
@@ -38,87 +38,79 @@ net/event/session
   -> storage/record/index/buffer/clog
 ```
 
-## 2. Process Startup And Global State
+从职责上看，网络层只负责协议收发和连接调度；SQL 前端负责把文本变成带类型和表结构信息的 `Stmt`；优化层把 `Stmt` 变成逻辑计划并选择物理算子；执行层通过算子访问事务和表；存储层最终负责记录、索引、页缓存、日志和恢复。
 
-### Entry Point
+## 2. 进程启动与全局状态
 
-`src/observer/main.cpp` is the process entry:
+### 2.1 入口
 
-- Parses command-line options:
-  - `-P plain|mysql|cli` selects protocol.
-  - `-t vacuous|mvcc|lsm` selects transaction kit.
-  - `-d` enables disk durability.
-  - `-E heap|lsm` selects table storage engine.
-  - `-T one-thread-per-connection|java-thread-pool` selects thread model.
-- Calls `init(the_process_param())`.
-- Builds `NetServer` or `CliServer`.
-- Calls `serve()`, then `cleanup()`.
+`src/observer/main.cpp` 是 `observer` 进程入口，主要工作包括：
 
-### Initialization
+- 解析命令行参数，例如 `-P plain|mysql|cli` 选择协议，`-t vacuous|mvcc|lsm` 选择事务模型，`-d` 开启磁盘持久化，`-E heap|lsm` 选择表存储引擎，`-T one-thread-per-connection|java-thread-pool` 选择线程模型。
+- 调用 `init(the_process_param())` 初始化配置、日志、全局上下文和默认处理器。
+- 根据协议构造 `NetServer` 或 `CliServer`。
+- 调用 `serve()` 进入服务循环，退出时调用 `cleanup()` 清理资源。
 
-`src/observer/common/init.cpp` initializes:
+### 2.2 初始化
 
-- config from `etc/observer.ini`;
-- logging;
-- `GlobalContext`;
-- `DefaultHandler`.
+`src/observer/common/init.cpp` 负责初始化运行环境：
 
-`GlobalContext` (`src/observer/common/global_context.*`) stores process-wide objects. The important one is `GCTX.handler_`, a `DefaultHandler`.
+- 从 `etc/observer.ini` 读取配置。
+- 初始化日志系统。
+- 初始化 `GlobalContext`。
+- 初始化 `DefaultHandler`。
 
-### DefaultHandler And Database Root
+`GlobalContext` 定义在 `src/observer/common/global_context.*`，保存进程级对象。当前最重要的对象是 `GCTX.handler_`，类型为 `DefaultHandler`。
 
-`src/observer/storage/default/default_handler.cpp` manages database directories under:
+### 2.3 默认数据库根目录
+
+`src/observer/storage/default/default_handler.cpp` 管理数据库目录，默认路径形态为：
 
 ```text
 miniob/db/<db-name>
 ```
 
-Startup creates/opens the `sys` database and sets it as `Session::default_session()`'s current DB. Multi-database support exists structurally but is intentionally minimal.
+启动时会创建或打开 `sys` 数据库，并把它设置为 `Session::default_session()` 的当前数据库。代码层面有多数据库结构，但当前实现主要围绕默认数据库运行，跨数据库能力较弱。
 
-## 3. Network, Sessions, And Request Lifecycle
+## 3. 网络、会话与请求生命周期
 
-### Server And Communicators
+### 3.1 服务端与协议通信器
 
-`src/observer/net/server.cpp` accepts TCP or Unix-socket connections and creates one `Communicator` per client:
+`src/observer/net/server.cpp` 负责监听 TCP 或 Unix socket 连接，并为每个连接创建一个 `Communicator`：
 
-- `PlainCommunicator` implements MiniOB's null-terminated plain protocol.
-- `MysqlCommunicator` implements enough MySQL protocol for sysbench and MySQL-compatible clients.
-- `CliCommunicator` serves stdin/stdout mode.
+- `PlainCommunicator` 实现 MiniOB plain 协议，使用空字符结尾的请求格式。
+- `MysqlCommunicator` 实现 MySQL 协议子集，主要用于 sysbench 和 MySQL 兼容客户端。
+- `CliCommunicator` 实现标准输入输出模式。
 
-The server delegates connection execution to `ThreadHandler` implementations under `src/observer/net/`.
+连接执行交给 `src/observer/net/` 下的 `ThreadHandler` 实现。当前支持一连接一线程和 Java 风格线程池两类线程模型。
 
-### Session
+### 3.2 会话
 
-`src/observer/session/session.cpp` tracks per-connection state:
+`src/observer/session/session.cpp` 保存每个连接的会话状态：
 
-- current `Db`;
-- current transaction object;
-- execution mode flags;
-- optimizer flags such as cascade/hash join settings;
-- thread-local `Session::current_session()`.
+- 当前 `Db`。
+- 当前事务对象。
+- 执行模式，例如 tuple iterator 或 chunk iterator。
+- 优化器开关，例如 hash join、cascade optimizer。
+- 线程局部的 `Session::current_session()`。
 
-`Session::current_trx()` lazily creates a transaction from the current database's `TrxKit`.
+`Session::current_trx()` 会按需从当前数据库的 `TrxKit` 创建事务对象。显式事务和自动提交都依赖该入口。
 
-### Request Object Flow
+### 3.3 请求对象流转
 
-`SqlTaskHandler::handle_event` is the main per-SQL dispatcher:
+`SqlTaskHandler::handle_event` 是 plain/MySQL 网络路径下的单条 SQL 分发入口：
 
-1. `Communicator::read_event` creates `SessionEvent`.
-2. `SessionStage` attaches session/request context.
-3. `SQLStageEvent` wraps the SQL string, parsed node, statement and physical operator.
-4. `handle_sql` runs:
-   - `QueryCacheStage`
-   - `ParseStage`
-   - `ResolveStage`
-   - `OptimizeStage`
-   - `ExecuteStage`
-5. `Communicator::write_result` drains `SqlResult` and writes protocol output.
+1. `Communicator::read_event` 读取请求并创建 `SessionEvent`。
+2. `SessionStage::handle_request2` 绑定当前线程会话和当前请求。
+3. `SQLStageEvent` 包装 SQL 字符串、解析节点、语句对象和物理算子。
+4. `SqlTaskHandler::handle_sql` 顺序执行 `QueryCacheStage`、`ParseStage`、`ResolveStage`、`OptimizeStage`、`ExecuteStage`。
+5. `Communicator::write_result` 从 `SqlResult` 拉取结果并按协议返回客户端。
 
-`QueryCacheStage` is currently only a pipeline placeholder and returns `RC::SUCCESS` without caching or short-circuiting requests. `PlanCacheStage` also exists in the source tree, but it is not part of the normal `SqlTaskHandler` execution path.
+`QueryCacheStage` 当前只是流水线占位，直接返回 `RC::SUCCESS`，没有实际缓存命中或短路逻辑。源码中也存在 `PlanCacheStage`，但它不在当前 `SqlTaskHandler` 的正常执行路径中。
 
 ```mermaid
 sequenceDiagram
-  participant C as Communicator
+  participant C as 协议通信器
   participant H as SqlTaskHandler
   participant P as ParseStage
   participant R as ResolveStage
@@ -126,102 +118,95 @@ sequenceDiagram
   participant E as ExecuteStage
   participant S as SqlResult
 
-  C->>H: read_event(SessionEvent)
-  H->>P: SQL text -> ParsedSqlNode
-  P->>R: ParsedSqlNode
-  R->>O: Stmt
-  O->>E: PhysicalOperator or UNIMPLEMENTED
-  E->>S: set_operator / command return code
-  S->>C: rows or SUCCESS/FAILURE
+  C->>H: 读取 SessionEvent
+  H->>P: SQL 文本解析为 ParsedSqlNode
+  P->>R: 解析节点
+  R->>O: 绑定后的 Stmt
+  O->>E: PhysicalOperator 或 UNIMPLEMENTED
+  E->>S: 设置物理算子或命令返回码
+  S->>C: 行结果或 SUCCESS/FAILURE
 ```
 
-## 4. SQL Frontend
+## 4. SQL 前端
 
-### Parser
+### 4.1 解析器
 
-The SQL grammar lives in `src/observer/sql/parser/`:
+SQL 语法位于 `src/observer/sql/parser/`：
 
-- `lex_sql.l`: lexer source.
-- `yacc_sql.y`: grammar source.
-- `lex_sql.cpp`, `lex_sql.h`, `yacc_sql.cpp`, `yacc_sql.hpp`: generated parser artifacts.
-- `parse_defs.h`: AST-like SQL node structs such as `SelectSqlNode`, `ConditionSqlNode`, `CreateTableSqlNode`.
+- `lex_sql.l` 是词法文件。
+- `yacc_sql.y` 是语法文件。
+- `lex_sql.cpp`、`lex_sql.h`、`yacc_sql.cpp`、`yacc_sql.hpp` 是生成文件。
+- `parse_defs.h` 定义解析产物结构，例如 `SelectSqlNode`、`ConditionSqlNode`、`CreateTableSqlNode`。
 
-`ParseStage` calls `parse(sql, ParsedSqlResult*)` and stores one `ParsedSqlNode` in `SQLStageEvent`. Parser errors surface as `RC::SQL_SYNTAX`, which the plain protocol prints as `FAILURE`.
+`ParseStage` 调用 `parse(sql, ParsedSqlResult*)`，并把单条 `ParsedSqlNode` 保存到 `SQLStageEvent`。解析失败通常返回 `RC::SQL_SYNTAX`，plain 协议最终输出 `FAILURE`。
 
-### Statement Binding
+### 4.2 语义绑定
 
-`ResolveStage` calls:
+`ResolveStage` 通过以下入口把解析节点绑定成语句对象：
 
 ```cpp
 Stmt::create_stmt(db, *sql_node, stmt)
 ```
 
-`src/observer/sql/stmt/` binds parsed SQL to schema-aware statement objects:
+`src/observer/sql/stmt/` 中的语句对象负责 schema 感知的校验和绑定：
 
-- `SelectStmt`: resolves tables, projections, filters, group by, having, order by, union, subqueries and aliases.
-- `InsertStmt`, `UpdateStmt`, `DeleteStmt`: validate target tables, fields, value expressions, view rewrites and mirror DML.
-- `CreateTableStmt`, `CreateIndexStmt`, `Drop*Stmt`, `AnalyzeTableStmt`: DDL command binding.
-- `FilterStmt`: turns condition nodes into typed `Expression` trees.
+- `SelectStmt` 解析表、投影、过滤、分组、聚合、having、排序、union、子查询和别名。
+- `InsertStmt`、`UpdateStmt`、`DeleteStmt` 校验目标表、字段、表达式、view 改写和物化视图镜像 DML。
+- `CreateTableStmt`、`CreateIndexStmt`、`Drop*Stmt`、`AnalyzeTableStmt` 负责 DDL 绑定。
+- `FilterStmt` 把条件节点转换为带类型的 `Expression` 树。
 
-Binding is where field ambiguity, missing table/column, type validation, view DML and subquery correlation are resolved.
+字段歧义、字段不存在、类型检查、子查询关联关系、view 是否可更新等问题主要在绑定阶段暴露。
 
-## 5. Expression System
+## 5. 表达式系统
 
-Expressions live under `src/observer/sql/expr/` and are used by filters, projections, DML assignments, aggregation, order by and join predicates.
+表达式位于 `src/observer/sql/expr/`，被过滤、投影、DML 赋值、聚合、排序和 join 条件复用。
 
-Important expression classes include:
+主要表达式类型包括：
 
-- `ValueExpr`: literal constants.
-- `FieldExpr`: table field reference.
-- `ComparisonExpr`: `=`, `<>`, `<`, `IN`, subquery comparisons and null-aware comparison behavior.
-- `ConjunctionExpr`: AND/OR composition.
-- `ArithmeticExpr`: arithmetic and unary expressions.
-- `CastExpr`: implicit and explicit type conversion.
-- `FunctionExpr`: scalar functions and full-text match scoring.
-- `AggregateExpr` and aggregator state classes: `COUNT`, `SUM`, `AVG`, `MIN`, `MAX`.
-- `SubQueryExpr`: executes nested query plans and caches/refreshes results as needed.
+- `ValueExpr`：字面量常量。
+- `FieldExpr`：表字段引用。
+- `ComparisonExpr`：比较运算、`IN`、子查询比较和 NULL 语义。
+- `ConjunctionExpr`：AND/OR 组合。
+- `ArithmeticExpr`：算术表达式和一元表达式。
+- `CastExpr`：显式或隐式类型转换。
+- `FunctionExpr`：标量函数和全文检索打分函数。
+- `AggregateExpr` 及聚合状态类：`COUNT`、`SUM`、`AVG`、`MIN`、`MAX`。
+- `SubQueryExpr`：执行嵌套查询计划，并按相关性缓存或刷新结果。
 
-`Value` and type implementations in `src/observer/common/type/` provide comparison, serialization, null markers, float formatting, date/vector/text behavior and implicit casts.
+`src/observer/common/type/` 下的 `Value` 和类型实现负责值比较、序列化、NULL 标记、浮点格式、日期、向量、文本以及隐式转换。
 
-## 6. Optimization And Planning
+## 6. 优化与计划生成
 
-### Logical Plan Generation
+### 6.1 逻辑计划
 
-`LogicalPlanGenerator` converts `Stmt` objects into `LogicalOperator` trees:
+`LogicalPlanGenerator` 把 `Stmt` 转换为 `LogicalOperator` 树：
 
-- `SelectStmt` becomes:
-  - `TableGetLogicalOperator` chain;
-  - left-deep `JoinLogicalOperator` for multiple tables;
-  - `PredicateLogicalOperator`;
-  - `GroupByLogicalOperator`;
-  - `OrderByLogicalOperator`;
-  - `ProjectLogicalOperator`;
-  - optional `UnionLogicalOperator`.
-- DML statements become `InsertLogicalOperator`, `UpdateLogicalOperator`, `DeleteLogicalOperator`.
-- `ExplainStmt` wraps child plan generation.
+- `SelectStmt` 通常生成 `TableGetLogicalOperator`、左深 `JoinLogicalOperator`、`PredicateLogicalOperator`、`GroupByLogicalOperator`、`OrderByLogicalOperator`、`ProjectLogicalOperator`，必要时还会生成 `UnionLogicalOperator`。
+- DML 语句生成 `InsertLogicalOperator`、`UpdateLogicalOperator`、`DeleteLogicalOperator`。
+- `ExplainStmt` 包装子计划生成 explain 逻辑算子。
 
-The initial logical plan is intentionally simple; much of the placement refinement happens in rewrite rules.
+初始逻辑计划保持简单，谓词位置、join 条件和下推等改写交给后续规则处理。
 
-### Rewrite Rules
+### 6.2 重写规则
 
-`OptimizeStage::rewrite` repeatedly applies `Rewriter` rules:
+`OptimizeStage::rewrite` 循环执行 `Rewriter`，直到没有规则继续改变计划。当前主要规则包括：
 
-- `ExpressionRewriter`: simplifies/normalizes expression trees.
-- `PredicateRewriteRule`: removes constant-true predicate nodes and handles constant-false predicate children.
-- `PredicateToJoinRewriter`: moves predicates from filters into join predicates when they reference both join sides; constant predicates on joins are preserved as join predicates.
-- `PredicatePushdownRewriter`: pushes table-local predicates into `TableGetLogicalOperator`.
+- `ExpressionRewriter`：简化和规范化表达式。
+- `PredicateRewriteRule`：移除恒真谓词，并处理恒假谓词子节点。
+- `PredicateToJoinRewriter`：把同时引用 join 两侧的谓词移动到 join 条件中；常量 join 条件会保留在 join 上。
+- `PredicatePushdownRewriter`：把只引用单表的谓词下推到 `TableGetLogicalOperator`。
 
-These rules are currently rule-based and mutate the logical tree in-place.
+这些规则属于基于规则的优化，直接原地修改逻辑计划树。
 
-### Physical Plan Generation
+### 6.3 物理计划
 
-`PhysicalPlanGenerator` maps logical operators to tuple-iterator physical operators:
+`PhysicalPlanGenerator` 把逻辑算子映射为 tuple iterator 物理算子：
 
-- `TableGet` -> `TableScanPhysicalOperator` or `IndexScanPhysicalOperator`.
-- `Join` -> `HashJoinPhysicalOperator` when hash join is enabled and equality keys are found, otherwise `NestedLoopJoinPhysicalOperator`.
-- `Project`, `Predicate`, `GroupBy`, `OrderBy`, `Union`, DML and `Explain` map to their corresponding physical operators.
+- `TableGet` 映射为 `TableScanPhysicalOperator` 或 `IndexScanPhysicalOperator`。
+- `Join` 在开启 hash join 且能找到等值键时映射为 `HashJoinPhysicalOperator`，否则映射为 `NestedLoopJoinPhysicalOperator`。
+- `Project`、`Predicate`、`GroupBy`、`OrderBy`、`Union`、DML 和 `Explain` 分别映射到对应物理算子。
 
-It also has vectorized generation for a subset of operators:
+当前还支持部分向量化物理算子：
 
 - `TableScanVecPhysicalOperator`
 - `ProjectVecPhysicalOperator`
@@ -229,33 +214,33 @@ It also has vectorized generation for a subset of operators:
 - `AggregateVecPhysicalOperator`
 - `ExprVecPhysicalOperator`
 
-`OptimizeStage` selects vectorized generation when `Session` is in `ExecutionMode::CHUNK_ITERATOR` and the logical root supports it. Otherwise it uses tuple iterator mode.
+`OptimizeStage` 会在会话处于 `ExecutionMode::CHUNK_ITERATOR` 且逻辑根节点支持向量化时调用向量化计划生成，否则使用 tuple iterator 路径。
 
-### Cascade Optimizer
+### 6.4 Cascade 优化器
 
-`src/observer/sql/optimizer/cascade/` contains an experimental Cascades-style optimizer:
+`src/observer/sql/optimizer/cascade/` 中包含实验性的 Cascades 风格优化器：
 
-- memo/group structures;
-- implementation rules such as logical join to hash join/NLJ;
-- cost model;
-- task scheduler.
+- memo/group 结构。
+- 逻辑 join 到 hash join/NLJ 的实现规则。
+- 成本模型。
+- 任务调度器。
 
-It is enabled per session via `use_cascade`. The non-cascade path remains the default compatibility path for most local cases.
+该优化器通过会话变量 `use_cascade` 开启。当前兼容性路径仍以非 cascade 的规则优化和物理计划生成为主。
 
-## 7. Execution
+## 7. 执行层
 
-### Command vs Query Execution
+### 7.1 命令与查询的分流
 
-`ExecuteStage` has two modes:
+`ExecuteStage` 分两类处理：
 
-- If `OptimizeStage` produced a `PhysicalOperator`, `ExecuteStage` moves it into `SqlResult`.
-- If no physical plan exists, it calls `CommandExecutor` for DDL, transaction commands, set variables, load data, show tables and other command-style statements.
+- 如果 `OptimizeStage` 已经生成 `PhysicalOperator`，则把物理算子移动到 `SqlResult`。
+- 如果没有物理计划，则调用 `CommandExecutor` 执行 DDL、事务命令、变量设置、导入数据、查看表等命令型语句。
 
-`SqlResult::open()` starts a transaction if needed and opens the physical operator. `SqlResult::close()` closes the operator and auto-commits or rolls back when not inside explicit multi-statement transaction mode.
+`SqlResult::open()` 会按需启动事务并打开物理算子。`SqlResult::close()` 关闭算子，并在非显式多语句事务模式下自动提交或回滚。
 
-### Iterator Contract
+### 7.2 算子迭代接口
 
-Physical operators implement the classic Volcano-style interface:
+物理算子实现 Volcano 风格接口：
 
 ```cpp
 open(Trx *)
@@ -264,329 +249,329 @@ current_tuple()
 close()
 ```
 
-Vector operators additionally support `next(Chunk&)`.
+向量化算子额外支持 `next(Chunk&)`。
 
-Plain protocol output fetches tuples/chunks through `SqlResult`, prints headers from `TupleSchema`, then rows. DDL/DML success/failure is printed as exact `SUCCESS`/`FAILURE`.
+plain 协议输出通过 `SqlResult` 拉取 tuple 或 chunk，先打印 `TupleSchema` 表头，再打印数据行。DDL/DML 成功或失败严格输出 `SUCCESS` 或 `FAILURE`。
 
-### Key Physical Operators
+### 7.3 关键物理算子
 
-- `TableScanPhysicalOperator`: scans a `RecordScanner`, applies storage/transaction visibility and predicates.
-- `IndexScanPhysicalOperator`: uses `IndexScanner` to retrieve RIDs and records.
-- `PredicatePhysicalOperator`: evaluates boolean expressions.
-- `ProjectPhysicalOperator`: formats selected expressions.
-- `NestedLoopJoinPhysicalOperator`: nested loop over two child iterators and evaluates join predicates.
-- `HashJoinPhysicalOperator`: builds/probes hash keys and still evaluates residual predicates.
-- `GroupByPhysicalOperator`, `HashGroupByPhysicalOperator`, `ScalarGroupByPhysicalOperator`: aggregate/group execution.
-- `OrderByPhysicalOperator`: materializes and sorts tuples; supports limit.
-- `UnionPhysicalOperator`: union/union all execution.
-- `Insert/Update/DeletePhysicalOperator`: DML with transaction calls and optional materialized view mirror maintenance.
+- `TableScanPhysicalOperator`：扫描 `RecordScanner`，应用存储层和事务层可见性，并执行必要过滤。
+- `IndexScanPhysicalOperator`：通过 `IndexScanner` 获取 RID，再读取记录。
+- `PredicatePhysicalOperator`：执行布尔表达式过滤。
+- `ProjectPhysicalOperator`：计算并格式化 select 表达式。
+- `NestedLoopJoinPhysicalOperator`：双层迭代子算子，并执行 join 谓词。
+- `HashJoinPhysicalOperator`：构建和探测 hash key，同时保留 residual 谓词判断。
+- `GroupByPhysicalOperator`、`HashGroupByPhysicalOperator`、`ScalarGroupByPhysicalOperator`：执行聚合和分组。
+- `OrderByPhysicalOperator`：物化 tuple 并排序，支持 limit。
+- `UnionPhysicalOperator`：执行 union/union all。
+- `InsertPhysicalOperator`、`UpdatePhysicalOperator`、`DeletePhysicalOperator`：通过事务接口执行 DML，并在需要时维护物化视图镜像。
 
-## 8. Views
+## 8. View 与物化视图
 
-Create view is implemented as materialized view creation in `CommandExecutor::create_materialized_view`:
+当前 `create view` 由 `CommandExecutor::create_materialized_view` 实现为物化视图创建：
 
-1. Parse and bind the view's select SQL.
-2. Infer output schema from select expressions.
-3. Create a physical table for the view.
-4. Execute the select plan and insert rows into the view table.
-5. Register `ViewDefinition` in `Db`.
+1. 解析并绑定 view 的 select SQL。
+2. 根据 select 表达式推导输出 schema。
+3. 为 view 创建一张物理表。
+4. 执行 select 计划，把结果插入 view 物理表。
+5. 在 `Db` 中注册 `ViewDefinition`。
 
-`ViewDefinition` records:
+`ViewDefinition` 记录以下元数据：
 
-- view name;
-- base table name;
-- view-to-base column mappings;
-- predicates for single-table filtered views;
-- whether the view is updatable;
-- whether it mirrors the full base table.
+- view 名称。
+- 基表名称。
+- view 字段到基表字段的映射。
+- 单表过滤 view 的谓词。
+- 是否可更新。
+- 是否完整镜像基表。
 
-The view definition registry is process-local in `Db::views_`. The materialized view table is physically created through normal table DDL, but the extra updatability/mirroring metadata is not a standalone persisted catalog.
+`Db::views_` 中的 view 定义注册表是进程内元数据。view 表本身通过普通 DDL 创建并落盘，但可更新性、字段映射和镜像关系这类额外元数据不是独立持久化 catalog。
 
-Current DML rules:
+当前 DML 规则如下：
 
-- single-table field-projection views may be updatable;
-- multi-table, aggregate/grouped and otherwise unsupported views are not updatable;
-- full base-table mirror views are kept synchronized when DML targets base table or view table through mirror plans.
+- 单表字段投影视图可以在满足条件时更新。
+- 多表、聚合、分组以及其它不支持的 view 不可更新。
+- 完整基表镜像 view 会在基表或 view 表发生 DML 时通过镜像计划保持同步。
 
-The view implementation is therefore a hybrid: stored as a physical table, but with extra metadata for limited DML rewrite and mirror maintenance.
+因此当前 view 实现是混合模型：数据以物理表形式保存，同时依赖额外内存元数据完成有限的 DML 改写和镜像维护。
 
-## 9. Storage Architecture
+## 9. 存储架构
 
-### Database Object
+### 9.1 数据库对象
 
-`Db` (`src/observer/storage/db/db.*`) owns:
+`Db` 定义在 `src/observer/storage/db/db.*`，负责管理：
 
-- table registry (`opened_tables_`);
-- view registry;
-- `BufferPoolManager`;
-- double-write buffer;
-- `LogHandler`;
-- transaction kit;
-- optional `ObLsm`;
-- recovery flow.
+- 表注册表 `opened_tables_`。
+- view 注册表。
+- `BufferPoolManager`。
+- 双写缓冲区。
+- `LogHandler`。
+- 事务 kit。
+- 可选的 `ObLsm`。
+- 数据库恢复流程。
 
-Startup order in `Db::init`:
+`Db::init` 的启动顺序大致是：
 
-1. Open LSM directory.
-2. Create transaction kit.
-3. Initialize buffer pool and double-write buffer.
-4. Initialize clog handler.
-5. Load DB metadata.
-6. Open all tables.
-7. Recover double-write buffer.
-8. Replay logs.
+1. 打开 LSM 目录。
+2. 创建事务 kit。
+3. 初始化 buffer pool 和 double write buffer。
+4. 初始化 clog handler。
+5. 加载数据库元数据。
+6. 打开所有表。
+7. 恢复 double write buffer。
+8. 回放 WAL 日志。
 
-### Table And Engine Split
+### 9.2 Table 与 TableEngine 分层
 
-`Table` is the schema-facing façade. It stores `TableMeta` and delegates storage to a `TableEngine`:
+`Table` 是 schema 层 façade，保存 `TableMeta` 并把实际读写委托给 `TableEngine`：
 
-- `HeapTableEngine`: normal page-based heap table.
-- `LsmTableEngine`: experimental LSM-backed table engine.
+- `HeapTableEngine`：常规页式 heap 表。
+- `LsmTableEngine`：实验性的 LSM 表引擎。
 
-`Table::make_record` converts SQL `Value` arrays to physical record bytes:
+`Table::make_record` 把 SQL 层 `Value` 数组转换为物理 record 字节：
 
-- validates column count;
-- casts types;
-- enforces not-null;
-- handles char/vector length;
-- stores null markers.
+- 校验字段数量。
+- 执行类型转换。
+- 校验 not null。
+- 处理 char/vector 长度。
+- 写入 NULL 标记。
 
-### Heap Engine
+### 9.3 Heap 表引擎
 
-`HeapTableEngine` owns:
+`HeapTableEngine` 持有：
 
-- `RecordFileHandler` for table data pages;
-- `DiskBufferPool` file handle;
-- `Index` instances;
-- optional LOB handler.
+- `RecordFileHandler`，负责表数据页。
+- `DiskBufferPool` 文件句柄。
+- `Index` 实例集合。
+- 可选 LOB handler。
 
-DML flow:
+DML 关键路径如下：
 
 ```mermaid
 flowchart TD
-  Insert[insert_record_with_trx] --> Unique[validate_unique_constraints]
-  Unique --> RecordFile[RecordFileHandler insert]
-  RecordFile --> Indexes[insert index entries]
-  Indexes --> OK[success]
-  Indexes -->|fail| Rollback[delete inserted index entries + record]
+  Insert[插入 insert_record_with_trx] --> Unique[校验唯一约束 validate_unique_constraints]
+  Unique --> RecordFile[写入 RecordFileHandler]
+  RecordFile --> Indexes[插入索引项]
+  Indexes --> OK[成功]
+  Indexes -->|失败| Rollback[删除已写索引项和记录]
 
-  Delete[delete_record_with_trx] --> DelIndex[delete index entries]
-  DelIndex --> DelRecord[RecordFileHandler delete]
+  Delete[删除 delete_record_with_trx] --> DelIndex[删除索引项]
+  DelIndex --> DelRecord[删除记录]
 
-  Update[update_record_with_trx] --> ValidateNew[validate unique constraints]
-  ValidateNew --> ChangeRecord[record replace/update]
-  ChangeRecord --> UpdateIndex[delete old index entries + insert new entries]
+  Update[更新 update_record_with_trx] --> ValidateNew[校验新记录唯一约束]
+  ValidateNew --> ChangeRecord[替换或更新记录]
+  ChangeRecord --> UpdateIndex[删除旧索引项并插入新索引项]
 ```
 
-Unique constraints are currently validated by scanning visible records and comparing unique index fields, with null values treated as non-equal for uniqueness.
+唯一约束当前通过扫描可见记录并比较唯一索引字段实现。包含 NULL 的唯一键按非相等处理，因此多个 NULL 不冲突。
 
-### Record Pages
+### 9.4 记录页
 
-`src/observer/storage/record/record_manager.cpp` implements page-level record layout:
+`src/observer/storage/record/record_manager.cpp` 实现页级记录布局：
 
-- `PageHeader`;
-- bitmap of occupied slots;
-- row format and PAX format handlers;
-- record capacity calculation;
-- page initialization and record insertion/deletion logging.
+- `PageHeader`。
+- slot 占用 bitmap。
+- 行存格式和 PAX 格式处理。
+- 单页记录容量计算。
+- 页初始化、记录插入和删除日志。
 
-`HeapRecordScanner` iterates pages through `DiskBufferPool` and `RecordPageIterator`. If a transaction is attached, each record is passed through `trx->visit_record` for visibility/concurrency checks.
+`HeapRecordScanner` 通过 `DiskBufferPool` 和 `RecordPageIterator` 遍历页。如果附带事务对象，每条记录都会经过 `trx->visit_record` 做可见性和并发检查。
 
-### Buffer Pool And Double Write
+### 9.5 Buffer Pool 与双写
 
-`src/observer/storage/buffer/` contains:
+`src/observer/storage/buffer/` 包含：
 
-- `DiskBufferPool`: file/page access and page allocation.
-- `Frame`: in-memory page frame, dirty state, latches.
-- `BufferPoolManager`: manages multiple `DiskBufferPool` files.
-- `DiskDoubleWriteBuffer`: double-write recovery support.
-- buffer-pool WAL replay modules.
+- `DiskBufferPool`：文件页访问和页面分配。
+- `Frame`：内存页帧、脏页状态和 latch。
+- `BufferPoolManager`：管理多个 `DiskBufferPool` 文件。
+- `DiskDoubleWriteBuffer`：双写恢复支持。
+- buffer-pool WAL 回放模块。
 
-The storage code generally obtains a page frame, latches it, mutates it through record/index handlers, marks it dirty and relies on buffer pool flush/sync paths.
+存储代码通常先获取 page frame 并加 latch，再通过 record/index handler 修改页面，标记 dirty，最终依赖 buffer pool flush/sync 路径落盘。
 
-## 10. Indexing And Search
+## 10. 索引与检索
 
-### B+ Tree Index
+### 10.1 B+Tree 索引
 
-`BplusTreeIndex` wraps `BplusTreeHandler`:
+`BplusTreeIndex` 封装 `BplusTreeHandler`：
 
-- create/open index files using the table's `BufferPoolManager`;
-- insert/delete entries by extracting indexed field bytes from record data;
-- create range scanners returning RIDs.
+- 使用表的 `BufferPoolManager` 创建或打开索引文件。
+- 从 record 字节中抽取索引字段并插入或删除索引项。
+- 创建范围扫描器，扫描结果返回 RID。
 
-`PhysicalPlanGenerator` currently chooses an index scan for simple equality predicates where one side is a field and the other side is a literal value.
+`PhysicalPlanGenerator` 当前会为简单等值谓词选择索引扫描，典型形态是一侧为字段、另一侧为字面量。
 
-Index metadata supports:
+索引元数据支持：
 
-- single or multi-column declarations through `IndexMeta`;
-- unique indexes;
-- persistence in table metadata.
+- 通过 `IndexMeta` 描述单列或多列索引。
+- 唯一索引。
+- 持久化到表元数据。
 
-### Full-Text Tokenization
+### 10.2 全文检索分词
 
-Full-text support uses `JiebaTokenizer` under `src/observer/storage/tokenizer/`, built on vendored cppjieba. The tokenizer cuts Chinese text and removes jieba stop words. Query support is implemented through parser/function/expression paths for `MATCH(...) AGAINST(...)` and BM25-like scoring.
+全文检索使用 `src/observer/storage/tokenizer/` 下的 `JiebaTokenizer`，底层依赖 vendored cppjieba。分词器负责中文切词和停用词过滤。SQL 查询侧通过 parser、function、expression 路径支持 `MATCH(...) AGAINST(...)` 和 BM25 风格打分。
 
-### Vector And IVFFlat Stubs
+### 10.3 向量与 IVFFlat
 
-Vector value/type support exists in SQL types and vector search cases. Index headers include `ivfflat_index.h`, but the main visible search behavior is implemented through expression/operator paths rather than a fully integrated production vector index layer.
+当前 SQL 类型系统和用例中已有 vector 值支持。索引头文件中也有 `ivfflat_index.h`，但当前可见行为主要通过表达式和算子路径实现，还不是完整生产级向量索引层。
 
-## 11. Transactions And MVCC
+## 11. 事务与 MVCC
 
-`TrxKit::create` chooses one of:
+`TrxKit::create` 根据启动参数选择事务实现：
 
-- `VacuousTrxKit`: no transaction isolation, direct table operations.
-- `MvccTrxKit`: heap MVCC using hidden fields.
-- `LsmMvccTrxKit`: LSM-specific transaction kit.
+- `VacuousTrxKit`：无真实隔离控制，直接调用表操作。
+- `MvccTrxKit`：基于 heap 记录隐藏字段的 MVCC。
+- `LsmMvccTrxKit`：LSM 专用事务 kit。
 
-### Vacuous Transactions
+### 11.1 Vacuous 事务
 
-`VacuousTrx` delegates directly:
+`VacuousTrx` 直接委托表操作：
 
-- insert -> `table->insert_record`;
-- delete -> `table->delete_record`;
-- visit -> always visible;
-- commit/rollback -> no-op.
+- insert 调用 `table->insert_record`。
+- delete 调用 `table->delete_record`。
+- visit 总是可见。
+- commit/rollback 是 no-op。
 
-This is the simplest default mode.
+这是最简单的默认事务模型，主要用于基础功能路径。
 
-### Heap MVCC
+### 11.2 Heap MVCC
 
-`MvccTrxKit` adds hidden fields to every table:
+`MvccTrxKit` 会给每张表增加隐藏字段：
 
 ```text
 __trx_xid_begin
 __trx_xid_end
 ```
 
-Visibility is encoded as:
+可见性编码规则如下：
 
-- positive `begin/end`: committed visibility interval;
-- negative `begin`: inserted by active transaction;
-- negative `end`: deleted by active transaction.
+- 正数 `begin/end` 表示已提交可见区间。
+- 负数 `begin` 表示当前活跃事务插入的记录。
+- 负数 `end` 表示当前活跃事务删除或修改中的记录。
 
-`MvccTrx` records operations, writes transaction logs and on commit converts negative temporary XIDs into a positive commit XID. Rollback reverses uncommitted operations.
+`MvccTrx` 记录事务操作并写事务日志。提交时把负数临时 XID 转换为正数提交 XID；回滚时撤销未提交操作。
 
-`HeapRecordScanner` invokes `trx->visit_record` so MVCC visibility is enforced during scans. Write mode can return concurrency conflicts when a record is being deleted/modified by another transaction.
+`HeapRecordScanner` 调用 `trx->visit_record`，因此扫描时会执行 MVCC 可见性判断。写模式下，如果记录正被其它事务删除或修改，可能返回并发冲突。
 
-## 12. Commit Log And Recovery
+## 12. 提交日志与恢复
 
-The commit log layer is under `src/observer/storage/clog/`.
+提交日志层位于 `src/observer/storage/clog/`。
 
-`LogHandler::create` chooses:
+`LogHandler::create` 选择具体实现：
 
-- `DiskLogHandler` for durable disk logging;
-- `VacuousLogHandler` for no-op logging.
+- `DiskLogHandler`：持久化磁盘日志。
+- `VacuousLogHandler`：空实现。
 
-`DiskLogHandler` has:
+`DiskLogHandler` 包含：
 
-- `LogFileManager`;
-- `LogEntryBuffer`;
-- background flush thread;
-- replay by iterating log files from a starting LSN.
+- `LogFileManager`。
+- `LogEntryBuffer`。
+- 后台 flush 线程。
+- 从指定 LSN 开始遍历日志文件的 replay 流程。
 
 ```mermaid
 flowchart LR
-  Mutation[Record/Index/Trx mutation] --> Append[LogHandler::append]
+  Mutation[Record/Index/Trx 修改] --> Append[LogHandler::append]
   Append --> Buffer[LogEntryBuffer]
-  Buffer --> Thread[DiskLogHandler thread]
+  Buffer --> Thread[DiskLogHandler 后台线程]
   Thread --> File[LogFileWriter]
 
   Startup[Db::recover] --> Iterate[DiskLogHandler::replay]
   Iterate --> Integrated[IntegratedLogReplayer]
-  Integrated --> BP[Buffer pool replay]
-  Integrated --> Record[Record replay]
-  Integrated --> BTree[B+ tree replay]
-  Integrated --> Trx[MVCC trx replay]
+  Integrated --> BP[Buffer pool 回放]
+  Integrated --> Record[Record 回放]
+  Integrated --> BTree[B+Tree 回放]
+  Integrated --> Trx[MVCC 事务回放]
 ```
 
-`IntegratedLogReplayer` dispatches replay by `LogModule`:
+`IntegratedLogReplayer` 按 `LogModule` 分发回放：
 
-- buffer pool;
-- record manager;
-- B+ tree;
-- transaction.
+- buffer pool。
+- record manager。
+- B+Tree。
+- transaction。
 
-This makes WAL replay cross-module but still centralized at database startup.
+WAL 回放跨越多个模块，但入口集中在数据库启动恢复阶段。
 
-## 13. LSM Subsystem
+## 13. LSM 子系统
 
-The standalone LSM code lives in `src/oblsm/`. `Db::init` opens an `ObLsm` instance under the database directory's `lsm/`.
+独立 LSM 代码位于 `src/oblsm/`。`Db::init` 会在数据库目录的 `lsm/` 下打开一个 `ObLsm` 实例。
 
-Important pieces:
+主要组件包括：
 
-- `ObLsmImpl`: main DB object;
-- `ObMemTable`: skiplist-like mutable memory table;
-- `WAL`: LSM write-ahead log;
-- `ObSSTable`, `ObBlock`, builders/readers;
-- `ObManifest`: snapshots and compaction metadata;
-- `ObCompactionPicker` and compaction scaffolding;
-- `ObUserIterator`: user-facing iteration.
+- `ObLsmImpl`：LSM 主对象。
+- `ObMemTable`：类似 skiplist 的可变内存表。
+- `WAL`：LSM 写前日志。
+- `ObSSTable`、`ObBlock` 及构建器和读取器。
+- `ObManifest`：快照和 compaction 元数据。
+- `ObCompactionPicker` 及 compaction 框架。
+- `ObUserIterator`：用户侧迭代器。
 
-`ObLsmImpl::put` writes WAL first, then memtable. When memtable exceeds configured size, it freezes the memtable, rotates WAL and schedules background compaction/building of SSTables.
+`ObLsmImpl::put` 先写 WAL，再写 memtable。memtable 超过配置阈值后会冻结 memtable、轮转 WAL，并调度后台 SSTable 构建和 compaction。
 
-The observer-facing `LsmTableEngine` is currently limited compared with heap: it can write key/value records through `ObLsm`, exposes an LSM scanner, and leaves many table operations unimplemented.
+面向 observer 的 `LsmTableEngine` 相比 heap 路径仍然有限：它可以通过 `ObLsm` 写入 key/value 记录，提供 LSM scanner，但许多表操作仍未完整实现。
 
-## 14. Testing Architecture
+## 14. 测试体系
 
-### Unit Tests
+### 14.1 单元测试
 
-`unittest/` contains GoogleTest binaries grouped by:
+`unittest/` 下是 GoogleTest 单元测试，按模块分组：
 
-- `common`;
-- `observer`;
-- `oblsm`;
-- `memtracer`.
+- `common`。
+- `observer`。
+- `oblsm`。
+- `memtracer`。
 
-CTest runs the built test binaries from `build_debug`.
+CTest 从 `build_debug` 中运行已构建的测试二进制。
 
-### SQL Case Runner
+### 14.2 SQL Case Runner
 
-`test/case/miniob_test.py` starts `observer`, sends SQL through plain protocol and compares generated output with `test/case/result/*.result`.
+`test/case/miniob_test.py` 会自动启动 `observer`，通过 plain 协议发送 SQL，并把输出与 `test/case/result/*.result` 比较。
 
-Supported case-level commands include:
+case 层支持的指令包括：
 
-- `-- echo`;
-- `-- sort`;
-- `-- connect` / `-- connection`;
-- `-- ensure:hashjoin`, `-- ensure:nlj`, etc. for plan assertions.
+- `-- echo`。
+- `-- sort`。
+- `-- connect` 和 `-- connection`。
+- `-- ensure:hashjoin`、`-- ensure:nlj` 等计划断言。
 
-`test/case/generate_mysql_result.py` uses the competition MySQL server on `/tmp/miniob2026-mysql.sock` to generate many MiniOB-style expected results. It also handles MiniOB-specific directives and known MiniOB2025 oracle semantics such as rejecting DML on multi-table materialized views.
+`test/case/generate_mysql_result.py` 使用竞赛指定 MySQL server 的 `/tmp/miniob2026-mysql.sock` 生成大量 MiniOB 风格期望结果。该脚本也处理 MiniOB 专用指令，以及 MiniOB2025 中部分与 MySQL 不完全一致的 oracle 语义，例如拒绝多表物化视图 DML。
 
-### MiniOB2025 Cases
+### 14.3 MiniOB2025 用例
 
-Current local MiniOB2025 tests live as fused cases under `test/case/test/miniob2025-*.test` with paired result files. The suite includes primary/dblab-derived coverage, official snippets and regression cases from previous failures.
+当前本地 MiniOB2025 测试以融合 case 的形式放在 `test/case/test/miniob2025-*.test`，并有对应 result 文件。该套件融合了 primary/dblab 派生覆盖、官方片段和此前失败样例的回归用例。
 
-## 15. Important Current Design Constraints
+## 15. 当前重要设计约束
 
-- Output is exact-match sensitive. Protocol formatting and query result order must be deterministic in test cases.
-- Parser generated files must follow grammar/lexer source changes.
-- Heap storage is the main complete storage path; LSM is experimental.
-- MVCC is functional but simplified and still uses per-record hidden fields with coarse conflict semantics.
-- Materialized views are physical tables plus metadata-driven DML mirroring, not virtual query expansion views.
-- The optimizer is mostly rule-based; cascade optimizer is present but optional.
-- WAL/recovery spans buffer, record, B+ tree and transaction modules through module-tagged log entries.
+- 输出是精确匹配的，协议格式和查询结果顺序在测试中必须可预测。
+- parser 生成文件必须跟随 grammar/lexer 源文件变更，不能只手改生成文件。
+- heap 存储是当前主要完整路径，LSM 仍偏实验。
+- MVCC 已具备基础功能，但仍是基于记录隐藏字段的简化实现，并发冲突语义较粗。
+- 物化视图是物理表加内存元数据驱动的 DML 镜像，不是纯虚拟 query expansion view。
+- 优化器主要是规则优化，cascade optimizer 存在但属于可选实验路径。
+- WAL/recovery 通过模块标签横跨 buffer、record、B+Tree 和 transaction。
 
-## 16. Quick File Map
+## 16. 快速文件地图
 
 ```text
-src/observer/main.cpp                 process entry and command-line options
-src/observer/net/                      protocol, server, thread handling
-src/observer/event/                    request/event wrappers
-src/observer/session/                  per-connection state and transaction binding
-src/observer/sql/parser/               SQL lexer/parser and AST nodes
-src/observer/sql/stmt/                 schema binding and statement validation
-src/observer/sql/expr/                 expression evaluation and aggregate state
-src/observer/sql/optimizer/            logical planning, rewrite, physical planning
-src/observer/sql/operator/             logical and physical operators
-src/observer/sql/executor/             command executors and SQL result bridge
-src/observer/storage/db/               database lifecycle, recovery, view registry
-src/observer/storage/table/            Table façade and heap/LSM engines
-src/observer/storage/record/           record pages, scanners, row/PAX layout
-src/observer/storage/index/            B+ tree index and index metadata
-src/observer/storage/buffer/           page cache, frames, double-write
-src/observer/storage/clog/             WAL append, flush, replay
-src/observer/storage/trx/              vacuous/MVCC/LSM transaction implementations
-src/oblsm/                             standalone LSM implementation
-test/case/                             SQL case runner and MiniOB2025 cases
-unittest/                              GoogleTest/CTest unit coverage
+src/observer/main.cpp                 进程入口和命令行参数
+src/observer/net/                      协议、服务端、线程处理
+src/observer/event/                    请求和事件包装
+src/observer/session/                  连接会话状态和事务绑定
+src/observer/sql/parser/               SQL 词法、语法和解析节点
+src/observer/sql/stmt/                 schema 绑定和语句校验
+src/observer/sql/expr/                 表达式计算和聚合状态
+src/observer/sql/optimizer/            逻辑计划、重写、物理计划
+src/observer/sql/operator/             逻辑算子和物理算子
+src/observer/sql/executor/             命令执行器和 SqlResult 桥接
+src/observer/storage/db/               数据库生命周期、恢复、view 注册
+src/observer/storage/table/            Table façade 和 heap/LSM 引擎
+src/observer/storage/record/           记录页、扫描器、行存/PAX 布局
+src/observer/storage/index/            B+Tree 索引和索引元数据
+src/observer/storage/buffer/           页缓存、frame、双写
+src/observer/storage/clog/             WAL 追加、刷盘、回放
+src/observer/storage/trx/              vacuous/MVCC/LSM 事务实现
+src/oblsm/                             独立 LSM 实现
+test/case/                             SQL case runner 和 MiniOB2025 用例
+unittest/                              GoogleTest/CTest 单元测试
 ```
