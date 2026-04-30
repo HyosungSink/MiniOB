@@ -594,21 +594,31 @@ update_stmt:      /*  update 语句的语法解析树*/
     ;
 
 update_assignment_list:
-    ID EQ value
+    ID EQ expression
     {
       $$ = new vector<UpdateAssignmentSqlNode>;
-      $$->push_back(UpdateAssignmentSqlNode{$1, *$3});
-      delete $3;
+      UpdateAssignmentSqlNode assignment;
+      assignment.attribute_name = $1;
+      assignment.expression.reset($3);
+      if ($3->try_get_value(assignment.value) != RC::SUCCESS) {
+        assignment.value.reset();
+      }
+      $$->push_back(std::move(assignment));
     }
-    | ID EQ value COMMA update_assignment_list
+    | ID EQ expression COMMA update_assignment_list
     {
       if ($5 != nullptr) {
         $$ = $5;
       } else {
         $$ = new vector<UpdateAssignmentSqlNode>;
       }
-      $$->insert($$->begin(), UpdateAssignmentSqlNode{$1, *$3});
-      delete $3;
+      UpdateAssignmentSqlNode assignment;
+      assignment.attribute_name = $1;
+      assignment.expression.reset($3);
+      if ($3->try_get_value(assignment.value) != RC::SUCCESS) {
+        assignment.value.reset();
+      }
+      $$->insert($$->begin(), std::move(assignment));
     }
     ;
 select_stmt:        /*  select 语句的语法解析树*/

@@ -155,6 +155,7 @@ struct UpdateAssignmentSqlNode
 {
   string attribute_name;
   Value  value;
+  unique_ptr<Expression> expression;
 };
 
 struct UpdateSqlNode
