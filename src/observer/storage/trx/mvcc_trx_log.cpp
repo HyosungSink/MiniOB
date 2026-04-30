@@ -155,7 +155,7 @@ RC MvccTrxLogReplayer::replay(const LogEntry &entry)
   auto trx_iter = trx_map_.find(header->trx_id);
   if (trx_iter == trx_map_.end()) {
     trx = static_cast<MvccTrx *>(trx_kit_.create_trx(log_handler_, header->trx_id));
-    // trx = new MvccTrx(trx_kit_, log_handler_, header->trx_id);
+    trx_map_.emplace(header->trx_id, trx);
   } else {
     trx = trx_iter->second;
   }
@@ -166,7 +166,6 @@ RC MvccTrxLogReplayer::replay(const LogEntry &entry)
   /// 如果事务结束了，需要从内存中把它删除
   if (MvccTrxLogOperation(header->operation_type).type() == MvccTrxLogOperation::Type::ROLLBACK ||
       MvccTrxLogOperation(header->operation_type).type() == MvccTrxLogOperation::Type::COMMIT) {
-    Trx *trx = trx_map_[header->trx_id];
     trx_kit_.destroy_trx(trx);
     trx_map_.erase(header->trx_id);
   }
@@ -180,7 +179,7 @@ RC MvccTrxLogReplayer::on_done()
   for (auto &pair : trx_map_) {
     MvccTrx *trx = pair.second;
     trx->rollback(); // 恢复时的rollback，可能遇到之前已经回滚一半的事务又再次调用回滚的情况
-    delete pair.second;
+    trx_kit_.destroy_trx(trx);
   }
   trx_map_.clear();
 
