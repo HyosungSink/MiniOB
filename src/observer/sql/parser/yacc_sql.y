@@ -94,6 +94,7 @@ RC parse_vector_function_value(const char *function_name, const char *literal, V
         TABLE
         TABLES
         INDEX
+        LIKE
         CALC
         SELECT
         DESC
@@ -925,6 +926,14 @@ expression:
     | function_expression {
       $$ = $1;
     }
+    | expression LIKE expression
+    {
+      vector<unique_ptr<Expression>> arguments;
+      arguments.emplace_back($1);
+      arguments.emplace_back($3);
+      $$ = new UnboundFunctionExpr("like", std::move(arguments));
+      $$->set_name(token_name(sql_string, &@$));
+    }
     | expression IS NULL_T
     {
       $$ = new IsNullExpr(unique_ptr<Expression>($1), false);
@@ -1084,6 +1093,16 @@ condition:
     {
       $$ = new ConditionSqlNode;
       $$->left_expr.reset(new IsNullExpr(unique_ptr<Expression>($1), true));
+      $$->right_expr.reset(new ValueExpr(Value(true)));
+      $$->comp = EQUAL_TO;
+    }
+    | expression LIKE expression
+    {
+      vector<unique_ptr<Expression>> arguments;
+      arguments.emplace_back($1);
+      arguments.emplace_back($3);
+      $$ = new ConditionSqlNode;
+      $$->left_expr.reset(new UnboundFunctionExpr("like", std::move(arguments)));
       $$->right_expr.reset(new ValueExpr(Value(true)));
       $$->comp = EQUAL_TO;
     }
