@@ -466,8 +466,8 @@ RC ExpressionBinder::bind_function_expression(
         function_name, unbound_function_expr->arguments(), unbound_function_expr->name(), bound_expressions);
   }
 
-  LOG_WARN("invalid function name: %s", function_name);
-  return RC::INVALID_ARGUMENT;
+  return bind_scalar_function(
+      function_name, unbound_function_expr->arguments(), unbound_function_expr->name(), bound_expressions);
 }
 
 RC ExpressionBinder::bind_aggregate_function(const char *aggregate_name,
@@ -517,5 +517,83 @@ RC ExpressionBinder::bind_aggregate_function(const char *aggregate_name,
   }
 
   bound_expressions.emplace_back(std::move(aggregate_expr));
+  return RC::SUCCESS;
+}
+
+static bool is_null_literal_type(AttrType type) { return type == AttrType::UNDEFINED; }
+
+RC ExpressionBinder::bind_scalar_function(const char *function_name,
+    vector<unique_ptr<Expression>> &arguments,
+    const char *expression_name,
+    vector<unique_ptr<Expression>> &bound_expressions)
+{
+  FunctionExpr::Type function_type;
+  RC rc = FunctionExpr::type_from_string(function_name, function_type);
+  if (OB_FAIL(rc)) {
+    LOG_WARN("invalid function name: %s", function_name);
+    return rc;
+  }
+
+  vector<unique_ptr<Expression>> bound_arguments;
+  for (unique_ptr<Expression> &argument_expr : arguments) {
+    vector<unique_ptr<Expression>> child_bound_expressions;
+    rc = bind_expression(argument_expr, child_bound_expressions);
+    if (OB_FAIL(rc)) {
+      return rc;
+    }
+
+    if (child_bound_expressions.size() != 1) {
+      LOG_WARN("invalid argument children number of function expression: %d", child_bound_expressions.size());
+      return RC::INVALID_ARGUMENT;
+    }
+
+    bound_arguments.emplace_back(std::move(child_bound_expressions[0]));
+  }
+
+  auto type_at = [&](size_t index) { return bound_arguments[index]->value_type(); };
+
+  switch (function_type) {
+    case FunctionExpr::Type::LENGTH: {
+      if (bound_arguments.size() != 1) {
+        return RC::INVALID_ARGUMENT;
+      }
+      AttrType type = type_at(0);
+      if (type != AttrType::CHARS && !is_null_literal_type(type)) {
+        return RC::INVALID_ARGUMENT;
+      }
+    } break;
+    case FunctionExpr::Type::ROUND: {
+      if (bound_arguments.size() != 1 && bound_arguments.size() != 2) {
+        return RC::INVALID_ARGUMENT;
+      }
+      AttrType value_type = type_at(0);
+      if (!is_numerical_type(value_type) && !is_null_literal_type(value_type)) {
+        return RC::INVALID_ARGUMENT;
+      }
+      if (bound_arguments.size() == 2) {
+        AttrType precision_type = type_at(1);
+        if (precision_type != AttrType::INTS && !is_null_literal_type(precision_type)) {
+          return RC::INVALID_ARGUMENT;
+        }
+      }
+    } break;
+    case FunctionExpr::Type::DATE_FORMAT: {
+      if (bound_arguments.size() != 2) {
+        return RC::INVALID_ARGUMENT;
+      }
+      AttrType date_type = type_at(0);
+      AttrType format_type = type_at(1);
+      if (date_type != AttrType::DATES && !is_null_literal_type(date_type)) {
+        return RC::INVALID_ARGUMENT;
+      }
+      if (format_type != AttrType::CHARS && !is_null_literal_type(format_type)) {
+        return RC::INVALID_ARGUMENT;
+      }
+    } break;
+  }
+
+  auto function_expr = make_unique<FunctionExpr>(function_type, std::move(bound_arguments));
+  function_expr->set_name(expression_name);
+  bound_expressions.emplace_back(std::move(function_expr));
   return RC::SUCCESS;
 }

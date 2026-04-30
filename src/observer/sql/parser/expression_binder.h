@@ -67,6 +67,10 @@ private:
       unique_ptr<Expression> &arithmetic_expr, vector<unique_ptr<Expression>> &bound_expressions);
   RC bind_function_expression(
       unique_ptr<Expression> &function_expr, vector<unique_ptr<Expression>> &bound_expressions);
+  RC bind_scalar_function(const char *function_name,
+      vector<unique_ptr<Expression>> &arguments,
+      const char *expression_name,
+      vector<unique_ptr<Expression>> &bound_expressions);
   RC bind_aggregate_expression(
       unique_ptr<Expression> &aggregate_expr, vector<unique_ptr<Expression>> &bound_expressions);
   RC bind_aggregate_function(const char *aggregate_name,
