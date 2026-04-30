@@ -39,6 +39,10 @@ static RC create_view_insert_stmt(Db *db, const InsertSqlNode &inserts, const Vi
   if (base_table == nullptr) {
     return RC::SCHEMA_TABLE_NOT_EXIST;
   }
+  Table *view_table = db->find_table(view.view_name.c_str());
+  if (view_table == nullptr) {
+    return RC::SCHEMA_TABLE_NOT_EXIST;
+  }
 
   vector<vector<Value>> single_row;
   const vector<vector<Value>> *value_rows = &inserts.value_rows;
@@ -49,6 +53,8 @@ static RC create_view_insert_stmt(Db *db, const InsertSqlNode &inserts, const Vi
 
   const TableMeta &table_meta = base_table->table_meta();
   const int        field_num  = table_meta.field_num() - table_meta.sys_field_num();
+  const TableMeta &view_table_meta = view_table->table_meta();
+  const int        view_field_num  = view_table_meta.field_num() - view_table_meta.sys_field_num();
   vector<string>   insert_columns = inserts.attribute_names;
   if (insert_columns.empty()) {
     for (const ViewColumnMapping &column : view.columns) {
@@ -57,7 +63,9 @@ static RC create_view_insert_stmt(Db *db, const InsertSqlNode &inserts, const Vi
   }
 
   vector<vector<Value>> base_rows;
+  vector<vector<Value>> view_rows;
   base_rows.reserve(value_rows->size());
+  view_rows.reserve(value_rows->size());
   for (const vector<Value> &row : *value_rows) {
     if (insert_columns.size() != row.size()) {
       return RC::SCHEMA_FIELD_MISSING;
@@ -65,6 +73,10 @@ static RC create_view_insert_stmt(Db *db, const InsertSqlNode &inserts, const Vi
 
     vector<Value> base_row(field_num);
     for (Value &value : base_row) {
+      value.set_null();
+    }
+    vector<Value> view_row(view_field_num);
+    for (Value &value : view_row) {
       value.set_null();
     }
 
@@ -80,11 +92,21 @@ static RC create_view_insert_stmt(Db *db, const InsertSqlNode &inserts, const Vi
         return rc;
       }
       base_row[index] = row[i];
+
+      int view_index = -1;
+      rc = field_index(view_table_meta, insert_columns[i].c_str(), view_index);
+      if (OB_FAIL(rc)) {
+        return rc;
+      }
+      view_row[view_index] = row[i];
     }
     base_rows.emplace_back(std::move(base_row));
+    view_rows.emplace_back(std::move(view_row));
   }
 
-  stmt = new InsertStmt(base_table, base_rows);
+  auto insert_stmt = new InsertStmt(base_table, base_rows);
+  insert_stmt->set_mirror_insert(view_table, std::move(view_rows));
+  stmt = insert_stmt;
   return RC::SUCCESS;
 }
 
@@ -95,6 +117,12 @@ InsertStmt::InsertStmt(Table *table, const vector<vector<Value>> &value_rows)
     values_       = value_rows_.front().data();
     value_amount_ = static_cast<int>(value_rows_.front().size());
   }
+}
+
+void InsertStmt::set_mirror_insert(Table *table, vector<vector<Value>> &&value_rows)
+{
+  mirror_table_      = table;
+  mirror_value_rows_ = std::move(value_rows);
 }
 
 RC InsertStmt::create(Db *db, const InsertSqlNode &inserts, Stmt *&stmt)

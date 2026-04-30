@@ -37,13 +37,18 @@ public:
 
 public:
   Table       *table() const { return table_; }
+  Table       *mirror_table() const { return mirror_table_; }
   const Value *values() const { return values_; }
   int          value_amount() const { return value_amount_; }
   const vector<vector<Value>> &value_rows() const { return value_rows_; }
+  const vector<vector<Value>> &mirror_value_rows() const { return mirror_value_rows_; }
+  void set_mirror_insert(Table *table, vector<vector<Value>> &&value_rows);
 
 private:
   Table                 *table_        = nullptr;
+  Table                 *mirror_table_ = nullptr;
   const Value           *values_       = nullptr;
   int                    value_amount_ = 0;
   vector<vector<Value>>  value_rows_;
+  vector<vector<Value>>  mirror_value_rows_;
 };
