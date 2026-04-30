@@ -13,6 +13,7 @@ See the Mulan PSL v2 for more details. */
 //
 
 #include "common/log/log.h"
+#include "common/lang/unordered_set.h"
 #include "sql/expr/expression.h"
 #include "session/session.h"
 #include "sql/operator/aggregate_vec_physical_operator.h"
@@ -47,6 +48,63 @@ See the Mulan PSL v2 for more details. */
 #include "sql/optimizer/physical_plan_generator.h"
 
 using namespace std;
+
+static void collect_logical_tables(LogicalOperator &oper, unordered_set<const Table *> &tables)
+{
+  if (oper.type() == LogicalOperatorType::TABLE_GET) {
+    auto &table_get = static_cast<TableGetLogicalOperator &>(oper);
+    tables.insert(table_get.table());
+    return;
+  }
+
+  for (auto &child : oper.children()) {
+    collect_logical_tables(*child, tables);
+  }
+}
+
+static bool is_field_from(Expression &expr, const unordered_set<const Table *> &tables)
+{
+  if (expr.type() != ExprType::FIELD) {
+    return false;
+  }
+  auto &field_expr = static_cast<FieldExpr &>(expr);
+  return tables.find(field_expr.field().table()) != tables.end();
+}
+
+static bool extract_hash_join_keys(JoinLogicalOperator &join_oper,
+    vector<unique_ptr<Expression>> &left_keys, vector<unique_ptr<Expression>> &right_keys)
+{
+  if (join_oper.children().size() != 2) {
+    return false;
+  }
+
+  unordered_set<const Table *> left_tables;
+  unordered_set<const Table *> right_tables;
+  collect_logical_tables(*join_oper.children()[0], left_tables);
+  collect_logical_tables(*join_oper.children()[1], right_tables);
+
+  for (auto &predicate : join_oper.get_join_predicates()) {
+    if (predicate->type() != ExprType::COMPARISON) {
+      continue;
+    }
+    auto &comparison = static_cast<ComparisonExpr &>(*predicate);
+    if (comparison.comp() != EQUAL_TO) {
+      continue;
+    }
+
+    Expression &left_expr  = *comparison.left();
+    Expression &right_expr = *comparison.right();
+    if (is_field_from(left_expr, left_tables) && is_field_from(right_expr, right_tables)) {
+      left_keys.emplace_back(left_expr.copy());
+      right_keys.emplace_back(right_expr.copy());
+    } else if (is_field_from(left_expr, right_tables) && is_field_from(right_expr, left_tables)) {
+      left_keys.emplace_back(right_expr.copy());
+      right_keys.emplace_back(left_expr.copy());
+    }
+  }
+
+  return !left_keys.empty();
+}
 
 RC PhysicalPlanGenerator::create(LogicalOperator &logical_operator, unique_ptr<PhysicalOperator> &oper, Session* session)
 {
@@ -339,10 +397,26 @@ RC PhysicalPlanGenerator::create_plan(JoinLogicalOperator &join_oper, unique_ptr
     LOG_WARN("join operator should have 2 children, but have %d", child_opers.size());
     return RC::INTERNAL;
   }
-  if (session->hash_join_on() && can_use_hash_join(join_oper)) {
-    // your code here
+  vector<unique_ptr<Expression>> left_hash_keys;
+  vector<unique_ptr<Expression>> right_hash_keys;
+  if (session->hash_join_on() && extract_hash_join_keys(join_oper, left_hash_keys, right_hash_keys)) {
+    unique_ptr<PhysicalOperator> join_physical_oper(new HashJoinPhysicalOperator(
+        std::move(left_hash_keys), std::move(right_hash_keys), std::move(join_oper.get_join_predicates())));
+    for (auto &child_oper : child_opers) {
+      unique_ptr<PhysicalOperator> child_physical_oper;
+      rc = create(*child_oper, child_physical_oper, session);
+      if (rc != RC::SUCCESS) {
+        LOG_WARN("failed to create physical child oper. rc=%s", strrc(rc));
+        return rc;
+      }
+
+      join_physical_oper->add_child(std::move(child_physical_oper));
+    }
+
+    oper = std::move(join_physical_oper);
   } else {
-    unique_ptr<PhysicalOperator> join_physical_oper(new NestedLoopJoinPhysicalOperator());
+    unique_ptr<PhysicalOperator> join_physical_oper(
+        new NestedLoopJoinPhysicalOperator(std::move(join_oper.get_join_predicates())));
     for (auto &child_oper : child_opers) {
       unique_ptr<PhysicalOperator> child_physical_oper;
       rc = create(*child_oper, child_physical_oper, session);
@@ -361,8 +435,9 @@ RC PhysicalPlanGenerator::create_plan(JoinLogicalOperator &join_oper, unique_ptr
 
 bool PhysicalPlanGenerator::can_use_hash_join(JoinLogicalOperator &join_oper)
 {
-  // your code here
-  return false;
+  vector<unique_ptr<Expression>> left_hash_keys;
+  vector<unique_ptr<Expression>> right_hash_keys;
+  return extract_hash_join_keys(join_oper, left_hash_keys, right_hash_keys);
 }
 
 RC PhysicalPlanGenerator::create_plan(CalcLogicalOperator &logical_oper, unique_ptr<PhysicalOperator> &oper, Session* session)
