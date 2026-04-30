@@ -82,6 +82,19 @@ RC UpdateStmt::create(Db *db, const UpdateSqlNode &update, Stmt *&stmt)
     return ExpressionIterator::iterate_child_expr(expr, check_child);
   };
 
+  function<RC(Expression &)> allow_assignment_subquery_rows;
+  allow_assignment_subquery_rows = [&](Expression &expr) -> RC {
+    if (expr.type() == ExprType::SUBQUERY) {
+      static_cast<SubqueryExpr &>(expr).set_allow_multi_row_scalar(true);
+      return RC::SUCCESS;
+    }
+
+    function<RC(unique_ptr<Expression> &)> mark_child = [&](unique_ptr<Expression> &child) -> RC {
+      return allow_assignment_subquery_rows(*child);
+    };
+    return ExpressionIterator::iterate_child_expr(expr, mark_child);
+  };
+
   for (const UpdateAssignmentSqlNode &assignment : update.assignments) {
     const FieldMeta *field_meta = table->table_meta().field(assignment.attribute_name.c_str());
     if (field_meta == nullptr) {
@@ -108,6 +121,10 @@ RC UpdateStmt::create(Db *db, const UpdateSqlNode &update, Stmt *&stmt)
     }
 
     rc = reject_aggregate_expression(*bound_expressions[0]);
+    if (OB_FAIL(rc)) {
+      return rc;
+    }
+    rc = allow_assignment_subquery_rows(*bound_expressions[0]);
     if (OB_FAIL(rc)) {
       return rc;
     }

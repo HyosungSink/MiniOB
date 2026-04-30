@@ -892,6 +892,10 @@ RC SubqueryExpr::get_value(const Tuple &tuple, Value &value) const
   }
 
   if (values_.size() > 1) {
+    if (allow_multi_row_scalar_) {
+      value = values_[0];
+      return RC::SUCCESS;
+    }
     LOG_WARN("scalar subquery should return one row. actual rows=%d", values_.size());
     return RC::INVALID_ARGUMENT;
   }
@@ -912,6 +916,9 @@ RC SubqueryExpr::prepare() const
   }
 
   if (values_.size() > 1) {
+    if (allow_multi_row_scalar_) {
+      return RC::SUCCESS;
+    }
     LOG_WARN("scalar subquery should return one row. actual rows=%d", values_.size());
     return RC::INVALID_ARGUMENT;
   }

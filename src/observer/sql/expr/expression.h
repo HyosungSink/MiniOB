@@ -466,6 +466,7 @@ public:
   void set_correlated(bool correlated) { correlated_ = correlated; }
   bool correlated() const { return correlated_; }
   void set_parent_tables(const vector<ParentTableRef> &parent_tables) { parent_tables_ = parent_tables; }
+  void set_allow_multi_row_scalar(bool allow) { allow_multi_row_scalar_ = allow; }
 
   RC materialized_values(const vector<Value> *&values) const;
   RC materialized_values(const Tuple &outer_tuple, const vector<Value> *&values) const;
@@ -479,6 +480,7 @@ private:
   int                   value_length_ = -1;
   AttrType              cast_type_    = AttrType::UNDEFINED;
   bool                  correlated_   = false;
+  bool                  allow_multi_row_scalar_ = false;
   vector<ParentTableRef> parent_tables_;
   mutable bool          materialized_ = false;
   mutable RC            materialize_rc_ = RC::SUCCESS;
