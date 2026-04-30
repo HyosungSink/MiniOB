@@ -22,6 +22,7 @@ See the Mulan PSL v2 for more details. */
 #include "sql/operator/insert_logical_operator.h"
 #include "sql/operator/join_logical_operator.h"
 #include "sql/operator/logical_operator.h"
+#include "sql/operator/order_by_logical_operator.h"
 #include "sql/operator/predicate_logical_operator.h"
 #include "sql/operator/project_logical_operator.h"
 #include "sql/operator/table_get_logical_operator.h"
@@ -173,6 +174,21 @@ RC LogicalPlanGenerator::create_plan(SelectStmt *select_stmt, unique_ptr<Logical
     last_oper = &having_oper;
   }
 
+  unique_ptr<LogicalOperator> order_by_oper;
+  if (select_stmt->union_stmts().empty() && (!select_stmt->order_by().empty() || select_stmt->limit() >= 0)) {
+    vector<bool> order_by_asc(select_stmt->order_by_asc().begin(), select_stmt->order_by_asc().end());
+    order_by_oper = make_unique<OrderByLogicalOperator>(
+        std::move(select_stmt->order_by()), std::move(order_by_asc), select_stmt->limit());
+  }
+
+  if (order_by_oper) {
+    if (*last_oper) {
+      order_by_oper->add_child(std::move(*last_oper));
+    }
+
+    last_oper = &order_by_oper;
+  }
+
   unique_ptr<LogicalOperator> project_oper = make_unique<ProjectLogicalOperator>(std::move(select_stmt->query_expressions()));
   if (*last_oper) {
     project_oper->add_child(std::move(*last_oper));
@@ -195,7 +211,15 @@ RC LogicalPlanGenerator::create_plan(SelectStmt *select_stmt, unique_ptr<Logical
       union_oper->add_child(std::move(union_child_oper));
     }
 
-    logical_operator = std::move(union_oper);
+    if (!select_stmt->order_by().empty() || select_stmt->limit() >= 0) {
+      vector<bool> order_by_asc(select_stmt->order_by_asc().begin(), select_stmt->order_by_asc().end());
+      auto final_order_by_oper = make_unique<OrderByLogicalOperator>(
+          std::move(select_stmt->order_by()), std::move(order_by_asc), select_stmt->limit());
+      final_order_by_oper->add_child(std::move(union_oper));
+      logical_operator = std::move(final_order_by_oper);
+    } else {
+      logical_operator = std::move(union_oper);
+    }
     return RC::SUCCESS;
   }
 

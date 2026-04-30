@@ -31,6 +31,8 @@ See the Mulan PSL v2 for more details. */
 #include "sql/operator/insert_physical_operator.h"
 #include "sql/operator/join_logical_operator.h"
 #include "sql/operator/nested_loop_join_physical_operator.h"
+#include "sql/operator/order_by_logical_operator.h"
+#include "sql/operator/order_by_physical_operator.h"
 #include "sql/operator/predicate_logical_operator.h"
 #include "sql/operator/predicate_physical_operator.h"
 #include "sql/operator/project_logical_operator.h"
@@ -151,6 +153,10 @@ RC PhysicalPlanGenerator::create(LogicalOperator &logical_operator, unique_ptr<P
 
     case LogicalOperatorType::GROUP_BY: {
       return create_plan(static_cast<GroupByLogicalOperator &>(logical_operator), oper, session);
+    } break;
+
+    case LogicalOperatorType::ORDER_BY: {
+      return create_plan(static_cast<OrderByLogicalOperator &>(logical_operator), oper, session);
     } break;
 
     case LogicalOperatorType::UNION: {
@@ -310,6 +316,25 @@ RC PhysicalPlanGenerator::create_plan(ProjectLogicalOperator &project_oper, uniq
 
   LOG_TRACE("create a project physical operator");
   return rc;
+}
+
+RC PhysicalPlanGenerator::create_plan(OrderByLogicalOperator &order_by_oper, unique_ptr<PhysicalOperator> &oper, Session *session)
+{
+  vector<unique_ptr<LogicalOperator>> &child_opers = order_by_oper.children();
+  ASSERT(child_opers.size() == 1, "order by logical operator should have one child");
+
+  unique_ptr<PhysicalOperator> child_phy_oper;
+  RC rc = create(*child_opers.front(), child_phy_oper, session);
+  if (OB_FAIL(rc)) {
+    LOG_WARN("failed to create order by child physical operator. rc=%s", strrc(rc));
+    return rc;
+  }
+
+  auto order_by_phy_oper = make_unique<OrderByPhysicalOperator>(
+      std::move(order_by_oper.order_expressions()), std::move(order_by_oper.asc()), order_by_oper.limit());
+  order_by_phy_oper->add_child(std::move(child_phy_oper));
+  oper = std::move(order_by_phy_oper);
+  return RC::SUCCESS;
 }
 
 RC PhysicalPlanGenerator::create_plan(UnionLogicalOperator &union_oper, unique_ptr<PhysicalOperator> &oper, Session *session)
