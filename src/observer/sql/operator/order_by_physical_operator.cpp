@@ -31,7 +31,9 @@ RC OrderByPhysicalOperator::open(Trx *trx)
   output_specs_.clear();
   cell_infos_.clear();
   sort_key_refs_.clear();
+  packed_cells_.clear();
   position_ = 0;
+  packed_cell_size_ = 0;
 
   PhysicalOperator *child = children_[0].get();
   RC rc = child->open(trx);
@@ -198,7 +200,9 @@ RC OrderByPhysicalOperator::close()
   output_specs_.clear();
   cell_infos_.clear();
   sort_key_refs_.clear();
+  packed_cells_.clear();
   position_ = 0;
+  packed_cell_size_ = 0;
   return RC::SUCCESS;
 }
 
@@ -208,7 +212,7 @@ Tuple *OrderByPhysicalOperator::current_tuple()
     return nullptr;
   }
 
-  current_tuple_.set_context(&rows_[position_ - 1], &output_specs_, &cell_infos_);
+  current_tuple_.set_context(&rows_[position_ - 1], &output_specs_, &cell_infos_, &packed_cells_);
   return &current_tuple_;
 }
 
@@ -259,6 +263,7 @@ RC OrderByPhysicalOperator::init_cell_infos(const Tuple &tuple)
     if (cell.attr_type() != AttrType::INTS && cell.attr_type() != AttrType::FLOATS &&
         cell.attr_type() != AttrType::DATES) {
       cell_infos_.clear();
+      packed_cell_size_ = 0;
       return RC::SUCCESS;
     }
 
@@ -270,16 +275,18 @@ RC OrderByPhysicalOperator::init_cell_infos(const Tuple &tuple)
     cell_infos_.push_back(info);
   }
 
+  packed_cell_size_ = offset;
   return RC::SUCCESS;
 }
 
-RC OrderByPhysicalOperator::materialize_tuple_cells(const Tuple &tuple, OrderedTuple &ordered_tuple) const
+RC OrderByPhysicalOperator::materialize_tuple_cells(const Tuple &tuple, OrderedTuple &ordered_tuple)
 {
   const int cell_num = tuple.cell_num();
 
   if (!cell_infos_.empty()) {
-    const CellInfo &last_info = cell_infos_.back();
-    ordered_tuple.packed_cells.resize(last_info.offset + last_info.length);
+    ordered_tuple.packed        = true;
+    ordered_tuple.packed_offset = packed_cells_.size();
+    packed_cells_.resize(ordered_tuple.packed_offset + packed_cell_size_);
     for (int i = 0; i < cell_num; i++) {
       Value cell;
       RC rc = tuple.cell_at(i, cell);
@@ -288,7 +295,7 @@ RC OrderByPhysicalOperator::materialize_tuple_cells(const Tuple &tuple, OrderedT
       }
 
       const CellInfo &info = cell_infos_[i];
-      char *cell_data = ordered_tuple.packed_cells.data() + info.offset;
+      char *cell_data = packed_cells_.data() + ordered_tuple.packed_offset + info.offset;
       if (cell.is_null()) {
         Value::set_null_data(cell_data, info.length, info.type);
       } else {
@@ -313,9 +320,9 @@ RC OrderByPhysicalOperator::materialize_tuple_cells(const Tuple &tuple, OrderedT
 
 void OrderByPhysicalOperator::read_cell_value(const OrderedTuple &row, int cell_index, Value &cell) const
 {
-  if (!row.packed_cells.empty()) {
+  if (row.packed) {
     const CellInfo &info = cell_infos_[cell_index];
-    const char     *data = row.packed_cells.data() + info.offset;
+    const char     *data = packed_cells_.data() + row.packed_offset + info.offset;
     if (Value::is_null_data(data, info.length, info.type)) {
       cell.set_null();
       return;
@@ -357,11 +364,13 @@ int OrderByPhysicalOperator::compare_evaluated_key(
 }
 
 void OrderByPhysicalOperator::MaterializedTuple::set_context(
-    const OrderedTuple *row, const vector<TupleCellSpec> *specs, const vector<CellInfo> *cell_infos)
+    const OrderedTuple *row, const vector<TupleCellSpec> *specs, const vector<CellInfo> *cell_infos,
+    const vector<char> *packed_cells)
 {
-  row_        = row;
-  specs_      = specs;
-  cell_infos_ = cell_infos;
+  row_          = row;
+  specs_        = specs;
+  cell_infos_   = cell_infos;
+  packed_cells_ = packed_cells;
 }
 
 int OrderByPhysicalOperator::MaterializedTuple::cell_num() const
@@ -378,9 +387,9 @@ RC OrderByPhysicalOperator::MaterializedTuple::cell_at(int index, Value &cell) c
     return RC::NOTFOUND;
   }
 
-  if (!row_->packed_cells.empty()) {
+  if (row_->packed) {
     const CellInfo &info = (*cell_infos_)[index];
-    const char     *data = row_->packed_cells.data() + info.offset;
+    const char     *data = packed_cells_->data() + row_->packed_offset + info.offset;
     if (Value::is_null_data(data, info.length, info.type)) {
       cell.set_null();
     } else {

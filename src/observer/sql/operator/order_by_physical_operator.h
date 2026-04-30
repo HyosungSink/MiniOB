@@ -38,8 +38,9 @@ private:
   struct OrderedTuple
   {
     vector<Value> cells;
-    string        packed_cells;
     vector<Value> keys;
+    size_t        packed_offset = 0;
+    bool          packed        = false;
   };
 
   struct SortKeyRef
@@ -51,8 +52,8 @@ private:
   class MaterializedTuple : public Tuple
   {
   public:
-    void set_context(
-        const OrderedTuple *row, const vector<TupleCellSpec> *specs, const vector<CellInfo> *cell_infos);
+    void set_context(const OrderedTuple *row, const vector<TupleCellSpec> *specs, const vector<CellInfo> *cell_infos,
+        const vector<char> *packed_cells);
 
     int cell_num() const override;
     RC  cell_at(int index, Value &cell) const override;
@@ -63,12 +64,13 @@ private:
     const OrderedTuple          *row_        = nullptr;
     const vector<TupleCellSpec> *specs_      = nullptr;
     const vector<CellInfo>      *cell_infos_ = nullptr;
+    const vector<char>          *packed_cells_ = nullptr;
   };
 
   RC init_output_specs(const Tuple &tuple);
   RC init_sort_key_refs();
   RC init_cell_infos(const Tuple &tuple);
-  RC materialize_tuple_cells(const Tuple &tuple, OrderedTuple &ordered_tuple) const;
+  RC materialize_tuple_cells(const Tuple &tuple, OrderedTuple &ordered_tuple);
   void read_cell_value(const OrderedTuple &row, int cell_index, Value &cell) const;
   int  compare_sort_key(const OrderedTuple &left, const OrderedTuple &right, size_t key_index) const;
   int  compare_evaluated_key(const vector<Value> &left_keys, const OrderedTuple &right, size_t key_index) const;
@@ -81,6 +83,8 @@ private:
   vector<TupleCellSpec>           output_specs_;
   vector<CellInfo>                cell_infos_;
   vector<SortKeyRef>              sort_key_refs_;
+  vector<char>                     packed_cells_;
   MaterializedTuple               current_tuple_;
   size_t                         position_ = 0;
+  int                            packed_cell_size_ = 0;
 };
