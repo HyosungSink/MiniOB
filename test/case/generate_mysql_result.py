@@ -126,6 +126,10 @@ def render_case(socket_path: str, case_path: Path) -> str:
         command, _, arg = command_line.partition(" ")
         if command == "echo":
           write_line(output, arg)
+        elif command == "observer-args":
+          continue
+        elif command == "case-state":
+          continue
         elif command == "connect":
           runner.connect(arg)
         elif command == "connection":

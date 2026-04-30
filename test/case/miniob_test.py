@@ -546,16 +546,18 @@ class TestCase:
   def __init__(self):
     self.__name = ''
     self.__lines = []
+    self.__observer_args = ''
+    self.__active = True
 
   def init_with_file(self, name, filename):
     self.__name = name
     with open(filename, mode='r') as f:
-      self.__lines = f.readlines()
+      self.__lines = self.__parse_lines(f.readlines())
     return True
 
   def init_with_content(self, name, lines):
     self.__name = name
-    self.__lines = lines
+    self.__lines = self.__parse_lines(lines)
     return True
 
   def command_lines(self):
@@ -563,6 +565,29 @@ class TestCase:
 
   def get_name(self):
     return self.__name
+
+  def observer_args(self):
+    return self.__observer_args
+
+  def has_result_file(self, base_dir):
+    return os.path.isfile(self.result_file(base_dir))
+
+  def is_active(self):
+    return self.__active
+
+  def __parse_lines(self, lines):
+    commands = []
+    for line in lines:
+      stripped = line.strip()
+      if stripped.startswith("-- observer-args"):
+        self.__observer_args = stripped[len("-- observer-args"):].strip()
+        continue
+      if stripped.startswith("-- case-state"):
+        state = stripped[len("-- case-state"):].strip().lower()
+        self.__active = state != "inactive"
+        continue
+      commands.append(line)
+    return commands
 
   def result_file(self, base_dir):
     subdir = ''
@@ -669,6 +694,7 @@ class TestSuite:
     self.__need_start_server = True
     self.__test_names = None # 如果指定测试哪些Case，就不再遍历所有的cases
     self.__miniob_server = None
+    self.__observer_args = ''
   
   def set_test_names(self, tests):
     self.__test_names = tests
@@ -705,6 +731,17 @@ class TestSuite:
 
   def set_report_only(self, report_only):
     self.__report_only = report_only
+
+  def set_observer_args(self, observer_args: str):
+    self.__observer_args = observer_args
+
+  def __observer_args_for(self, test_case: TestCase):
+    args = []
+    if self.__observer_args:
+      args.append(self.__observer_args)
+    if test_case.observer_args():
+      args.append(test_case.observer_args())
+    return " ".join(args)
 
   def __compare_files(self, file1, file2):
     with open(file1, 'r') as f1, open(file2, 'r') as f2:
@@ -773,6 +810,9 @@ class TestSuite:
     test_cases = test_case_lister.list_directory(self.__test_case_base_dir)
 
     if not self.__test_names: # 没有指定测试哪个case
+      if not self.__report_only:
+        test_cases = [test_case for test_case in test_cases
+                      if test_case.has_result_file(self.__test_result_base_dir) and test_case.is_active()]
       return test_cases
 
     # 指定了测试case，就从中捞出来
@@ -811,7 +851,7 @@ class TestSuite:
         # 每个case都清理并重启一下服务端，这样可以方式某个case core之后，还能测试其它case
         self.__clean_server_if_need()
 
-        result = self.__start_server_if_need(True)
+        result = self.__start_server_if_need(True, self.__observer_args_for(test_case))
         if result is False:
           eval_result.append_message('Failed to start server.')
           return False
@@ -843,7 +883,7 @@ class TestSuite:
     self.__clean_server_if_need()
     return True
 
-  def __start_server_if_need(self, clean_data_dir: bool):
+  def __start_server_if_need(self, clean_data_dir: bool, observer_args: str):
     if self.__miniob_server is not None:
       return True
 
@@ -853,7 +893,7 @@ class TestSuite:
         unix_socket = self.__get_unix_socket_address()
 
       miniob_server = MiniObServer(self.__db_server_base_dir, self.__db_data_dir, 
-          self.__db_config, self.__server_port, unix_socket, clean_data_dir)
+          self.__db_config, self.__server_port, unix_socket, clean_data_dir, observer_args)
       miniob_server.init_server()
       result = miniob_server.start_server()
       if result is False:
