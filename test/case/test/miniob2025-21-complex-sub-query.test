@@ -15,6 +15,20 @@ insert into complex_order values(3, 300);
 -- sort select id from complex_user where dept in (select dept from complex_user where id in (select uid from complex_order where amount>=300));
 select id from complex_user where score=(select max(score) from complex_user where dept=20);
 
+-- echo exists select star with scalar aggregate
+create table csq_1(id int, col1 int, feat1 float);
+create table csq_2(id int, col2 int, feat2 float);
+create table csq_3(id int, col3 int, feat3 float);
+create table csq_4(id int, col4 int, feat4 float);
+insert into csq_1 values(82, 37, 29.77);
+insert into csq_1 values(54, 68, 57.96);
+insert into csq_1 values(91, 12, 2.50);
+insert into csq_2 values(1, 11, 60.00);
+insert into csq_2 values(2, 12, 42.00);
+insert into csq_3 values(1, 67, 1.00);
+insert into csq_3 values(2, 90, 2.00);
+select * from csq_1 where (select max(csq_2.feat2) from csq_2) > feat1 and exists (select * from csq_3 where csq_3.col3 < csq_1.col1);
+
 -- echo complex sub query boundary errors
 select id from complex_user where score=(select amount from complex_order where uid=1);
 select id from complex_user where exists (select missing_col from complex_order where complex_order.uid=complex_user.id);
