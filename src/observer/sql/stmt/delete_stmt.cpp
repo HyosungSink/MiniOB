@@ -150,5 +150,34 @@ RC DeleteStmt::create(Db *db, const DeleteSqlNode &delete_sql, Stmt *&stmt)
     return create_view_delete_stmt(db, delete_sql, *view, stmt);
   }
 
-  return create_table_delete_stmt(db, delete_sql, db->find_table(table_name), stmt);
+  RC rc = create_table_delete_stmt(db, delete_sql, db->find_table(table_name), stmt);
+  if (OB_FAIL(rc)) {
+    return rc;
+  }
+
+  const ViewDefinition *mirror_view = db->find_base_table_mirror_view(table_name);
+  if (mirror_view == nullptr) {
+    return RC::SUCCESS;
+  }
+
+  Table *view_table = db->find_table(mirror_view->view_name.c_str());
+  if (view_table == nullptr) {
+    delete stmt;
+    stmt = nullptr;
+    return RC::SCHEMA_TABLE_NOT_EXIST;
+  }
+
+  Stmt *mirror_stmt = nullptr;
+  rc = create_table_delete_stmt(db, delete_sql, view_table, mirror_stmt);
+  if (OB_FAIL(rc)) {
+    delete stmt;
+    stmt = nullptr;
+    return rc;
+  }
+
+  auto *base_delete_stmt   = static_cast<DeleteStmt *>(stmt);
+  auto *mirror_delete_stmt = static_cast<DeleteStmt *>(mirror_stmt);
+  base_delete_stmt->set_mirror_delete(mirror_delete_stmt->table(), mirror_delete_stmt->release_filter_stmt());
+  delete mirror_delete_stmt;
+  return RC::SUCCESS;
 }

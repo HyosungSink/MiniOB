@@ -264,5 +264,37 @@ RC UpdateStmt::create(Db *db, const UpdateSqlNode &update, Stmt *&stmt)
     return create_view_update_stmt(db, update, *view, stmt);
   }
 
-  return create_table_update_stmt(db, update, db->find_table(table_name), stmt);
+  RC rc = create_table_update_stmt(db, update, db->find_table(table_name), stmt);
+  if (OB_FAIL(rc)) {
+    return rc;
+  }
+
+  const ViewDefinition *mirror_view = db->find_base_table_mirror_view(table_name);
+  if (mirror_view == nullptr) {
+    return RC::SUCCESS;
+  }
+
+  Table *view_table = db->find_table(mirror_view->view_name.c_str());
+  if (view_table == nullptr) {
+    delete stmt;
+    stmt = nullptr;
+    return RC::SCHEMA_TABLE_NOT_EXIST;
+  }
+
+  Stmt *mirror_stmt = nullptr;
+  rc = create_table_update_stmt(db, update, view_table, mirror_stmt);
+  if (OB_FAIL(rc)) {
+    delete stmt;
+    stmt = nullptr;
+    return rc;
+  }
+
+  auto *base_update_stmt   = static_cast<UpdateStmt *>(stmt);
+  auto *mirror_update_stmt = static_cast<UpdateStmt *>(mirror_stmt);
+  base_update_stmt->set_mirror_update(mirror_update_stmt->table(),
+      mirror_update_stmt->take_field_metas(),
+      mirror_update_stmt->take_expressions(),
+      mirror_update_stmt->release_filter_stmt());
+  delete mirror_update_stmt;
+  return RC::SUCCESS;
 }
