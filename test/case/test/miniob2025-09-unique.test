@@ -18,3 +18,18 @@ insert into unique_t values(6, 100, 3, 'd');
 -- echo unique boundary errors
 drop index missing_unique_idx on unique_t;
 create unique index idx_unique_bad on unique_t(missing_col);
+
+-- echo fused primary unique coverage
+-- echo initialization
+CREATE TABLE unique_table(id int, col1 int, col2 int);
+INSERT INTO unique_table VALUES (1,1,1);
+
+-- echo 1. unique test
+CREATE UNIQUE INDEX index_id on unique_table(id);
+INSERT INTO unique_table VALUES (2,1,1);
+CREATE UNIQUE INDEX index_id on unique_table(id);
+INSERT INTO unique_table VALUES (3,2,1);
+INSERT INTO unique_table VALUES (1,2,1);
+
+-- echo 2. select
+-- sort SELECT * FROM unique_table;
