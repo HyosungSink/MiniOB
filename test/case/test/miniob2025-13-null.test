@@ -37,6 +37,21 @@ update null_table8 set name=null where num is null;
 update null_table8 set id=null where num is null;
 update null_table8 set num=(select null_table7.num from null_table7 where null_table7.id=3) where id=7;
 
+-- echo null unique update subquery regression
+create table null_table5(id int null, num int not null);
+create unique index index_id on null_table5(id);
+insert into null_table5 values(1,1);
+insert into null_table5 values(1,1);
+insert into null_table5 values(null,1);
+create table null_table6(id1 int null, id2 int null, num int not null);
+create unique index index_id on null_table6(id1, id2);
+insert into null_table6 values(2,null,2);
+insert into null_table6 values(1,null,2);
+insert into null_table6 values(null,null,1);
+insert into null_table6 values(8,null,8);
+update null_table6 set id1=(select null_table5.id from null_table5 where null_table5.num=1),id2=4 where id1=8 and num=8;
+select * from null_table6;
+
 -- echo null boundary errors
 insert into null_t values(null, 1, 1.0, 'x');
 select id from null_t where missing_col is null;
