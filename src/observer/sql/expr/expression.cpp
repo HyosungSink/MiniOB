@@ -747,7 +747,7 @@ static RC materialize_derived_select(const string &sql, vector<Value> &values, A
   return RC::SUCCESS;
 }
 
-RC SubqueryExpr::materialize(const Tuple *outer_tuple) const
+RC SubqueryExpr::materialize(const Tuple *outer_tuple, bool require_single_column) const
 {
   if (!correlated_ && materialized_) {
     return materialize_rc_;
@@ -825,10 +825,17 @@ RC SubqueryExpr::materialize(const Tuple *outer_tuple) const
 
   while ((rc = physical_operator->next()) == RC::SUCCESS) {
     Tuple *tuple = physical_operator->current_tuple();
-    if (tuple == nullptr || tuple->cell_num() != 1) {
+    if (tuple == nullptr || (require_single_column && tuple->cell_num() != 1)) {
       physical_operator->close();
       materialize_rc_ = RC::INVALID_ARGUMENT;
       return materialize_rc_;
+    }
+
+    if (!require_single_column) {
+      Value value;
+      value.set_boolean(true);
+      values_.push_back(std::move(value));
+      continue;
     }
 
     Value value;
@@ -881,6 +888,28 @@ RC SubqueryExpr::materialized_values(const Tuple &outer_tuple, const vector<Valu
   }
 
   values = &values_;
+  return RC::SUCCESS;
+}
+
+RC SubqueryExpr::has_rows(bool &exists) const
+{
+  RC rc = materialize(nullptr, false);
+  if (OB_FAIL(rc)) {
+    return rc;
+  }
+
+  exists = !values_.empty();
+  return RC::SUCCESS;
+}
+
+RC SubqueryExpr::has_rows(const Tuple &outer_tuple, bool &exists) const
+{
+  RC rc = materialize(&outer_tuple, false);
+  if (OB_FAIL(rc)) {
+    return rc;
+  }
+
+  exists = !values_.empty();
   return RC::SUCCESS;
 }
 
@@ -1015,13 +1044,12 @@ ExistsSubqueryExpr::ExistsSubqueryExpr(unique_ptr<SubqueryExpr> subquery, bool n
 
 RC ExistsSubqueryExpr::get_value(const Tuple &tuple, Value &value) const
 {
-  const vector<Value> *subquery_values = nullptr;
-  RC rc = subquery_->materialized_values(tuple, subquery_values);
+  bool exists = false;
+  RC rc = subquery_->has_rows(tuple, exists);
   if (OB_FAIL(rc)) {
     return rc;
   }
 
-  const bool exists = subquery_values != nullptr && !subquery_values->empty();
   value.set_boolean(not_exists_ ? !exists : exists);
   return RC::SUCCESS;
 }
@@ -1032,8 +1060,8 @@ RC ExistsSubqueryExpr::prepare() const
     return RC::SUCCESS;
   }
 
-  const vector<Value> *subquery_values = nullptr;
-  return subquery_->materialized_values(subquery_values);
+  bool exists = false;
+  return subquery_->has_rows(exists);
 }
 
 ////////////////////////////////////////////////////////////////////////////////

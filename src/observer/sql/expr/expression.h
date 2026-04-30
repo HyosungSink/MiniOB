@@ -472,9 +472,11 @@ public:
 
   RC materialized_values(const vector<Value> *&values) const;
   RC materialized_values(const Tuple &outer_tuple, const vector<Value> *&values) const;
+  RC has_rows(bool &exists) const;
+  RC has_rows(const Tuple &outer_tuple, bool &exists) const;
 
 private:
-  RC materialize(const Tuple *outer_tuple = nullptr) const;
+  RC materialize(const Tuple *outer_tuple = nullptr, bool require_single_column = true) const;
 
 private:
   string                sql_;

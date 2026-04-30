@@ -185,6 +185,10 @@ RC ExpressionBinder::bind_expression(unique_ptr<Expression> &expr, vector<unique
       return bind_in_subquery_expression(expr, bound_expressions);
     } break;
 
+    case ExprType::EXISTS_SUBQUERY: {
+      return bind_exists_subquery_expression(expr, bound_expressions);
+    } break;
+
     case ExprType::IS_NULL: {
       return bind_is_null_expression(expr, bound_expressions);
     } break;
@@ -596,6 +600,42 @@ static RC infer_subquery_value_info(Db *db, SubqueryExpr &subquery_expr, const B
   return RC::SUCCESS;
 }
 
+static RC bind_exists_subquery(Db *db, SubqueryExpr &subquery_expr, const BinderContext *parent_context)
+{
+  if (db == nullptr) {
+    return RC::SCHEMA_DB_NOT_EXIST;
+  }
+  if (parent_context != nullptr) {
+    vector<SubqueryExpr::ParentTableRef> parent_tables;
+    parent_context->collect_table_refs(parent_tables);
+    subquery_expr.set_parent_tables(parent_tables);
+  }
+
+  ParsedSqlResult parsed_sql_result;
+  RC rc = parse(subquery_expr.sql().c_str(), &parsed_sql_result);
+  if (OB_FAIL(rc)) {
+    return rc;
+  }
+  if (parsed_sql_result.sql_nodes().size() != 1 || parsed_sql_result.sql_nodes().front()->flag != SCF_SELECT) {
+    return RC::SQL_SYNTAX;
+  }
+
+  Stmt *raw_stmt = nullptr;
+  rc = Stmt::create_stmt(db, *parsed_sql_result.sql_nodes().front(), raw_stmt, parent_context);
+  unique_ptr<Stmt> stmt(raw_stmt);
+  if (OB_FAIL(rc)) {
+    return rc;
+  }
+  if (stmt->type() != StmtType::SELECT) {
+    return RC::INVALID_ARGUMENT;
+  }
+
+  auto select_stmt = static_cast<SelectStmt *>(stmt.get());
+  subquery_expr.set_correlated(select_stmt->has_outer_reference());
+  subquery_expr.set_value_info(AttrType::BOOLEANS, 1);
+  return RC::SUCCESS;
+}
+
 RC ExpressionBinder::bind_subquery_expression(
     unique_ptr<Expression> &expr, vector<unique_ptr<Expression>> &bound_expressions)
 {
@@ -656,6 +696,23 @@ RC ExpressionBinder::bind_in_subquery_expression(
       return RC::UNSUPPORTED;
     }
     subquery.set_cast_type(left_type);
+  }
+
+  bound_expressions.emplace_back(std::move(expr));
+  return RC::SUCCESS;
+}
+
+RC ExpressionBinder::bind_exists_subquery_expression(
+    unique_ptr<Expression> &expr, vector<unique_ptr<Expression>> &bound_expressions)
+{
+  if (nullptr == expr) {
+    return RC::SUCCESS;
+  }
+
+  auto exists_subquery_expr = static_cast<ExistsSubqueryExpr *>(expr.get());
+  RC rc = bind_exists_subquery(context_.db(), exists_subquery_expr->subquery(), &context_);
+  if (OB_FAIL(rc)) {
+    return rc;
   }
 
   bound_expressions.emplace_back(std::move(expr));
