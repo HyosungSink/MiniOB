@@ -21,6 +21,20 @@ UpdatePhysicalOperator::UpdatePhysicalOperator(
     : table_(table), field_metas_(field_metas), expressions_(std::move(expressions))
 {}
 
+UpdatePhysicalOperator::UpdatePhysicalOperator(Table *table,
+    const vector<const FieldMeta *> &field_metas,
+    vector<unique_ptr<Expression>> &&expressions,
+    Table *mirror_table,
+    const vector<const FieldMeta *> &mirror_field_metas,
+    vector<unique_ptr<Expression>> &&mirror_expressions)
+    : table_(table),
+      field_metas_(field_metas),
+      expressions_(std::move(expressions)),
+      mirror_table_(mirror_table),
+      mirror_field_metas_(mirror_field_metas),
+      mirror_expressions_(std::move(mirror_expressions))
+{}
+
 RC UpdatePhysicalOperator::open(Trx *trx)
 {
   if (children_.empty()) {
@@ -36,18 +50,52 @@ RC UpdatePhysicalOperator::open(Trx *trx)
   }
 
   unique_ptr<PhysicalOperator> &child = children_[0];
+  RC rc = update_records(table_, field_metas_, expressions_, *child, trx);
+  if (OB_FAIL(rc)) {
+    return rc;
+  }
 
-  RC rc = child->open(trx);
+  if (mirror_table_ != nullptr) {
+    for (const unique_ptr<Expression> &expression : mirror_expressions_) {
+      rc = expression->prepare();
+      if (OB_FAIL(rc)) {
+        LOG_WARN("failed to prepare mirror update expression. rc=%s", strrc(rc));
+        return rc;
+      }
+    }
+
+    if (children_.size() < 2) {
+      LOG_WARN("mirror update is missing scan child");
+      return RC::INTERNAL;
+    }
+    rc = update_records(mirror_table_, mirror_field_metas_, mirror_expressions_, *children_[1], trx);
+    if (OB_FAIL(rc)) {
+      return rc;
+    }
+  }
+
+  return RC::SUCCESS;
+}
+
+RC UpdatePhysicalOperator::update_records(Table *table,
+    const vector<const FieldMeta *> &field_metas,
+    const vector<unique_ptr<Expression>> &expressions,
+    PhysicalOperator &child,
+    Trx *trx) const
+{
+  vector<Record> records;
+
+  RC rc = child.open(trx);
   if (OB_FAIL(rc)) {
     LOG_WARN("failed to open child operator. rc=%s", strrc(rc));
     return rc;
   }
 
-  while (OB_SUCC(rc = child->next())) {
-    Tuple *tuple = child->current_tuple();
+  while (OB_SUCC(rc = child.next())) {
+    Tuple *tuple = child.current_tuple();
     if (tuple == nullptr) {
       LOG_WARN("failed to get current tuple");
-      child->close();
+      child.close();
       return RC::INTERNAL;
     }
 
@@ -59,13 +107,13 @@ RC UpdatePhysicalOperator::open(Trx *trx)
     rc = copied_record.copy_data(old_record.data(), old_record.len());
     if (OB_FAIL(rc)) {
       LOG_WARN("failed to copy record before update. rc=%s", strrc(rc));
-      child->close();
+      child.close();
       return rc;
     }
-    records_.emplace_back(std::move(copied_record));
+    records.emplace_back(std::move(copied_record));
   }
 
-  RC close_rc = child->close();
+  RC close_rc = child.close();
   if (rc == RC::RECORD_EOF) {
     rc = close_rc;
   }
@@ -75,16 +123,16 @@ RC UpdatePhysicalOperator::open(Trx *trx)
   }
 
   vector<Record> new_records;
-  new_records.reserve(records_.size());
-  for (Record &old_record : records_) {
+  new_records.reserve(records.size());
+  for (Record &old_record : records) {
     Record new_record;
-    rc = make_updated_record(old_record, new_record);
+    rc = make_updated_record(table, field_metas, expressions, old_record, new_record);
     if (OB_FAIL(rc)) {
       LOG_WARN("failed to make updated record. rc=%s", strrc(rc));
       return rc;
     }
 
-    rc = table_->validate_unique_constraints(new_record, &old_record.rid(), trx);
+    rc = table->validate_unique_constraints(new_record, &old_record.rid(), trx);
     if (OB_FAIL(rc)) {
       LOG_WARN("unique constraint check failed while updating. rc=%s", strrc(rc));
       return rc;
@@ -92,17 +140,17 @@ RC UpdatePhysicalOperator::open(Trx *trx)
     new_records.emplace_back(std::move(new_record));
   }
 
-  for (size_t i = 0; i < records_.size(); i++) {
-    Record &old_record = records_[i];
+  for (size_t i = 0; i < records.size(); i++) {
+    Record &old_record = records[i];
     Record &new_record = new_records[i];
 
-    rc = trx->delete_record(table_, old_record);
+    rc = trx->delete_record(table, old_record);
     if (OB_FAIL(rc)) {
       LOG_WARN("failed to delete old record while updating. rc=%s", strrc(rc));
       return rc;
     }
 
-    rc = trx->insert_record(table_, new_record);
+    rc = trx->insert_record(table, new_record);
     if (OB_FAIL(rc)) {
       LOG_WARN("failed to insert updated record. rc=%s", strrc(rc));
       return rc;
@@ -112,7 +160,11 @@ RC UpdatePhysicalOperator::open(Trx *trx)
   return RC::SUCCESS;
 }
 
-RC UpdatePhysicalOperator::make_updated_record(const Record &old_record, Record &new_record) const
+RC UpdatePhysicalOperator::make_updated_record(Table *table,
+    const vector<const FieldMeta *> &field_metas,
+    const vector<unique_ptr<Expression>> &expressions,
+    const Record &old_record,
+    Record &new_record) const
 {
   RC rc = new_record.copy_data(old_record.data(), old_record.len());
   if (OB_FAIL(rc)) {
@@ -122,11 +174,11 @@ RC UpdatePhysicalOperator::make_updated_record(const Record &old_record, Record 
 
   RowTuple row_tuple;
   row_tuple.set_record(const_cast<Record *>(&old_record));
-  row_tuple.set_schema(table_, table_->table_meta().field_metas());
+  row_tuple.set_schema(table, table->table_meta().field_metas());
 
-  for (size_t i = 0; i < field_metas_.size(); i++) {
-    const FieldMeta *field_meta = field_metas_[i];
-    const Expression *expression = expressions_[i].get();
+  for (size_t i = 0; i < field_metas.size(); i++) {
+    const FieldMeta *field_meta = field_metas[i];
+    const Expression *expression = expressions[i].get();
 
     Value value;
     rc = expression->get_value(row_tuple, value);
@@ -141,7 +193,7 @@ RC UpdatePhysicalOperator::make_updated_record(const Record &old_record, Record 
 
     if (value.is_null()) {
       if (!field_meta->nullable()) {
-        LOG_WARN("field can not be null. table name:%s, field name:%s", table_->name(), field_meta->name());
+        LOG_WARN("field can not be null. table name:%s, field name:%s", table->name(), field_meta->name());
         return RC::SCHEMA_FIELD_TYPE_MISMATCH;
       }
       Value::set_null_data(new_record.data() + field_meta->offset(), field_meta->len(), field_meta->type());
@@ -198,6 +250,5 @@ RC UpdatePhysicalOperator::next()
 
 RC UpdatePhysicalOperator::close()
 {
-  records_.clear();
   return RC::SUCCESS;
 }

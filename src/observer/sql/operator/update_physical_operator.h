@@ -28,6 +28,12 @@ class UpdatePhysicalOperator : public PhysicalOperator
 public:
   UpdatePhysicalOperator(
       Table *table, const vector<const FieldMeta *> &field_metas, vector<unique_ptr<Expression>> &&expressions);
+  UpdatePhysicalOperator(Table *table,
+      const vector<const FieldMeta *> &field_metas,
+      vector<unique_ptr<Expression>> &&expressions,
+      Table *mirror_table,
+      const vector<const FieldMeta *> &mirror_field_metas,
+      vector<unique_ptr<Expression>> &&mirror_expressions);
   ~UpdatePhysicalOperator() override = default;
 
   PhysicalOperatorType type() const override { return PhysicalOperatorType::UPDATE; }
@@ -40,11 +46,22 @@ public:
   Tuple *current_tuple() override { return nullptr; }
 
 private:
-  RC make_updated_record(const Record &old_record, Record &new_record) const;
+  RC make_updated_record(Table *table,
+      const vector<const FieldMeta *> &field_metas,
+      const vector<unique_ptr<Expression>> &expressions,
+      const Record &old_record,
+      Record &new_record) const;
+  RC update_records(Table *table,
+      const vector<const FieldMeta *> &field_metas,
+      const vector<unique_ptr<Expression>> &expressions,
+      PhysicalOperator &child,
+      Trx *trx) const;
 
 private:
   Table                    *table_ = nullptr;
   vector<const FieldMeta *> field_metas_;
   vector<unique_ptr<Expression>> expressions_;
-  vector<Record>            records_;
+  Table                    *mirror_table_ = nullptr;
+  vector<const FieldMeta *> mirror_field_metas_;
+  vector<unique_ptr<Expression>> mirror_expressions_;
 };
