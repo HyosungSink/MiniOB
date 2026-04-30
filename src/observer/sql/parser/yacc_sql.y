@@ -112,6 +112,8 @@ UnboundFunctionExpr *create_function_expression(const char *function_name,
         WHERE
         AND
         OR
+        ANY
+        ALL
         INNER
         JOIN
         SET
@@ -917,6 +919,28 @@ condition:
       $$->left_expr.reset(new IsNullExpr(unique_ptr<Expression>($1), true));
       $$->right_expr.reset(new ValueExpr(Value(true)));
       $$->comp = EQUAL_TO;
+    }
+    | expression comp_op ANY LBRACE select_stmt RBRACE
+    {
+      $$ = new ConditionSqlNode;
+      $$->left_expr.reset(new QuantifiedComparisonExpr(unique_ptr<Expression>($1),
+          $2,
+          make_unique<SubqueryExpr>(token_name(sql_string, &@5)),
+          QuantifiedComparisonExpr::Quantifier::ANY));
+      $$->right_expr.reset(new ValueExpr(Value(true)));
+      $$->comp = EQUAL_TO;
+      delete $5;
+    }
+    | expression comp_op ALL LBRACE select_stmt RBRACE
+    {
+      $$ = new ConditionSqlNode;
+      $$->left_expr.reset(new QuantifiedComparisonExpr(unique_ptr<Expression>($1),
+          $2,
+          make_unique<SubqueryExpr>(token_name(sql_string, &@5)),
+          QuantifiedComparisonExpr::Quantifier::ALL));
+      $$->right_expr.reset(new ValueExpr(Value(true)));
+      $$->comp = EQUAL_TO;
+      delete $5;
     }
     ;
 

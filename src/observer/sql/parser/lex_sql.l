@@ -100,6 +100,8 @@ FROM                                    RETURN_TOKEN(FROM);
 WHERE                                   RETURN_TOKEN(WHERE);
 AND                                     RETURN_TOKEN(AND);
 OR                                      RETURN_TOKEN(OR);
+ANY                                     RETURN_TOKEN(ANY);
+ALL                                     RETURN_TOKEN(ALL);
 INNER                                   RETURN_TOKEN(INNER);
 JOIN                                    RETURN_TOKEN(JOIN);
 INSERT                                  RETURN_TOKEN(INSERT);
