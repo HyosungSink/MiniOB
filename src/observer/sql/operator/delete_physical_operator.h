@@ -27,6 +27,7 @@ class DeletePhysicalOperator : public PhysicalOperator
 {
 public:
   DeletePhysicalOperator(Table *table) : table_(table) {}
+  DeletePhysicalOperator(Table *table, Table *mirror_table) : table_(table), mirror_table_(mirror_table) {}
 
   virtual ~DeletePhysicalOperator() = default;
 
@@ -41,7 +42,10 @@ public:
   Tuple *current_tuple() override { return nullptr; }
 
 private:
+  RC delete_records(Table *table, PhysicalOperator &child, Trx *trx);
+
+private:
   Table         *table_ = nullptr;
+  Table         *mirror_table_ = nullptr;
   Trx           *trx_   = nullptr;
-  vector<Record> records_;
 };

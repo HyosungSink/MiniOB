@@ -24,17 +24,38 @@ RC DeletePhysicalOperator::open(Trx *trx)
   }
 
   unique_ptr<PhysicalOperator> &child = children_[0];
+  trx_ = trx;
+  RC rc = delete_records(table_, *child, trx);
+  if (OB_FAIL(rc)) {
+    return rc;
+  }
 
-  RC rc = child->open(trx);
+  if (mirror_table_ != nullptr) {
+    if (children_.size() < 2) {
+      LOG_WARN("mirror delete is missing scan child");
+      return RC::INTERNAL;
+    }
+    rc = delete_records(mirror_table_, *children_[1], trx);
+    if (OB_FAIL(rc)) {
+      return rc;
+    }
+  }
+
+  return RC::SUCCESS;
+}
+
+RC DeletePhysicalOperator::delete_records(Table *table, PhysicalOperator &child, Trx *trx)
+{
+  vector<Record> records;
+
+  RC rc = child.open(trx);
   if (rc != RC::SUCCESS) {
     LOG_WARN("failed to open child operator: %s", strrc(rc));
     return rc;
   }
 
-  trx_ = trx;
-
-  while (OB_SUCC(rc = child->next())) {
-    Tuple *tuple = child->current_tuple();
+  while (OB_SUCC(rc = child.next())) {
+    Tuple *tuple = child.current_tuple();
     if (nullptr == tuple) {
       LOG_WARN("failed to get current record: %s", strrc(rc));
       return rc;
@@ -42,15 +63,15 @@ RC DeletePhysicalOperator::open(Trx *trx)
 
     RowTuple *row_tuple = static_cast<RowTuple *>(tuple);
     Record   &record    = row_tuple->record();
-    records_.emplace_back(std::move(record));
+    records.emplace_back(std::move(record));
   }
 
-  child->close();
+  child.close();
 
   // 先收集记录再删除
   // 记录的有效性由事务来保证，如果事务不保证删除的有效性，那说明此事务类型不支持并发控制，比如VacuousTrx
-  for (Record &record : records_) {
-    rc = trx_->delete_record(table_, record);
+  for (Record &record : records) {
+    rc = trx->delete_record(table, record);
     if (rc != RC::SUCCESS) {
       LOG_WARN("failed to delete record: %s", strrc(rc));
       return rc;
