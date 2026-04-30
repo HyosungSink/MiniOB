@@ -99,6 +99,11 @@ static bool attach_predicate(LogicalOperator &oper, unique_ptr<Expression> predi
   unordered_set<const Table *> predicate_tables;
   collect_tables(*predicate, predicate_tables);
   if (predicate_tables.empty()) {
+    if (oper.type() == LogicalOperatorType::JOIN) {
+      auto &join = static_cast<JoinLogicalOperator &>(oper);
+      join.add_join_predicate(std::move(predicate));
+      return true;
+    }
     return false;
   }
 
