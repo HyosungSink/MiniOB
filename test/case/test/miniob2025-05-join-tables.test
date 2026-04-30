@@ -20,6 +20,15 @@ select id from join_a inner join join_b on join_a.dept=join_b.dept;
 select a.id from join_a as a inner join missing_join as m on a.id=m.id;
 select a.missing_col from join_a as a inner join join_b as b on a.dept=b.dept;
 
+-- echo constant join predicate regression
+CREATE TABLE join_table_2(id int, age int);
+CREATE TABLE join_table_3(id int, level int);
+INSERT INTO join_table_2 VALUES (11, 18);
+INSERT INTO join_table_2 VALUES (11, 23);
+INSERT INTO join_table_3 VALUES (2, 39);
+INSERT INTO join_table_3 VALUES (3, 29);
+Select * from join_table_2 inner join join_table_3 on 1>1.5;
+
 -- echo fused primary join coverage
 -- echo initialization
 CREATE TABLE j5p_1(id int, name char);
@@ -1424,7 +1433,7 @@ select * from j5o_1,j5o_2 where j5o_1.id = j5o_2.id;
 
 # 只有等值条件才可以使用 hash join
 -- ensure:nlj select * from j5o_1,j5o_2 where j5o_1.id > j5o_2.id;
-select * from j5o_1,j5o_2 where j5o_1.id > j5o_2.id;
+-- sort select * from j5o_1,j5o_2 where j5o_1.id > j5o_2.id;
 
 # 三表 join
 -- ensure:hashjoin*2 select * from j5o_1, j5o_2, j5o_3 where j5o_1.id = j5o_2.id and j5o_2.id=j5o_3.id;

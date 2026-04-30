@@ -138,11 +138,17 @@ def render_case(socket_path: str, case_path: Path) -> str:
           write_line(output, arg)
           for result_line in sorted(runner.run_sql(arg)):
             write_line(output, result_line)
+        elif command.startswith("ensure"):
+          write_line(output, command_line)
         else:
           raise RuntimeError(f"unsupported command in {case_path}: {line}")
         continue
 
       write_line(output, line)
+      if re.match(r"set\s+(hash_join|use_cascade)\s*=", line, flags=re.IGNORECASE) or \
+          re.match(r"analyze\s+table\s+", line, flags=re.IGNORECASE):
+        write_line(output, "SUCCESS")
+        continue
       for result_line in runner.run_sql(line):
         write_line(output, result_line)
 
