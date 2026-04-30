@@ -359,12 +359,34 @@ RC LogicalPlanGenerator::create_plan(UpdateStmt *update_stmt, unique_ptr<Logical
 
   unique_ptr<LogicalOperator> update_oper(
       new UpdateLogicalOperator(table, update_stmt->field_metas(), std::move(update_stmt->expressions())));
+  auto *update_logical_oper = static_cast<UpdateLogicalOperator *>(update_oper.get());
+  if (update_stmt->mirror_table() != nullptr) {
+    update_logical_oper->set_mirror_update(update_stmt->mirror_table(),
+        vector<const FieldMeta *>(update_stmt->mirror_field_metas()),
+        std::move(update_stmt->mirror_expressions()));
+  }
 
   if (predicate_oper) {
     predicate_oper->add_child(std::move(table_get_oper));
     update_oper->add_child(std::move(predicate_oper));
   } else {
     update_oper->add_child(std::move(table_get_oper));
+  }
+
+  if (update_stmt->mirror_table() != nullptr) {
+    unique_ptr<LogicalOperator> mirror_table_get_oper(
+        new TableGetLogicalOperator(update_stmt->mirror_table(), ReadWriteMode::READ_WRITE));
+    unique_ptr<LogicalOperator> mirror_predicate_oper;
+    rc = create_plan(update_stmt->mirror_filter_stmt(), mirror_predicate_oper);
+    if (OB_FAIL(rc)) {
+      return rc;
+    }
+    if (mirror_predicate_oper) {
+      mirror_predicate_oper->add_child(std::move(mirror_table_get_oper));
+      update_oper->add_child(std::move(mirror_predicate_oper));
+    } else {
+      update_oper->add_child(std::move(mirror_table_get_oper));
+    }
   }
 
   logical_operator = std::move(update_oper);
@@ -385,12 +407,32 @@ RC LogicalPlanGenerator::create_plan(DeleteStmt *delete_stmt, unique_ptr<Logical
   }
 
   unique_ptr<LogicalOperator> delete_oper(new DeleteLogicalOperator(table));
+  auto *delete_logical_oper = static_cast<DeleteLogicalOperator *>(delete_oper.get());
+  if (delete_stmt->mirror_table() != nullptr) {
+    delete_logical_oper->set_mirror_delete(delete_stmt->mirror_table());
+  }
 
   if (predicate_oper) {
     predicate_oper->add_child(std::move(table_get_oper));
     delete_oper->add_child(std::move(predicate_oper));
   } else {
     delete_oper->add_child(std::move(table_get_oper));
+  }
+
+  if (delete_stmt->mirror_table() != nullptr) {
+    unique_ptr<LogicalOperator> mirror_table_get_oper(
+        new TableGetLogicalOperator(delete_stmt->mirror_table(), ReadWriteMode::READ_WRITE));
+    unique_ptr<LogicalOperator> mirror_predicate_oper;
+    rc = create_plan(delete_stmt->mirror_filter_stmt(), mirror_predicate_oper);
+    if (OB_FAIL(rc)) {
+      return rc;
+    }
+    if (mirror_predicate_oper) {
+      mirror_predicate_oper->add_child(std::move(mirror_table_get_oper));
+      delete_oper->add_child(std::move(mirror_predicate_oper));
+    } else {
+      delete_oper->add_child(std::move(mirror_table_get_oper));
+    }
   }
 
   logical_operator = std::move(delete_oper);

@@ -390,11 +390,29 @@ RC PhysicalPlanGenerator::create_plan(UpdateLogicalOperator &update_oper, unique
     }
   }
 
-  oper = unique_ptr<PhysicalOperator>(
-      new UpdatePhysicalOperator(update_oper.table(), update_oper.field_metas(), std::move(update_oper.expressions())));
+  if (update_oper.mirror_table() != nullptr) {
+    oper = unique_ptr<PhysicalOperator>(new UpdatePhysicalOperator(update_oper.table(),
+        update_oper.field_metas(),
+        std::move(update_oper.expressions()),
+        update_oper.mirror_table(),
+        update_oper.mirror_field_metas(),
+        std::move(update_oper.mirror_expressions())));
+  } else {
+    oper = unique_ptr<PhysicalOperator>(
+        new UpdatePhysicalOperator(update_oper.table(), update_oper.field_metas(), std::move(update_oper.expressions())));
+  }
 
   if (child_physical_oper) {
     oper->add_child(std::move(child_physical_oper));
+  }
+  if (update_oper.mirror_table() != nullptr && child_opers.size() > 1) {
+    unique_ptr<PhysicalOperator> mirror_child_physical_oper;
+    rc = create(*child_opers[1], mirror_child_physical_oper, session);
+    if (OB_FAIL(rc)) {
+      LOG_WARN("failed to create mirror update physical operator. rc=%s", strrc(rc));
+      return rc;
+    }
+    oper->add_child(std::move(mirror_child_physical_oper));
   }
   return rc;
 }
@@ -416,10 +434,23 @@ RC PhysicalPlanGenerator::create_plan(DeleteLogicalOperator &delete_oper, unique
     }
   }
 
-  oper = unique_ptr<PhysicalOperator>(new DeletePhysicalOperator(delete_oper.table()));
+  if (delete_oper.mirror_table() != nullptr) {
+    oper = unique_ptr<PhysicalOperator>(new DeletePhysicalOperator(delete_oper.table(), delete_oper.mirror_table()));
+  } else {
+    oper = unique_ptr<PhysicalOperator>(new DeletePhysicalOperator(delete_oper.table()));
+  }
 
   if (child_physical_oper) {
     oper->add_child(std::move(child_physical_oper));
+  }
+  if (delete_oper.mirror_table() != nullptr && child_opers.size() > 1) {
+    unique_ptr<PhysicalOperator> mirror_child_physical_oper;
+    rc = create(*child_opers[1], mirror_child_physical_oper, session);
+    if (OB_FAIL(rc)) {
+      LOG_WARN("failed to create mirror delete physical operator. rc=%s", strrc(rc));
+      return rc;
+    }
+    oper->add_child(std::move(mirror_child_physical_oper));
   }
   return rc;
 }
