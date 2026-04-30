@@ -32,6 +32,15 @@ public:
 
   Table      *table() const { return table_; }
   FilterStmt *filter_stmt() const { return filter_stmt_; }
+  void        set_mirror_delete(Table *table, FilterStmt *filter_stmt);
+  Table      *mirror_table() const { return mirror_table_; }
+  FilterStmt *mirror_filter_stmt() const { return mirror_filter_stmt_; }
+  FilterStmt *release_filter_stmt()
+  {
+    FilterStmt *filter_stmt = filter_stmt_;
+    filter_stmt_ = nullptr;
+    return filter_stmt;
+  }
 
   StmtType type() const override { return StmtType::DELETE; }
 
@@ -41,4 +50,6 @@ public:
 private:
   Table      *table_       = nullptr;
   FilterStmt *filter_stmt_ = nullptr;
+  Table      *mirror_table_       = nullptr;
+  FilterStmt *mirror_filter_stmt_ = nullptr;
 };
