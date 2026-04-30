@@ -748,16 +748,24 @@ public:
   Type function_type() const { return function_type_; }
 
   vector<unique_ptr<Expression>> &arguments() { return arguments_; }
+  void set_match_field(const Table *table, const FieldMeta *field)
+  {
+    match_table_ = const_cast<Table *>(table);
+    match_field_ = field;
+  }
 
 public:
   static RC type_from_string(const char *type_str, Type &type);
 
 private:
   RC eval_arguments(const vector<Value> &arguments, Value &value) const;
+  RC bm25_score(const string &text, const string &query, float &score) const;
 
 private:
   Type                           function_type_;
   vector<unique_ptr<Expression>> arguments_;
+  Table                         *match_table_ = nullptr;
+  const FieldMeta               *match_field_ = nullptr;
 };
 
 class AggregateExpr : public Expression

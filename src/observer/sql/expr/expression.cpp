@@ -27,12 +27,15 @@ See the Mulan PSL v2 for more details. */
 #include "common/type/vector_type.h"
 #include "storage/tokenizer/jieba_tokenizer.h"
 #include "storage/db/db.h"
+#include "storage/record/record_scanner.h"
 #include "storage/trx/trx.h"
 
 #include <cmath>
 #include <cstdio>
 #include <cctype>
 #include <cstring>
+#include <unordered_map>
+#include <unordered_set>
 #include <strings.h>
 
 using namespace std;
@@ -1470,6 +1473,8 @@ unique_ptr<Expression> FunctionExpr::copy() const
   }
   auto expr = make_unique<FunctionExpr>(function_type_, std::move(arguments));
   expr->set_name(name());
+  expr->match_table_ = match_table_;
+  expr->match_field_ = match_field_;
   return expr;
 }
 
@@ -1591,6 +1596,138 @@ static bool like_match(const char *text, const char *pattern)
   return *text == *pattern && like_match(text + 1, pattern + 1);
 }
 
+static RC tokenize_text(const string &text, vector<string> &tokens)
+{
+  string mutable_text = text;
+  return global_jieba_tokenizer().cut(mutable_text, tokens);
+}
+
+static RC read_text_field(const FieldMeta &field, const Record &record, string &text)
+{
+  const char *data = record.data() + field.offset();
+  if (Value::is_null_data(data, field.len(), field.type())) {
+    text.clear();
+    return RC::SUCCESS;
+  }
+
+  Value value;
+  value.set_type(field.type());
+  value.set_data(data, field.len());
+  text = value.get_string();
+  return RC::SUCCESS;
+}
+
+RC FunctionExpr::bm25_score(const string &text, const string &query, float &score) const
+{
+  score = 0;
+  if (match_table_ == nullptr || match_field_ == nullptr) {
+    return RC::UNIMPLEMENTED;
+  }
+
+  vector<string> query_tokens;
+  RC rc = tokenize_text(query, query_tokens);
+  if (OB_FAIL(rc)) {
+    return rc;
+  }
+  if (query_tokens.empty()) {
+    return RC::SUCCESS;
+  }
+
+  vector<vector<string>> docs;
+  RecordScanner *scanner = nullptr;
+  rc = match_table_->get_record_scanner(scanner, nullptr, ReadWriteMode::READ_ONLY);
+  if (OB_FAIL(rc)) {
+    return rc;
+  }
+
+  Record record;
+  double total_len = 0;
+  while (OB_SUCC(rc = scanner->next(record))) {
+    string doc_text;
+    RC read_rc = read_text_field(*match_field_, record, doc_text);
+    if (OB_FAIL(read_rc)) {
+      scanner->close_scan();
+      delete scanner;
+      return read_rc;
+    }
+
+    vector<string> tokens;
+    read_rc = tokenize_text(doc_text, tokens);
+    if (OB_FAIL(read_rc)) {
+      scanner->close_scan();
+      delete scanner;
+      return read_rc;
+    }
+    total_len += tokens.size();
+    docs.emplace_back(std::move(tokens));
+  }
+  scanner->close_scan();
+  delete scanner;
+  if (rc != RC::RECORD_EOF) {
+    return rc;
+  }
+  if (docs.empty()) {
+    return RC::SUCCESS;
+  }
+
+  const double avgdl = total_len / static_cast<double>(docs.size());
+  if (avgdl <= 0) {
+    return RC::SUCCESS;
+  }
+
+  vector<string> text_tokens;
+  rc = tokenize_text(text, text_tokens);
+  if (OB_FAIL(rc)) {
+    return rc;
+  }
+  unordered_map<string, int> text_tf;
+  for (const string &token : text_tokens) {
+    text_tf[token]++;
+  }
+
+  constexpr double k1 = 1.5;
+  constexpr double b  = 0.75;
+  const double doc_len = static_cast<double>(text_tokens.size());
+  unordered_set<string> scored_tokens;
+  for (const string &query_token : query_tokens) {
+    if (!scored_tokens.insert(query_token).second) {
+      continue;
+    }
+
+    int df = 0;
+    for (const vector<string> &doc : docs) {
+      bool found = false;
+      for (const string &token : doc) {
+        if (0 == strcasecmp(token.c_str(), query_token.c_str())) {
+          found = true;
+          break;
+        }
+      }
+      if (found) {
+        df++;
+      }
+    }
+
+    int tf = 0;
+    for (const auto &item : text_tf) {
+      if (0 == strcasecmp(item.first.c_str(), query_token.c_str())) {
+        tf += item.second;
+      }
+    }
+    if (df == 0 || tf == 0) {
+      continue;
+    }
+
+    const double idf = log((static_cast<double>(docs.size()) - df + 0.5) / (df + 0.5) + 1.0);
+    const double norm = tf + k1 * (1.0 - b + b * doc_len / avgdl);
+    score += static_cast<float>(idf * (tf * (k1 + 1.0)) / norm);
+  }
+  if (score < 0) {
+    score = 0;
+  }
+  return RC::SUCCESS;
+}
+
 RC FunctionExpr::eval_arguments(const vector<Value> &arguments, Value &value) const
 {
   for (const Value &argument : arguments) {
@@ -1668,9 +1805,16 @@ RC FunctionExpr::eval_arguments(const vector<Value> &arguments, Value &value) co
     case Type::MATCH_AGAINST: {
       string         text  = arguments[0].get_string();
       string         query = arguments[1].get_string();
+      float bm25 = 0;
+      RC rc = bm25_score(text, query, bm25);
+      if (rc == RC::SUCCESS) {
+        value.set_float(bm25);
+        break;
+      }
+
       vector<string> text_tokens;
       vector<string> query_tokens;
-      RC rc = global_jieba_tokenizer().cut(text, text_tokens);
+      rc = global_jieba_tokenizer().cut(text, text_tokens);
       if (OB_FAIL(rc)) {
         return rc;
       }

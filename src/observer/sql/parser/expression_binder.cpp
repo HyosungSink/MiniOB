@@ -1166,7 +1166,19 @@ RC ExpressionBinder::bind_scalar_function(const char *function_name,
     } break;
   }
 
+  const Table *match_table = nullptr;
+  const FieldMeta *match_field = nullptr;
+  if (function_type == FunctionExpr::Type::MATCH_AGAINST && !bound_arguments.empty() &&
+      bound_arguments[0]->type() == ExprType::FIELD) {
+    const FieldExpr *field_expr = static_cast<const FieldExpr *>(bound_arguments[0].get());
+    match_table = field_expr->field().table();
+    match_field = field_expr->field().meta();
+  }
+
   auto function_expr = make_unique<FunctionExpr>(function_type, std::move(bound_arguments));
+  if (match_table != nullptr && match_field != nullptr) {
+    function_expr->set_match_field(match_table, match_field);
+  }
   bool all_constant_arguments = true;
   for (const unique_ptr<Expression> &argument : function_expr->arguments()) {
     Value constant_value;
