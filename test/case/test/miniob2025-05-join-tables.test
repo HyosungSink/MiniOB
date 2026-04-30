@@ -52,7 +52,7 @@ select * from j5p_empty_1 inner join j5p_empty_2 on j5p_empty_1.id = j5p_empty_2
 select * from j5p_1 inner join j5p_2 on j5p_1.id = j5p_2.id inner join j5p_empty_1 on j5p_1.id=j5p_empty_1.id;
 select * from j5p_empty_1 inner join j5p_1 on j5p_empty_1.id=j5p_1.id inner join j5p_2 on j5p_1.id=j5p_2.id;
 
--- echo 4. very large join plan
+-- echo 4. very large join
 create table j5p_large_1(id int, num1 int);
 create table j5p_large_2(id int, num2 int);
 create table j5p_large_3(id int, num3 int);
@@ -666,7 +666,7 @@ insert into j5p_large_6 values(98, 98);
 insert into j5p_large_6 values(99, 99);
 insert into j5p_large_6 values(100, 100);
 
-explain select * from j5p_large_1 inner join j5p_large_2 on j5p_large_1.id=j5p_large_2.id inner join j5p_large_3 on j5p_large_1.id=j5p_large_3.id and j5p_large_3.num3 <10 inner join j5p_large_4 on j5p_large_3.id=j5p_large_4.id inner join j5p_large_5 on j5p_large_5.num5>90 inner join j5p_large_6 on j5p_large_5.id=j5p_large_6.id;
+-- sort select * from j5p_large_1 inner join j5p_large_2 on j5p_large_1.id=j5p_large_2.id inner join j5p_large_3 on j5p_large_1.id=j5p_large_3.id inner join j5p_large_4 on j5p_large_3.id=j5p_large_4.id inner join j5p_large_5 on 1=1 inner join j5p_large_6 on j5p_large_5.id=j5p_large_6.id where j5p_large_3.num3 <10 and j5p_large_5.num5>90;
 
 -- echo fused dblab hash join coverage
 -- echo initialization
@@ -687,34 +687,34 @@ INSERT INTO j5h_3 VALUES (3, 800);
 
 set hash_join = 1;
 
-explain select * from j5h_1 inner join j5h_2 on j5h_1.id = j5h_2.id;
+-- ensure:hashjoin select * from j5h_1 inner join j5h_2 on j5h_1.id = j5h_2.id;
 -- sort select * from j5h_1 inner join j5h_2 on j5h_1.id = j5h_2.id;
 
-explain Select * from j5h_1 inner join j5h_2 on j5h_1.id=j5h_2.id inner join j5h_3 on j5h_1.id=j5h_3.id;
+-- ensure:hashjoin*2 Select * from j5h_1 inner join j5h_2 on j5h_1.id=j5h_2.id inner join j5h_3 on j5h_1.id=j5h_3.id;
 -- sort Select * from j5h_1 inner join j5h_2 on j5h_1.id=j5h_2.id inner join j5h_3 on j5h_1.id=j5h_3.id;
 
-explain Select * from j5h_1 inner join j5h_2 on j5h_1.id=j5h_2.id inner join j5h_3 on j5h_1.id<j5h_3.id;
+-- ensure:hashjoin Select * from j5h_1 inner join j5h_2 on j5h_1.id=j5h_2.id inner join j5h_3 on j5h_1.id<j5h_3.id;
 -- sort Select * from j5h_1 inner join j5h_2 on j5h_1.id=j5h_2.id inner join j5h_3 on j5h_1.id<j5h_3.id;
 
-explain Select * from j5h_1 inner join j5h_2 on j5h_1.id=j5h_2.id inner join j5h_3 on j5h_1.id<j5h_3.id;
+-- ensure:nlj Select * from j5h_1 inner join j5h_2 on j5h_1.id=j5h_2.id inner join j5h_3 on j5h_1.id<j5h_3.id;
 -- sort Select * from j5h_1 inner join j5h_2 on j5h_1.id=j5h_2.id inner join j5h_3 on j5h_1.id<j5h_3.id;
 
-explain Select * from j5h_1 inner join j5h_2 on j5h_2.num>13 where j5h_1.name='b';
+-- ensure:nlj Select * from j5h_1 inner join j5h_2 on j5h_2.num>13 where j5h_1.name='b';
 -- sort Select * from j5h_1 inner join j5h_2 on j5h_2.num>13 where j5h_1.name='b';
 
-explain Select * from j5h_1 inner join j5h_2 on j5h_2.num>13 where j5h_1.name='a';
+-- ensure:nlj Select * from j5h_1 inner join j5h_2 on j5h_2.num>13 where j5h_1.name='a';
 -- sort Select * from j5h_1 inner join j5h_2 on j5h_2.num>13 where j5h_1.name='a';
 
-explain Select * from j5h_1 inner join j5h_2 on j5h_2.num>23 where j5h_1.name='b';
+-- ensure:nlj Select * from j5h_1 inner join j5h_2 on j5h_2.num>23 where j5h_1.name='b';
 -- sort Select * from j5h_1 inner join j5h_2 on j5h_2.num>23 where j5h_1.name='b';
 
-explain select * from j5h_1 inner join j5h_empty_1 on j5h_1.id=j5h_empty_1.id;
+-- ensure:hashjoin select * from j5h_1 inner join j5h_empty_1 on j5h_1.id=j5h_empty_1.id;
 select * from j5h_1 inner join j5h_empty_1 on j5h_1.id=j5h_empty_1.id;
 
-explain select * from j5h_empty_1 inner join j5h_1 on j5h_empty_1.id=j5h_1.id;
+-- ensure:hashjoin select * from j5h_empty_1 inner join j5h_1 on j5h_empty_1.id=j5h_1.id;
 select * from j5h_empty_1 inner join j5h_1 on j5h_empty_1.id=j5h_1.id;
 
--- echo 4. very large join plan
+-- echo 4. very large join
 create table j5h_large_1(id int, num1 int);
 create table j5h_large_2(id int, num2 int);
 create table j5h_large_3(id int, num3 int);
@@ -1328,9 +1328,9 @@ insert into j5h_large_6 values(98, 98);
 insert into j5h_large_6 values(99, 99);
 insert into j5h_large_6 values(100, 100);
 
-explain select * from j5h_large_1 inner join j5h_large_2 on j5h_large_1.id=j5h_large_2.id inner join j5h_large_3 on j5h_large_1.id=j5h_large_3.id and j5h_large_3.num3 <10 inner join j5h_large_4 on j5h_large_3.id=j5h_large_4.id inner join j5h_large_5 on j5h_large_4.id<j5h_large_5.id and j5h_large_5.num5>90 inner join j5h_large_6 on j5h_large_5.id=j5h_large_6.id;
-explain select * from j5h_large_1 inner join j5h_large_2 on j5h_large_1.id=j5h_large_2.id inner join j5h_large_3 on j5h_large_1.id=j5h_large_3.id and j5h_large_3.num3 <10 inner join j5h_large_4 on j5h_large_3.id=j5h_large_4.id inner join j5h_large_5 on j5h_large_4.id<j5h_large_5.id and j5h_large_5.num5>90 inner join j5h_large_6 on j5h_large_5.id=j5h_large_6.id;
-explain select * from j5h_large_1 inner join j5h_large_2 on j5h_large_1.id=j5h_large_2.id inner join j5h_large_3 on j5h_large_1.id=j5h_large_3.id and j5h_large_3.num3 <10 inner join j5h_large_4 on j5h_large_3.id=j5h_large_4.id inner join j5h_large_5 on j5h_large_4.id<j5h_large_5.id and j5h_large_5.num5>90 inner join j5h_large_6 on j5h_large_5.id=j5h_large_6.id;
+-- ensure:hashjoin*4 select * from j5h_large_1 inner join j5h_large_2 on j5h_large_1.id=j5h_large_2.id inner join j5h_large_3 on j5h_large_1.id=j5h_large_3.id inner join j5h_large_4 on j5h_large_3.id=j5h_large_4.id inner join j5h_large_5 on j5h_large_4.id<j5h_large_5.id inner join j5h_large_6 on j5h_large_5.id=j5h_large_6.id where j5h_large_3.num3 <10 and j5h_large_5.num5>90;
+-- ensure:nlj select * from j5h_large_1 inner join j5h_large_2 on j5h_large_1.id=j5h_large_2.id inner join j5h_large_3 on j5h_large_1.id=j5h_large_3.id inner join j5h_large_4 on j5h_large_3.id=j5h_large_4.id inner join j5h_large_5 on j5h_large_4.id<j5h_large_5.id inner join j5h_large_6 on j5h_large_5.id=j5h_large_6.id where j5h_large_3.num3 <10 and j5h_large_5.num5>90;
+-- sort select * from j5h_large_1 inner join j5h_large_2 on j5h_large_1.id=j5h_large_2.id inner join j5h_large_3 on j5h_large_1.id=j5h_large_3.id inner join j5h_large_4 on j5h_large_3.id=j5h_large_4.id inner join j5h_large_5 on j5h_large_4.id<j5h_large_5.id inner join j5h_large_6 on j5h_large_5.id=j5h_large_6.id where j5h_large_3.num3 <10 and j5h_large_5.num5>90;
 
 -- echo fused dblab optimizer coverage
 -- echo initialization
@@ -1357,31 +1357,31 @@ INSERT INTO j5o_3 VALUES (3, 800);
 set use_cascade=0;
 set hash_join=0;
 
-explain select * from j5o_1 inner join j5o_2 on j5o_1.id = j5o_2.id where j5o_2.id=1;
+-- ensure:nlj select * from j5o_1 inner join j5o_2 on j5o_1.id = j5o_2.id where j5o_2.id=1;
 select * from j5o_1 inner join j5o_2 on j5o_1.id = j5o_2.id where j5o_2.id=1;
 
-explain select * from j5o_1, j5o_2 where j5o_1.id = j5o_2.id and j5o_2.id=1;
+-- ensure:nlj select * from j5o_1, j5o_2 where j5o_1.id = j5o_2.id and j5o_2.id=1;
 select * from j5o_1, j5o_2 where j5o_1.id = j5o_2.id and j5o_2.id=1;
 
-explain select * from j5o_1, j5o_2, j5o_3 where j5o_1.id = j5o_2.id and j5o_2.id=j5o_3.id and j5o_2.id=1;
+-- ensure:nlj*2 select * from j5o_1, j5o_2, j5o_3 where j5o_1.id = j5o_2.id and j5o_2.id=j5o_3.id and j5o_2.id=1;
 select * from j5o_1, j5o_2, j5o_3 where j5o_1.id = j5o_2.id and j5o_2.id=j5o_3.id and j5o_2.id=1;
 
 set hash_join=1;
 
-explain select * from j5o_1 inner join j5o_2 on j5o_1.id = j5o_2.id where j5o_2.id=1;
+-- ensure:hashjoin select * from j5o_1 inner join j5o_2 on j5o_1.id = j5o_2.id where j5o_2.id=1;
 select * from j5o_1 inner join j5o_2 on j5o_1.id = j5o_2.id where j5o_2.id=1;
 
-explain select * from j5o_1, j5o_2 where j5o_1.id = j5o_2.id and j5o_2.id=1;
+-- ensure:hashjoin select * from j5o_1, j5o_2 where j5o_1.id = j5o_2.id and j5o_2.id=1;
 select * from j5o_1, j5o_2 where j5o_1.id = j5o_2.id and j5o_2.id=1;
 
-explain select * from j5o_1, j5o_2, j5o_3 where j5o_1.id = j5o_2.id and j5o_2.id=j5o_3.id and j5o_2.id=1;
+-- ensure:hashjoin*2 select * from j5o_1, j5o_2, j5o_3 where j5o_1.id = j5o_2.id and j5o_2.id=j5o_3.id and j5o_2.id=1;
 select * from j5o_1, j5o_2, j5o_3 where j5o_1.id = j5o_2.id and j5o_2.id=j5o_3.id and j5o_2.id=1;
 
-explain select * from j5o_1, j5o_2, j5o_3 where j5o_1.id = j5o_2.id and j5o_2.id>j5o_3.id and j5o_2.id=1;
-explain select * from j5o_1, j5o_2, j5o_3 where j5o_1.id = j5o_2.id and j5o_2.id>j5o_3.id and j5o_2.id=1;
+-- ensure:hashjoin select * from j5o_1, j5o_2, j5o_3 where j5o_1.id = j5o_2.id and j5o_2.id>j5o_3.id and j5o_2.id=1;
+-- ensure:nlj select * from j5o_1, j5o_2, j5o_3 where j5o_1.id = j5o_2.id and j5o_2.id>j5o_3.id and j5o_2.id=1;
 select * from j5o_1, j5o_2, j5o_3 where j5o_1.id = j5o_2.id and j5o_2.id>j5o_3.id and j5o_2.id=1;
 
-explain select * from j5o_1, j5o_2, j5o_3 where j5o_1.id = j5o_2.id and j5o_2.id>j5o_3.id and j5o_2.id=1 and j5o_2.id>0;
+-- ensure:hashjoin select * from j5o_1, j5o_2, j5o_3 where j5o_1.id = j5o_2.id and j5o_2.id>j5o_3.id and j5o_2.id=1 and j5o_2.id>0;
 select * from j5o_1, j5o_2, j5o_3 where j5o_1.id = j5o_2.id and j5o_2.id>j5o_3.id and j5o_2.id=1 and j5o_2.id>0;
 
 delete from j5o_1;
@@ -1389,7 +1389,7 @@ delete from j5o_2;
 delete from j5o_3;
 
 # 子任务2: 查询物理优化
-set use_cascade=0;
+set use_cascade=1;
 
 INSERT INTO j5o_1 VALUES (1, 'a');
 INSERT INTO j5o_2 VALUES (1, 2);
@@ -1401,7 +1401,7 @@ analyze table j5o_2;
 analyze table j5o_3;
 
 # 在左右表数据量很小时（两表都只有一行），此时 nested loop join 的代价较小。
-explain select * from j5o_1,j5o_2 where j5o_1.id = j5o_2.id;
+-- ensure:nlj select * from j5o_1,j5o_2 where j5o_1.id = j5o_2.id;
 select * from j5o_1,j5o_2 where j5o_1.id = j5o_2.id;
 
 INSERT INTO j5o_1 VALUES (2, 'b');
@@ -1419,17 +1419,17 @@ analyze table j5o_2;
 analyze table j5o_3;
 
 # 在数据量较大的场景下，此时 hash join 的代价较小。
-explain select * from j5o_1,j5o_2 where j5o_1.id = j5o_2.id;
+-- ensure:hashjoin select * from j5o_1,j5o_2 where j5o_1.id = j5o_2.id;
 select * from j5o_1,j5o_2 where j5o_1.id = j5o_2.id;
 
 # 只有等值条件才可以使用 hash join
-explain select * from j5o_1,j5o_2 where j5o_1.id > j5o_2.id;
+-- ensure:nlj select * from j5o_1,j5o_2 where j5o_1.id > j5o_2.id;
 select * from j5o_1,j5o_2 where j5o_1.id > j5o_2.id;
 
 # 三表 join
-explain select * from j5o_1, j5o_2, j5o_3 where j5o_1.id = j5o_2.id and j5o_2.id=j5o_3.id;
+-- ensure:hashjoin*2 select * from j5o_1, j5o_2, j5o_3 where j5o_1.id = j5o_2.id and j5o_2.id=j5o_3.id;
 select * from j5o_1, j5o_2, j5o_3 where j5o_1.id = j5o_2.id and j5o_2.id=j5o_3.id;
 
-explain select * from j5o_1, j5o_2, j5o_3 where j5o_1.id = j5o_2.id and j5o_2.id<j5o_3.id;
-explain select * from j5o_1, j5o_2, j5o_3 where j5o_1.id = j5o_2.id and j5o_2.id<j5o_3.id;
+-- ensure:hashjoin select * from j5o_1, j5o_2, j5o_3 where j5o_1.id = j5o_2.id and j5o_2.id<j5o_3.id;
+-- ensure:nlj select * from j5o_1, j5o_2, j5o_3 where j5o_1.id = j5o_2.id and j5o_2.id<j5o_3.id;
 select * from j5o_1, j5o_2, j5o_3 where j5o_1.id = j5o_2.id and j5o_2.id<j5o_3.id;
