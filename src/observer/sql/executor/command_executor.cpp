@@ -88,8 +88,8 @@ static ViewDefinition build_view_definition(const CreateViewStmt &create_view_st
     }
   }
 
-  view.updatable = !view.columns.empty();
-  if (view.updatable && select_stmt.tables().size() == 1 &&
+  view.updatable = select_stmt.tables().size() == 1 && !view.columns.empty();
+  if (view.updatable &&
       select_stmt.having_filter_stmt()->filter_units().empty() && select_stmt.order_by().empty() && select_stmt.limit() < 0) {
     const TableMeta &base_meta = select_stmt.tables().front()->table_meta();
     int visible_field_num = base_meta.field_num() - base_meta.sys_field_num();
