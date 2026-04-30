@@ -53,6 +53,7 @@ enum class ExprType
   SUBQUERY,     ///< scalar subquery
   IN_SUBQUERY,  ///< IN/NOT IN subquery predicate
   IS_NULL,      ///< IS NULL/IS NOT NULL predicate
+  COMP_SUBQUERY, ///< quantified subquery comparison
 };
 
 /**
@@ -512,6 +513,46 @@ public:
 private:
   unique_ptr<Expression> child_;
   bool                   not_null_ = false;
+};
+
+class QuantifiedComparisonExpr : public Expression
+{
+public:
+  enum class Quantifier
+  {
+    ANY,
+    ALL
+  };
+
+public:
+  QuantifiedComparisonExpr(
+      unique_ptr<Expression> left, CompOp comp, unique_ptr<SubqueryExpr> subquery, Quantifier quantifier);
+  virtual ~QuantifiedComparisonExpr() = default;
+
+  unique_ptr<Expression> copy() const override
+  {
+    return make_unique<QuantifiedComparisonExpr>(left_->copy(),
+        comp_,
+        unique_ptr<SubqueryExpr>(static_cast<SubqueryExpr *>(subquery_->copy().release())),
+        quantifier_);
+  }
+
+  ExprType type() const override { return ExprType::COMP_SUBQUERY; }
+  AttrType value_type() const override { return AttrType::BOOLEANS; }
+
+  RC get_value(const Tuple &tuple, Value &value) const override;
+  RC prepare() const override;
+
+  unique_ptr<Expression> &left() { return left_; }
+  SubqueryExpr           &subquery() { return *subquery_; }
+  CompOp                  comp() const { return comp_; }
+  Quantifier              quantifier() const { return quantifier_; }
+
+private:
+  unique_ptr<Expression>  left_;
+  CompOp                  comp_ = NO_OP;
+  unique_ptr<SubqueryExpr> subquery_;
+  Quantifier              quantifier_ = Quantifier::ANY;
 };
 
 /**

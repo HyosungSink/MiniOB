@@ -656,6 +656,99 @@ RC IsNullExpr::get_value(const Tuple &tuple, Value &value) const
 
 ////////////////////////////////////////////////////////////////////////////////
 
+static RC compare_with_op(CompOp comp, const Value &left, const Value &right, bool &result)
+{
+  result = false;
+  if (left.is_null() || right.is_null()) {
+    return RC::SUCCESS;
+  }
+
+  int cmp_result = 0;
+  if (left.attr_type() == AttrType::BOOLEANS && right.attr_type() == AttrType::BOOLEANS) {
+    cmp_result = static_cast<int>(left.get_boolean()) - static_cast<int>(right.get_boolean());
+  } else {
+    cmp_result = left.compare(right);
+  }
+
+  switch (comp) {
+    case EQUAL_TO: result = (0 == cmp_result); break;
+    case LESS_EQUAL: result = (cmp_result <= 0); break;
+    case NOT_EQUAL: result = (cmp_result != 0); break;
+    case LESS_THAN: result = (cmp_result < 0); break;
+    case GREAT_EQUAL: result = (cmp_result >= 0); break;
+    case GREAT_THAN: result = (cmp_result > 0); break;
+    default: {
+      LOG_WARN("unsupported comparison. %d", comp);
+      return RC::INTERNAL;
+    }
+  }
+
+  return RC::SUCCESS;
+}
+
+QuantifiedComparisonExpr::QuantifiedComparisonExpr(
+    unique_ptr<Expression> left, CompOp comp, unique_ptr<SubqueryExpr> subquery, Quantifier quantifier)
+    : left_(std::move(left)), comp_(comp), subquery_(std::move(subquery)), quantifier_(quantifier)
+{}
+
+RC QuantifiedComparisonExpr::prepare() const
+{
+  const vector<Value> *subquery_values = nullptr;
+  return subquery_->materialized_values(subquery_values);
+}
+
+RC QuantifiedComparisonExpr::get_value(const Tuple &tuple, Value &value) const
+{
+  Value left_value;
+  RC rc = left_->get_value(tuple, left_value);
+  if (OB_FAIL(rc)) {
+    return rc;
+  }
+  if (left_value.is_null()) {
+    value.set_null();
+    return RC::SUCCESS;
+  }
+
+  const vector<Value> *subquery_values = nullptr;
+  rc = subquery_->materialized_values(subquery_values);
+  if (OB_FAIL(rc)) {
+    return rc;
+  }
+
+  bool has_null = false;
+  bool result   = (quantifier_ == Quantifier::ALL);
+  for (const Value &subquery_value : *subquery_values) {
+    if (subquery_value.is_null()) {
+      has_null = true;
+      continue;
+    }
+
+    bool cmp_result = false;
+    rc = compare_with_op(comp_, left_value, subquery_value, cmp_result);
+    if (OB_FAIL(rc)) {
+      return rc;
+    }
+
+    if (quantifier_ == Quantifier::ANY && cmp_result) {
+      value.set_boolean(true);
+      return RC::SUCCESS;
+    }
+    if (quantifier_ == Quantifier::ALL && !cmp_result) {
+      value.set_boolean(false);
+      return RC::SUCCESS;
+    }
+  }
+
+  if (has_null && ((quantifier_ == Quantifier::ANY && !result) || (quantifier_ == Quantifier::ALL && result))) {
+    value.set_null();
+  } else {
+    value.set_boolean(result);
+  }
+  return RC::SUCCESS;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
 ArithmeticExpr::ArithmeticExpr(ArithmeticExpr::Type type, Expression *left, Expression *right)
     : arithmetic_type_(type), left_(left), right_(right)
 {}

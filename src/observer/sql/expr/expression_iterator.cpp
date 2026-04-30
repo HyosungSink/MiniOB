@@ -73,6 +73,11 @@ RC ExpressionIterator::iterate_child_expr(Expression &expr, function<RC(unique_p
       rc = callback(is_null_expr.child());
     } break;
 
+    case ExprType::COMP_SUBQUERY: {
+      auto &comp_subquery_expr = static_cast<QuantifiedComparisonExpr &>(expr);
+      rc = callback(comp_subquery_expr.left());
+    } break;
+
     case ExprType::ARITHMETIC: {
 
       auto &arithmetic_expr = static_cast<ArithmeticExpr &>(expr);
