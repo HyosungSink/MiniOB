@@ -295,6 +295,13 @@ static RC collect_table_rows(Table *table, vector<vector<Value>> &rows)
   return rc == RC::RECORD_EOF ? RC::SUCCESS : rc;
 }
 
+struct AlterIndexSpec
+{
+  string         name;
+  vector<string> fields;
+  bool           unique = false;
+};
+
 RC Db::alter_table(const AlterTableSqlNode &alter_table)
 {
   Table *table = find_table(alter_table.relation_name.c_str());
@@ -304,6 +311,15 @@ RC Db::alter_table(const AlterTableSqlNode &alter_table)
 
   const TableMeta &old_meta = table->table_meta();
   const StorageFormat storage_format = old_meta.storage_format();
+  vector<AlterIndexSpec> index_specs;
+  for (int i = 0; i < old_meta.index_num(); i++) {
+    const IndexMeta *index_meta = old_meta.index(i);
+    if (index_meta == nullptr) {
+      continue;
+    }
+    index_specs.push_back({index_meta->name(), index_meta->fields(), index_meta->is_unique()});
+  }
+
   vector<AttrInfoSqlNode> new_attrs;
   vector<int>             old_indexes;
   for (int i = old_meta.sys_field_num(); i < old_meta.field_num(); i++) {
@@ -326,6 +342,7 @@ RC Db::alter_table(const AlterTableSqlNode &alter_table)
     } break;
     case AlterTableAction::DROP_COLUMN: {
       bool found = false;
+      vector<AlterIndexSpec> kept_indexes;
       vector<AttrInfoSqlNode> filtered_attrs;
       vector<int> filtered_indexes;
       for (size_t i = 0; i < new_attrs.size(); i++) {
@@ -341,6 +358,19 @@ RC Db::alter_table(const AlterTableSqlNode &alter_table)
       }
       new_attrs.swap(filtered_attrs);
       old_indexes.swap(filtered_indexes);
+      for (AlterIndexSpec &index_spec : index_specs) {
+        bool uses_dropped_column = false;
+        for (const string &field : index_spec.fields) {
+          if (0 == strcasecmp(field.c_str(), alter_table.old_attribute_name.c_str())) {
+            uses_dropped_column = true;
+            break;
+          }
+        }
+        if (!uses_dropped_column) {
+          kept_indexes.emplace_back(std::move(index_spec));
+        }
+      }
+      index_specs.swap(kept_indexes);
     } break;
     case AlterTableAction::CHANGE_COLUMN: {
       if (old_meta.field(alter_table.old_attribute_name.c_str()) == nullptr) {
@@ -360,6 +390,13 @@ RC Db::alter_table(const AlterTableSqlNode &alter_table)
       }
       if (!found) {
         return RC::SCHEMA_FIELD_NOT_EXIST;
+      }
+      for (AlterIndexSpec &index_spec : index_specs) {
+        for (string &field : index_spec.fields) {
+          if (0 == strcasecmp(field.c_str(), alter_table.old_attribute_name.c_str())) {
+            field = alter_table.attr_info.name;
+          }
+        }
       }
     } break;
     case AlterTableAction::RENAME_TABLE: {
@@ -408,6 +445,22 @@ RC Db::alter_table(const AlterTableSqlNode &alter_table)
       return rc;
     }
     rc = new_table->insert_record(new_record);
+    if (OB_FAIL(rc)) {
+      return rc;
+    }
+  }
+
+  for (const AlterIndexSpec &index_spec : index_specs) {
+    vector<const FieldMeta *> field_metas;
+    field_metas.reserve(index_spec.fields.size());
+    for (const string &field_name : index_spec.fields) {
+      const FieldMeta *field = new_table->table_meta().field(field_name.c_str());
+      if (field == nullptr) {
+        return RC::SCHEMA_FIELD_NOT_EXIST;
+      }
+      field_metas.push_back(field);
+    }
+    rc = new_table->create_index(nullptr, field_metas, index_spec.name.c_str(), index_spec.unique);
     if (OB_FAIL(rc)) {
       return rc;
     }
