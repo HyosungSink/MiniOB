@@ -16,7 +16,11 @@ See the Mulan PSL v2 for more details. */
 #include "common/lang/string.h"
 #include "common/lang/ranges.h"
 #include "sql/parser/expression_binder.h"
+#include "sql/parser/parse.h"
 #include "sql/expr/expression_iterator.h"
+#include "sql/stmt/select_stmt.h"
+#include "sql/stmt/stmt.h"
+#include "storage/db/db.h"
 
 using namespace common;
 
@@ -113,6 +117,14 @@ RC ExpressionBinder::bind_expression(unique_ptr<Expression> &expr, vector<unique
 
     case ExprType::IN_LIST: {
       return bind_in_expression(expr, bound_expressions);
+    } break;
+
+    case ExprType::SUBQUERY: {
+      return bind_subquery_expression(expr, bound_expressions);
+    } break;
+
+    case ExprType::IN_SUBQUERY: {
+      return bind_in_subquery_expression(expr, bound_expressions);
     } break;
 
     case ExprType::ARITHMETIC: {
@@ -421,6 +433,107 @@ RC ExpressionBinder::bind_in_expression(unique_ptr<Expression> &expr, vector<uni
     } else {
       value_expr = std::move(cast_expr);
     }
+  }
+
+  bound_expressions.emplace_back(std::move(expr));
+  return RC::SUCCESS;
+}
+
+static RC infer_subquery_value_info(Db *db, SubqueryExpr &subquery_expr)
+{
+  if (db == nullptr) {
+    return RC::SCHEMA_DB_NOT_EXIST;
+  }
+
+  ParsedSqlResult parsed_sql_result;
+  RC rc = parse(subquery_expr.sql().c_str(), &parsed_sql_result);
+  if (OB_FAIL(rc)) {
+    return rc;
+  }
+  if (parsed_sql_result.sql_nodes().size() != 1 || parsed_sql_result.sql_nodes().front()->flag != SCF_SELECT) {
+    return RC::SQL_SYNTAX;
+  }
+
+  Stmt *raw_stmt = nullptr;
+  rc = Stmt::create_stmt(db, *parsed_sql_result.sql_nodes().front(), raw_stmt);
+  unique_ptr<Stmt> stmt(raw_stmt);
+  if (OB_FAIL(rc)) {
+    return rc;
+  }
+  if (stmt->type() != StmtType::SELECT) {
+    return RC::INVALID_ARGUMENT;
+  }
+
+  auto select_stmt = static_cast<SelectStmt *>(stmt.get());
+  vector<unique_ptr<Expression>> &expressions = select_stmt->query_expressions();
+  if (expressions.size() != 1) {
+    return RC::INVALID_ARGUMENT;
+  }
+
+  subquery_expr.set_value_info(expressions[0]->value_type(), expressions[0]->value_length());
+  return RC::SUCCESS;
+}
+
+RC ExpressionBinder::bind_subquery_expression(
+    unique_ptr<Expression> &expr, vector<unique_ptr<Expression>> &bound_expressions)
+{
+  if (nullptr == expr) {
+    return RC::SUCCESS;
+  }
+
+  auto subquery_expr = static_cast<SubqueryExpr *>(expr.get());
+  RC rc = infer_subquery_value_info(context_.db(), *subquery_expr);
+  if (OB_FAIL(rc)) {
+    return rc;
+  }
+
+  bound_expressions.emplace_back(std::move(expr));
+  return RC::SUCCESS;
+}
+
+RC ExpressionBinder::bind_in_subquery_expression(
+    unique_ptr<Expression> &expr, vector<unique_ptr<Expression>> &bound_expressions)
+{
+  if (nullptr == expr) {
+    return RC::SUCCESS;
+  }
+
+  auto in_subquery_expr = static_cast<InSubqueryExpr *>(expr.get());
+
+  vector<unique_ptr<Expression>> child_bound_expressions;
+  unique_ptr<Expression>        &left_expr = in_subquery_expr->left();
+  RC rc = bind_expression(left_expr, child_bound_expressions);
+  if (OB_FAIL(rc)) {
+    return rc;
+  }
+  if (child_bound_expressions.size() != 1) {
+    LOG_WARN("invalid left children number of IN subquery expression: %d", child_bound_expressions.size());
+    return RC::INVALID_ARGUMENT;
+  }
+
+  unique_ptr<Expression> &left = child_bound_expressions[0];
+  if (left.get() != left_expr.get()) {
+    left_expr.reset(left.release());
+  }
+
+  SubqueryExpr &subquery = in_subquery_expr->subquery();
+  rc = infer_subquery_value_info(context_.db(), subquery);
+  if (OB_FAIL(rc)) {
+    return rc;
+  }
+
+  AttrType left_type     = left_expr->value_type();
+  AttrType subquery_type = subquery.value_type();
+  if (left_type != AttrType::UNDEFINED && subquery_type != AttrType::UNDEFINED && left_type != subquery_type &&
+      !(is_numerical_type(left_type) && is_numerical_type(subquery_type))) {
+    int cast_cost = DataType::type_instance(subquery_type)->cast_cost(left_type);
+    if (cast_cost == INT32_MAX) {
+      LOG_WARN("unsupported IN subquery cast from %s to %s",
+          attr_type_to_string(subquery_type),
+          attr_type_to_string(left_type));
+      return RC::UNSUPPORTED;
+    }
+    subquery.set_cast_type(left_type);
   }
 
   bound_expressions.emplace_back(std::move(expr));

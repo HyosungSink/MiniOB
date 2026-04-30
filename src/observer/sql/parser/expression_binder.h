@@ -16,11 +16,16 @@ See the Mulan PSL v2 for more details. */
 
 #include "sql/expr/expression.h"
 
+class Db;
+
 class BinderContext
 {
 public:
   BinderContext()          = default;
   virtual ~BinderContext() = default;
+
+  void set_db(Db *db) { db_ = db; }
+  Db  *db() const { return db_; }
 
   void add_table(Table *table) { add_table(table, ""); }
   void add_table(Table *table, const string &alias);
@@ -30,6 +35,8 @@ public:
   const vector<Table *> &query_tables() const { return query_tables_; }
 
 private:
+  Db *db_ = nullptr;
+
   struct TableAlias
   {
     string alias;
@@ -65,6 +72,10 @@ private:
   RC bind_conjunction_expression(
       unique_ptr<Expression> &conjunction_expr, vector<unique_ptr<Expression>> &bound_expressions);
   RC bind_in_expression(unique_ptr<Expression> &in_expr, vector<unique_ptr<Expression>> &bound_expressions);
+  RC bind_subquery_expression(
+      unique_ptr<Expression> &subquery_expr, vector<unique_ptr<Expression>> &bound_expressions);
+  RC bind_in_subquery_expression(
+      unique_ptr<Expression> &in_subquery_expr, vector<unique_ptr<Expression>> &bound_expressions);
   RC bind_arithmetic_expression(
       unique_ptr<Expression> &arithmetic_expr, vector<unique_ptr<Expression>> &bound_expressions);
   RC bind_function_expression(
