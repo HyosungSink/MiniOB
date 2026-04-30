@@ -1,3 +1,4 @@
+-- observer-args -t mvcc
 -- echo miniob2025 update mvcc setup
 create table mvcc_update_t(id int, value int, note char);
 create index idx_mvcc_update_id on mvcc_update_t(id);

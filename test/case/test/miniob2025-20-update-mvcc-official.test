@@ -1,3 +1,4 @@
+-- observer-args -t mvcc
 -- echo official miniob2025-20-update-mvcc-official
 # /* =========================================================
 # update-mvcc 功能测试脚本
