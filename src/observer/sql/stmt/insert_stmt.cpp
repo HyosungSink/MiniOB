@@ -164,6 +164,16 @@ RC InsertStmt::create(Db *db, const InsertSqlNode &inserts, Stmt *&stmt)
   }
 
   // everything alright
-  stmt = new InsertStmt(table, *value_rows);
+  auto insert_stmt = new InsertStmt(table, *value_rows);
+  const ViewDefinition *mirror_view = db->find_base_table_mirror_view(table_name);
+  if (mirror_view != nullptr) {
+    Table *view_table = db->find_table(mirror_view->view_name.c_str());
+    if (view_table == nullptr) {
+      delete insert_stmt;
+      return RC::SCHEMA_TABLE_NOT_EXIST;
+    }
+    insert_stmt->set_mirror_insert(view_table, vector<vector<Value>>(*value_rows));
+  }
+  stmt = insert_stmt;
   return RC::SUCCESS;
 }
