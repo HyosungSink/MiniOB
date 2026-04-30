@@ -422,6 +422,7 @@ attr_def:
       $$->type = (AttrType)$2;
       $$->name = $1;
       $$->length = $4;
+      $$->nullable = ($6 == 0);
     }
     | ID type attr_nullability
     {
@@ -429,6 +430,7 @@ attr_def:
       $$->type = (AttrType)$2;
       $$->name = $1;
       $$->length = 4;
+      $$->nullable = ($3 == 0);
     }
     ;
 
