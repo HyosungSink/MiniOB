@@ -26,6 +26,7 @@ See the Mulan PSL v2 for more details. */
 #include "sql/stmt/stmt.h"
 #include "common/type/vector_type.h"
 #include "storage/db/db.h"
+#include "storage/tokenizer/jieba_tokenizer.h"
 #include "storage/trx/trx.h"
 
 #include <cmath>
@@ -1415,6 +1416,11 @@ AttrType FunctionExpr::value_type() const
     case Type::STRING_TO_VECTOR: return AttrType::VECTORS;
     case Type::VECTOR_TO_STRING: return AttrType::CHARS;
     case Type::DISTANCE: return AttrType::FLOATS;
+    case Type::TOKENIZE: return AttrType::CHARS;
+    case Type::MATCH_AGAINST: return AttrType::FLOATS;
+    case Type::CONCAT: return AttrType::CHARS;
+    case Type::SUBSTR: return AttrType::CHARS;
+    case Type::LIKE: return AttrType::BOOLEANS;
   }
   return AttrType::UNDEFINED;
 }
@@ -1424,7 +1430,7 @@ int FunctionExpr::value_length() const
   switch (value_type()) {
     case AttrType::INTS: return sizeof(int);
     case AttrType::FLOATS: return sizeof(float);
-    case AttrType::CHARS: return 64;
+    case AttrType::CHARS: return function_type_ == Type::TOKENIZE ? 4096 : 65535;
     case AttrType::VECTORS: return -1;
     default: return -1;
   }
@@ -1494,6 +1500,31 @@ static string format_date_value(int date, const string &format)
   return result;
 }
 
+static JiebaTokenizer &global_jieba_tokenizer()
+{
+  static JiebaTokenizer tokenizer;
+  return tokenizer;
+}
+
+static bool like_match(const char *text, const char *pattern)
+{
+  if (*pattern == '\0') {
+    return *text == '\0';
+  }
+  if (*pattern == '%') {
+    do {
+      if (like_match(text, pattern + 1)) {
+        return true;
+      }
+    } while (*text++ != '\0');
+    return false;
+  }
+  if (*pattern == '_') {
+    return *text != '\0' && like_match(text + 1, pattern + 1);
+  }
+  return *text == *pattern && like_match(text + 1, pattern + 1);
+}
+
 RC FunctionExpr::eval_arguments(const vector<Value> &arguments, Value &value) const
 {
   for (const Value &argument : arguments) {
@@ -1543,6 +1574,85 @@ RC FunctionExpr::eval_arguments(const vector<Value> &arguments, Value &value) co
     } break;
     case Type::DISTANCE: {
       return VectorType::distance(arguments[0], arguments[1], arguments[2].get_string(), value);
+    } break;
+    case Type::TOKENIZE: {
+      if (0 != strcasecmp(arguments[1].get_string().c_str(), "jieba")) {
+        return RC::INVALID_ARGUMENT;
+      }
+
+      string         text = arguments[0].get_string();
+      vector<string> tokens;
+      RC rc = global_jieba_tokenizer().cut(text, tokens);
+      if (OB_FAIL(rc)) {
+        return rc;
+      }
+
+      string result = "[";
+      for (size_t i = 0; i < tokens.size(); i++) {
+        if (i != 0) {
+          result.append(", ");
+        }
+        result.push_back('"');
+        result.append(tokens[i]);
+        result.push_back('"');
+      }
+      result.push_back(']');
+      value.set_string(result.c_str());
+    } break;
+    case Type::MATCH_AGAINST: {
+      string         text  = arguments[0].get_string();
+      string         query = arguments[1].get_string();
+      vector<string> text_tokens;
+      vector<string> query_tokens;
+      RC rc = global_jieba_tokenizer().cut(text, text_tokens);
+      if (OB_FAIL(rc)) {
+        return rc;
+      }
+      rc = global_jieba_tokenizer().cut(query, query_tokens);
+      if (OB_FAIL(rc)) {
+        return rc;
+      }
+
+      float score = 0;
+      for (const string &query_token : query_tokens) {
+        for (const string &text_token : text_tokens) {
+          if (0 == strcasecmp(query_token.c_str(), text_token.c_str())) {
+            score += 1.0f;
+          }
+        }
+      }
+      value.set_float(score);
+    } break;
+    case Type::CONCAT: {
+      string result;
+      for (const Value &argument : arguments) {
+        string_t text = argument.get_string_t();
+        result.append(text.data(), text.size());
+      }
+      if (result.size() > 65535) {
+        return RC::SCHEMA_FIELD_TYPE_MISMATCH;
+      }
+      value.set_string(result.data(), static_cast<int>(result.size()));
+    } break;
+    case Type::SUBSTR: {
+      string_t text = arguments[0].get_string_t();
+      int start = arguments[1].get_int();
+      int length = arguments.size() >= 3 ? arguments[2].get_int() : static_cast<int>(text.size());
+      if (start < 1 || length < 0) {
+        return RC::INVALID_ARGUMENT;
+      }
+      size_t offset = static_cast<size_t>(start - 1);
+      if (offset >= text.size()) {
+        value.set_string("");
+      } else {
+        size_t count = std::min<size_t>(static_cast<size_t>(length), text.size() - offset);
+        value.set_string(text.data() + offset, static_cast<int>(count));
+      }
+    } break;
+    case Type::LIKE: {
+      string text = arguments[0].get_string();
+      string pattern = arguments[1].get_string();
+      value.set_boolean(like_match(text.c_str(), pattern.c_str()));
     } break;
   }
 
@@ -1603,6 +1713,26 @@ RC FunctionExpr::type_from_string(const char *type_str, FunctionExpr::Type &type
   }
   if (0 == strcasecmp(type_str, "distance") || 0 == strcasecmp(type_str, "vector_distance")) {
     type = Type::DISTANCE;
+    return RC::SUCCESS;
+  }
+  if (0 == strcasecmp(type_str, "tokenize")) {
+    type = Type::TOKENIZE;
+    return RC::SUCCESS;
+  }
+  if (0 == strcasecmp(type_str, "match_against")) {
+    type = Type::MATCH_AGAINST;
+    return RC::SUCCESS;
+  }
+  if (0 == strcasecmp(type_str, "concat")) {
+    type = Type::CONCAT;
+    return RC::SUCCESS;
+  }
+  if (0 == strcasecmp(type_str, "substr") || 0 == strcasecmp(type_str, "substring")) {
+    type = Type::SUBSTR;
+    return RC::SUCCESS;
+  }
+  if (0 == strcasecmp(type_str, "like")) {
+    type = Type::LIKE;
     return RC::SUCCESS;
   }
   return RC::INVALID_ARGUMENT;

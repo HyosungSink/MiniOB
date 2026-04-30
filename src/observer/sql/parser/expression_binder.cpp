@@ -1022,6 +1022,37 @@ RC ExpressionBinder::bind_scalar_function(const char *function_name,
         return RC::INVALID_ARGUMENT;
       }
     } break;
+    case FunctionExpr::Type::CONCAT: {
+      if (bound_arguments.empty()) {
+        return RC::INVALID_ARGUMENT;
+      }
+      for (const unique_ptr<Expression> &argument : bound_arguments) {
+        AttrType type = argument->value_type();
+        if (type != AttrType::CHARS && !is_null_literal_type(type)) {
+          return RC::INVALID_ARGUMENT;
+        }
+      }
+    } break;
+    case FunctionExpr::Type::SUBSTR: {
+      if (bound_arguments.size() != 2 && bound_arguments.size() != 3) {
+        return RC::INVALID_ARGUMENT;
+      }
+      if (type_at(0) != AttrType::CHARS && !is_null_literal_type(type_at(0))) {
+        return RC::INVALID_ARGUMENT;
+      }
+      if (type_at(1) != AttrType::INTS || (bound_arguments.size() == 3 && type_at(2) != AttrType::INTS)) {
+        return RC::INVALID_ARGUMENT;
+      }
+    } break;
+    case FunctionExpr::Type::LIKE: {
+      if (bound_arguments.size() != 2) {
+        return RC::INVALID_ARGUMENT;
+      }
+      if ((type_at(0) != AttrType::CHARS && !is_null_literal_type(type_at(0))) ||
+          (type_at(1) != AttrType::CHARS && !is_null_literal_type(type_at(1)))) {
+        return RC::INVALID_ARGUMENT;
+      }
+    } break;
   }
 
   auto function_expr = make_unique<FunctionExpr>(function_type, std::move(bound_arguments));

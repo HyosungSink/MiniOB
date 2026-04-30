@@ -694,6 +694,11 @@ public:
     STRING_TO_VECTOR,
     VECTOR_TO_STRING,
     DISTANCE,
+    TOKENIZE,
+    MATCH_AGAINST,
+    CONCAT,
+    SUBSTR,
+    LIKE,
   };
 
 public:
