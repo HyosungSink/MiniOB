@@ -234,6 +234,11 @@ RC Table::make_record(int value_num, const Value *values, Record &record)
     const FieldMeta *field = table_meta_.field(i + normal_field_start_index);
     const Value &    value = values[i];
     if (value.is_null()) {
+      if (!field->nullable()) {
+        LOG_WARN("field can not be null. table name:%s, field name:%s", table_meta_.name(), field->name());
+        rc = RC::SCHEMA_FIELD_TYPE_MISMATCH;
+        break;
+      }
       rc = set_value_to_record(record_data, value, field);
     } else if (field->type() != value.attr_type()) {
       Value real_value;
