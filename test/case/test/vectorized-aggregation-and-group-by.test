@@ -1,3 +1,4 @@
+-- case-state inactive
 -- echo initialization
 set execution_mode='chunk_iterator';
 CREATE TABLE aggregation_func(id int, num int, price float, addr char) storage format=pax;

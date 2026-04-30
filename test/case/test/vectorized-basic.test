@@ -1,3 +1,4 @@
+-- case-state inactive
 -- echo basic insert
 
 set execution_mode='chunk_iterator';
