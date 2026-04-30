@@ -12,18 +12,27 @@ See the Mulan PSL v2 for more details. */
 #include "sql/operator/update_physical_operator.h"
 #include "common/lang/algorithm.h"
 #include "common/log/log.h"
+#include "sql/expr/tuple.h"
 #include "storage/table/table.h"
 #include "storage/trx/trx.h"
 
 UpdatePhysicalOperator::UpdatePhysicalOperator(
-    Table *table, const vector<const FieldMeta *> &field_metas, const vector<Value> &values)
-    : table_(table), field_metas_(field_metas), values_(values)
+    Table *table, const vector<const FieldMeta *> &field_metas, vector<unique_ptr<Expression>> &&expressions)
+    : table_(table), field_metas_(field_metas), expressions_(std::move(expressions))
 {}
 
 RC UpdatePhysicalOperator::open(Trx *trx)
 {
   if (children_.empty()) {
     return RC::SUCCESS;
+  }
+
+  for (const unique_ptr<Expression> &expression : expressions_) {
+    RC rc = expression->prepare();
+    if (OB_FAIL(rc)) {
+      LOG_WARN("failed to prepare update expression. rc=%s", strrc(rc));
+      return rc;
+    }
   }
 
   unique_ptr<PhysicalOperator> &child = children_[0];
@@ -111,9 +120,19 @@ RC UpdatePhysicalOperator::make_updated_record(const Record &old_record, Record 
   }
   new_record.set_rid(old_record.rid());
 
+  RowTuple row_tuple;
+  row_tuple.set_record(const_cast<Record *>(&old_record));
+  row_tuple.set_schema(table_, table_->table_meta().field_metas());
+
   for (size_t i = 0; i < field_metas_.size(); i++) {
     const FieldMeta *field_meta = field_metas_[i];
-    const Value     &value      = values_[i];
+    const Expression *expression = expressions_[i].get();
+
+    Value value;
+    rc = expression->get_value(row_tuple, value);
+    if (OB_FAIL(rc)) {
+      return rc;
+    }
 
     rc = new_record.reset_filed(field_meta->offset(), field_meta->len());
     if (OB_FAIL(rc)) {
@@ -121,17 +140,34 @@ RC UpdatePhysicalOperator::make_updated_record(const Record &old_record, Record 
     }
 
     if (value.is_null()) {
+      if (!field_meta->nullable()) {
+        return RC::SCHEMA_FIELD_TYPE_MISMATCH;
+      }
       Value::set_null_data(new_record.data() + field_meta->offset(), field_meta->len(), field_meta->type());
       continue;
     }
 
-    int copy_len = value.length();
+    Value stored_value;
+    const Value *value_to_store = &value;
+    if (field_meta->type() != value.attr_type()) {
+      rc = Value::cast_to(value, field_meta->type(), stored_value);
+      if (OB_FAIL(rc)) {
+        return rc;
+      }
+      value_to_store = &stored_value;
+    }
+
+    if (field_meta->type() == AttrType::VECTORS && value_to_store->length() != field_meta->len()) {
+      return RC::SCHEMA_FIELD_TYPE_MISMATCH;
+    }
+
+    int copy_len = value_to_store->length();
     if (field_meta->type() == AttrType::CHARS) {
-      copy_len = min(field_meta->len(), value.length() + 1);
+      copy_len = min(field_meta->len(), value_to_store->length() + 1);
     }
     copy_len = min(copy_len, field_meta->len());
 
-    rc = new_record.set_field(field_meta->offset(), copy_len, value.data());
+    rc = new_record.set_field(field_meta->offset(), copy_len, value_to_store->data());
     if (OB_FAIL(rc)) {
       return rc;
     }
