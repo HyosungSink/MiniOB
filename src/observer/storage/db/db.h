@@ -43,6 +43,7 @@ struct ViewDefinition
   string                    base_table_name;
   vector<ViewColumnMapping> columns;
   bool                      updatable = false;
+  bool                      mirrors_base_table = false;
 
   const string *base_column_for(const string &view_column) const;
 };
@@ -95,6 +96,7 @@ public:
 
   RC register_view(ViewDefinition &&view);
   const ViewDefinition *find_view(const char *view_name) const;
+  const ViewDefinition *find_base_table_mirror_view(const char *base_table_name) const;
 
   /**
    * @brief 根据表名查找表

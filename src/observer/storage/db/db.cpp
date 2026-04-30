@@ -275,6 +275,21 @@ const ViewDefinition *Db::find_view(const char *view_name) const
   return iter == views_.end() ? nullptr : &iter->second;
 }
 
+const ViewDefinition *Db::find_base_table_mirror_view(const char *base_table_name) const
+{
+  if (common::is_blank(base_table_name)) {
+    return nullptr;
+  }
+
+  for (const auto &entry : views_) {
+    const ViewDefinition &view = entry.second;
+    if (view.mirrors_base_table && 0 == strcasecmp(view.base_table_name.c_str(), base_table_name)) {
+      return &view;
+    }
+  }
+  return nullptr;
+}
+
 static AttrInfoSqlNode attr_info_from_field(const FieldMeta &field)
 {
   AttrInfoSqlNode attr;

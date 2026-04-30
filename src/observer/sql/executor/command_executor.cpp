@@ -29,6 +29,7 @@ See the Mulan PSL v2 for more details. */
 #include "sql/optimizer/logical_plan_generator.h"
 #include "sql/optimizer/physical_plan_generator.h"
 #include "sql/parser/parse.h"
+#include "sql/stmt/filter_stmt.h"
 #include "sql/stmt/select_stmt.h"
 #include "sql/executor/trx_begin_executor.h"
 #include "sql/executor/trx_end_executor.h"
@@ -74,6 +75,17 @@ static ViewDefinition build_view_definition(const CreateViewStmt &create_view_st
     view.columns.push_back({expression->name(), field_expr->field_name()});
   }
   view.updatable = !view.columns.empty();
+  if (view.updatable && select_stmt.tables().size() == 1 && select_stmt.filter_stmt()->filter_units().empty() &&
+      select_stmt.having_filter_stmt()->filter_units().empty() && select_stmt.order_by().empty() && select_stmt.limit() < 0) {
+    const TableMeta &base_meta = select_stmt.tables().front()->table_meta();
+    int visible_field_num = base_meta.field_num() - base_meta.sys_field_num();
+    view.mirrors_base_table = visible_field_num == static_cast<int>(view.columns.size());
+    for (int i = 0; view.mirrors_base_table && i < visible_field_num; i++) {
+      const FieldMeta *field = base_meta.field(i + base_meta.sys_field_num());
+      const ViewColumnMapping &column = view.columns[i];
+      view.mirrors_base_table = column.view_column == field->name() && column.base_column == field->name();
+    }
+  }
   return view;
 }
 
