@@ -31,6 +31,29 @@ update create_view_v1 set age=120 where id=193;
 delete from create_view_v1 where id=83;
 select sum(age) from create_view_v1;
 
+-- echo multi-table view dml rejected
+create table create_view_t2(id int, age int, name char(10));
+insert into create_view_t1 values(34, 34, 'T034');
+insert into create_view_t1 values(114, 114, 'T114');
+insert into create_view_t1 values(120, 120, 'T120');
+insert into create_view_t1 values(126, 126, 'T126');
+insert into create_view_t1 values(167, 167, 'T167');
+insert into create_view_t2 values(34, 34, 'U034');
+insert into create_view_t2 values(114, 114, 'U114');
+insert into create_view_t2 values(120, 120, 'U120');
+insert into create_view_t2 values(126, 126, 'U126');
+insert into create_view_t2 values(167, 167, 'U167');
+create view create_view_v4 as select t1.id as id, t1.age as age, t2.name as name from create_view_t1 t1, create_view_t2 t2 where t1.id=t2.id;
+select count(*) from create_view_v4;
+select count(id) from create_view_v4;
+select sum(age) from create_view_v4;
+select count(name) from create_view_v4;
+insert into create_view_v4 values(114, 114, 'DYQY03');
+insert into create_view_v4(id, age) values(34, 34);
+update create_view_v4 set age=59 where id=120;
+update create_view_v4 set age=37, name='HFZFH2J4' where id=126;
+delete from create_view_v4 where id=167;
+
 -- echo view stress count and sum
 create table create_view_stress_t1(id int, age int, name char(10));
 create view create_view_stress_v1 as select * from create_view_stress_t1;

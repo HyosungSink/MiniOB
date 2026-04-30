@@ -120,8 +120,33 @@ def normalize_sql_result(lines: list[str]) -> list[str]:
   return text.split("\n") if text else []
 
 
+def multi_table_view_name(sql: str) -> Optional[str]:
+  match = re.match(r"create\s+view\s+([a-zA-Z_][0-9a-zA-Z_]*)(?:\s*\([^)]*\))?\s+as\s+select\s+.*\s+from\s+(.+)",
+      sql.rstrip().rstrip(";"), flags=re.IGNORECASE)
+  if not match:
+    return None
+
+  from_clause = re.split(r"\bwhere\b|\bgroup\s+by\b|\border\s+by\b|\blimit\b", match.group(2), maxsplit=1,
+      flags=re.IGNORECASE)[0]
+  if "," in from_clause or re.search(r"\bjoin\b", from_clause, flags=re.IGNORECASE):
+    return match.group(1).lower()
+  return None
+
+
+def dml_target(sql: str) -> Optional[str]:
+  stripped = sql.strip()
+  for pattern in (r"insert\s+into\s+([a-zA-Z_][0-9a-zA-Z_]*)",
+                  r"update\s+([a-zA-Z_][0-9a-zA-Z_]*)",
+                  r"delete\s+from\s+([a-zA-Z_][0-9a-zA-Z_]*)"):
+    match = re.match(pattern, stripped, flags=re.IGNORECASE)
+    if match:
+      return match.group(1).lower()
+  return None
+
+
 def render_case(socket_path: str, case_path: Path) -> str:
   output: list[str] = []
+  non_updatable_views: set[str] = set()
   with MysqlMiniobResultGenerator(socket_path, case_path.stem) as runner:
     for raw_line in case_path.read_text(encoding="utf-8").splitlines():
       line = raw_line.strip()
@@ -158,8 +183,15 @@ def render_case(socket_path: str, case_path: Path) -> str:
           re.match(r"analyze\s+table\s+", line, flags=re.IGNORECASE):
         write_line(output, "SUCCESS")
         continue
+      target = dml_target(line)
+      if target in non_updatable_views:
+        write_line(output, "FAILURE")
+        continue
+      view_name = multi_table_view_name(line)
       for result_line in normalize_sql_result(runner.run_sql(line)):
         write_line(output, result_line)
+      if view_name is not None:
+        non_updatable_views.add(view_name)
 
   return "\n".join(output) + "\n"
 
