@@ -13,6 +13,7 @@ See the Mulan PSL v2 for more details. */
 //
 
 #include <fcntl.h>
+#include <unistd.h>
 
 #include "common/lang/string_view.h"
 #include "common/lang/charconv.h"
@@ -155,7 +156,7 @@ RC LogFileWriter::open(const char *filename, int end_lsn)
   filename_ = filename;
   end_lsn_ = end_lsn;
 
-  fd_ = ::open(filename, O_WRONLY | O_APPEND | O_CREAT | O_SYNC, 0644);
+  fd_ = ::open(filename, O_WRONLY | O_APPEND | O_CREAT, 0644);
   if (fd_ < 0) {
     LOG_WARN("open file failed. filename=%s, error=%s", filename, strerror(errno));
     return RC::FILE_OPEN;
@@ -173,6 +174,20 @@ RC LogFileWriter::close()
 
   ::close(fd_);
   fd_ = -1;
+  return RC::SUCCESS;
+}
+
+RC LogFileWriter::sync()
+{
+  if (fd_ < 0) {
+    return RC::FILE_NOT_OPENED;
+  }
+
+  if (0 != ::fsync(fd_)) {
+    LOG_WARN("sync file failed. filename=%s, error=%s", filename_.c_str(), strerror(errno));
+    return RC::IOERR_SYNC;
+  }
+
   return RC::SUCCESS;
 }
 

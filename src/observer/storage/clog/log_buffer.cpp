@@ -62,6 +62,7 @@ RC LogEntryBuffer::append(LSN &lsn, LogModule module, vector<char> &&data)
 RC LogEntryBuffer::flush(LogFileWriter &writer, int &count)
 {
   count = 0;
+  LSN last_written_lsn = 0;
 
   while (entry_number() > 0) {
     LogEntry entry;
@@ -85,11 +86,27 @@ RC LogEntryBuffer::flush(LogFileWriter &writer, int &count)
       entries_.emplace_front(std::move(entry));
       LogEntry &front_entry = entries_.front();
       ASSERT(front_entry.lsn() > 0 && front_entry.payload_size() > 0, "invalid log entry");
+      bytes_ += front_entry.total_size();
+      if (count > 0) {
+        RC sync_rc = writer.sync();
+        if (OB_FAIL(sync_rc)) {
+          return sync_rc;
+        }
+        flushed_lsn_ = last_written_lsn;
+      }
       return rc;
     } else {
       ++count;
-      flushed_lsn_ = entry.lsn();
+      last_written_lsn = entry.lsn();
     }
+  }
+
+  if (count > 0) {
+    RC rc = writer.sync();
+    if (OB_FAIL(rc)) {
+      return rc;
+    }
+    flushed_lsn_ = last_written_lsn;
   }
   
   return RC::SUCCESS;
@@ -102,5 +119,6 @@ int64_t LogEntryBuffer::bytes() const
 
 int32_t LogEntryBuffer::entry_number() const
 {
+  lock_guard guard(mutex_);
   return entries_.size();
 }

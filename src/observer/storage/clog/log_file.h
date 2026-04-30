@@ -73,6 +73,9 @@ public:
   /// @brief 关闭当前文件
   RC close();
 
+  /// @brief 将已经写入的日志同步到磁盘
+  RC sync();
+
   /// @brief 写入一条日志
   RC write(LogEntry &entry);
 
