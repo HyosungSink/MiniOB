@@ -26,6 +26,7 @@ See the Mulan PSL v2 for more details. */
 #include "sql/operator/project_logical_operator.h"
 #include "sql/operator/table_get_logical_operator.h"
 #include "sql/operator/group_by_logical_operator.h"
+#include "sql/operator/union_logical_operator.h"
 #include "sql/operator/update_logical_operator.h"
 
 #include "sql/stmt/calc_stmt.h"
@@ -178,6 +179,25 @@ RC LogicalPlanGenerator::create_plan(SelectStmt *select_stmt, unique_ptr<Logical
   }
 
   last_oper = &project_oper;
+
+  if (!select_stmt->union_stmts().empty()) {
+    vector<bool> union_all(select_stmt->union_all().begin(), select_stmt->union_all().end());
+    auto union_oper = make_unique<UnionLogicalOperator>(std::move(union_all));
+    union_oper->add_child(std::move(project_oper));
+
+    for (unique_ptr<SelectStmt> &union_stmt : select_stmt->union_stmts()) {
+      unique_ptr<LogicalOperator> union_child_oper;
+      rc = create_plan(union_stmt.get(), union_child_oper);
+      if (OB_FAIL(rc)) {
+        LOG_WARN("failed to create union child logical plan. rc=%s", strrc(rc));
+        return rc;
+      }
+      union_oper->add_child(std::move(union_child_oper));
+    }
+
+    logical_operator = std::move(union_oper);
+    return RC::SUCCESS;
+  }
 
   logical_operator = std::move(*last_oper);
   return RC::SUCCESS;

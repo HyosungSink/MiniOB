@@ -45,6 +45,8 @@ See the Mulan PSL v2 for more details. */
 #include "sql/operator/table_scan_vec_physical_operator.h"
 #include "sql/operator/update_logical_operator.h"
 #include "sql/operator/update_physical_operator.h"
+#include "sql/operator/union_logical_operator.h"
+#include "sql/operator/union_physical_operator.h"
 #include "sql/optimizer/physical_plan_generator.h"
 
 using namespace std;
@@ -149,6 +151,10 @@ RC PhysicalPlanGenerator::create(LogicalOperator &logical_operator, unique_ptr<P
 
     case LogicalOperatorType::GROUP_BY: {
       return create_plan(static_cast<GroupByLogicalOperator &>(logical_operator), oper, session);
+    } break;
+
+    case LogicalOperatorType::UNION: {
+      return create_plan(static_cast<UnionLogicalOperator &>(logical_operator), oper, session);
     } break;
 
     default: {
@@ -304,6 +310,23 @@ RC PhysicalPlanGenerator::create_plan(ProjectLogicalOperator &project_oper, uniq
 
   LOG_TRACE("create a project physical operator");
   return rc;
+}
+
+RC PhysicalPlanGenerator::create_plan(UnionLogicalOperator &union_oper, unique_ptr<PhysicalOperator> &oper, Session *session)
+{
+  auto union_phy_oper = make_unique<UnionPhysicalOperator>(std::move(union_oper.union_all()));
+  for (unique_ptr<LogicalOperator> &child_oper : union_oper.children()) {
+    unique_ptr<PhysicalOperator> child_phy_oper;
+    RC rc = create(*child_oper, child_phy_oper, session);
+    if (OB_FAIL(rc)) {
+      LOG_WARN("failed to create union child physical operator. rc=%s", strrc(rc));
+      return rc;
+    }
+    union_phy_oper->add_child(std::move(child_phy_oper));
+  }
+
+  oper = std::move(union_phy_oper);
+  return RC::SUCCESS;
 }
 
 RC PhysicalPlanGenerator::create_plan(InsertLogicalOperator &insert_oper, unique_ptr<PhysicalOperator> &oper, Session* session)
