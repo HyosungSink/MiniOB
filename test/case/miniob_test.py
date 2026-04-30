@@ -9,6 +9,7 @@ import socket
 import select
 import time
 import shutil
+import shlex
 import tempfile
 from typing import List, Tuple
 from enum import Enum
@@ -98,7 +99,14 @@ class MiniObServer:
   用来控制miniob的服务器程序。负责程序的启停和环境的初始化和清理工作
   '''
 
-  def __init__(self, base_dir: str, data_dir: str, config_file: str, server_port: int, server_socket: str, clean_data_dir: bool):
+  def __init__(self,
+               base_dir: str,
+               data_dir: str,
+               config_file: str,
+               server_port: int,
+               server_socket: str,
+               clean_data_dir: bool,
+               observer_args: str = ''):
     self.__check_base_dir(base_dir)
     self.__check_data_dir(data_dir, clean_data_dir)
 
@@ -111,6 +119,7 @@ class MiniObServer:
     self.__config = config_file
     self.__server_port = server_port
     self.__server_socket = server_socket.strip()
+    self.__observer_args = shlex.split(observer_args) if observer_args else []
 
     self.__process = None
 
@@ -179,6 +188,7 @@ class MiniObServer:
     else:
       observer_command.append('-p')
       observer_command.append(str(self.__server_port))
+    observer_command.extend(self.__observer_args)
 
     observer_env = os.environ.copy()
     memtracer_so = observer_env.get('MINIOB_MEMTRACER_SO', '')
@@ -962,6 +972,9 @@ def __init_options():
                             help='compile args used by make')
   options_parser.add_argument('--compile-cmake-args', action='store', dest='compile_cmake_args', default='',
                             help='compile args used by cmake')
+  options_parser.add_argument('--observer-args', action='store', dest='observer_args',
+                            default=os.getenv('MINIOB_OBSERVER_EXTRA_ARGS', ''),
+                            help='extra arguments passed to observer, e.g. "-t mvcc"')
   # 之前已经编译过，是否需要重新编译，还是直接执行make就可以了
   options_parser.add_argument('--compile-rebuild', action='store_true', default=False, dest='compile_rebuild',
                             help='whether rebuild if build path exists')
@@ -1015,6 +1028,7 @@ def __init_test_suite(options) -> TestSuite:
   test_suite.set_db_server_base_dir(__get_build_path(options.work_dir))
   test_suite.set_db_data_dir(options.work_dir + '/data')
   test_suite.set_db_config(os.path.abspath(options.project_dir + '/etc/observer.ini'))
+  test_suite.set_observer_args(options.observer_args)
 
   if options.test_cases is not None:
     test_suite.set_test_names(options.test_cases.split(','))
