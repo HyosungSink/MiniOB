@@ -29,7 +29,7 @@ public:
   RC insert_record(Record &record) override;
   RC insert_chunk(const Chunk &chunk) override;
   RC delete_record(const Record &record) override;
-  RC insert_record_with_trx(Record &record, Trx *trx) override { return RC::UNSUPPORTED; }
+  RC insert_record_with_trx(Record &record, Trx *trx) override;
   RC delete_record_with_trx(const Record &record, Trx *trx) override { return RC::UNSUPPORTED; }
   RC update_record_with_trx(const Record &old_record, const Record &new_record, Trx *trx) override
   {
@@ -55,6 +55,7 @@ private:
   RC insert_entry_of_indexes(const char *record, const RID &rid);
   RC delete_entry_of_indexes(const char *record, const RID &rid, bool error_on_not_exists);
   bool unique_key_equal(const char *left_record, const char *right_record, const IndexMeta &index_meta) const;
+  RC validate_unique_constraints(const Record &record, const RID *skip_rid, Trx *trx);
   RC validate_unique_index_existing(const IndexMeta &index_meta, Trx *trx);
 
 private:

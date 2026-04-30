@@ -67,6 +67,35 @@ RC HeapTableEngine::insert_record(Record &record)
   return rc;
 }
 
+RC HeapTableEngine::insert_record_with_trx(Record &record, Trx *trx)
+{
+  RC rc = validate_unique_constraints(record, nullptr, trx);
+  if (rc != RC::SUCCESS) {
+    return rc;
+  }
+
+  rc = record_handler_->insert_record(record.data(), table_meta_->record_size(), &record.rid());
+  if (rc != RC::SUCCESS) {
+    LOG_ERROR("Insert record failed. table name=%s, rc=%s", table_meta_->name(), strrc(rc));
+    return rc;
+  }
+
+  rc = insert_entry_of_indexes(record.data(), record.rid());
+  if (rc != RC::SUCCESS) {
+    RC rc2 = delete_entry_of_indexes(record.data(), record.rid(), false /*error_on_not_exists*/);
+    if (rc2 != RC::SUCCESS) {
+      LOG_ERROR("Failed to rollback index data when insert index entries failed. table name=%s, rc=%d:%s",
+                table_meta_->name(), rc2, strrc(rc2));
+    }
+    rc2 = record_handler_->delete_record(&record.rid());
+    if (rc2 != RC::SUCCESS) {
+      LOG_PANIC("Failed to rollback record data when insert index entries failed. table name=%s, rc=%d:%s",
+                table_meta_->name(), rc2, strrc(rc2));
+    }
+  }
+  return rc;
+}
+
 RC HeapTableEngine::insert_chunk(const Chunk& chunk)
 {
   RC rc = RC::SUCCESS;
@@ -131,6 +160,11 @@ bool HeapTableEngine::unique_key_equal(const char *left_record, const char *righ
 
 RC HeapTableEngine::validate_unique_constraints(const Record &record, const RID *skip_rid)
 {
+  return validate_unique_constraints(record, skip_rid, nullptr);
+}
+
+RC HeapTableEngine::validate_unique_constraints(const Record &record, const RID *skip_rid, Trx *trx)
+{
   bool has_unique_index = false;
   for (int i = 0; i < table_meta_->index_num(); i++) {
     const IndexMeta *index_meta = table_meta_->index(i);
@@ -144,7 +178,7 @@ RC HeapTableEngine::validate_unique_constraints(const Record &record, const RID 
   }
 
   RecordScanner *scanner = nullptr;
-  RC rc = get_record_scanner(scanner, nullptr, ReadWriteMode::READ_ONLY);
+  RC rc = get_record_scanner(scanner, trx, ReadWriteMode::READ_ONLY);
   if (OB_FAIL(rc)) {
     return rc;
   }
