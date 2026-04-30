@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <iterator>
 
 #include "common/log/log.h"
 #include "common/lang/string.h"
@@ -518,7 +519,8 @@ select_stmt:        /*  select 语句的语法解析树*/
       }
 
       if ($5 != nullptr) {
-        $$->selection.conditions.insert($$->selection.conditions.end(), $5->begin(), $5->end());
+        $$->selection.conditions.insert($$->selection.conditions.end(),
+            make_move_iterator($5->begin()), make_move_iterator($5->end()));
         delete $5;
       }
 
@@ -537,7 +539,8 @@ table_refs:
     {
       $$ = $1;
       $$->relations.insert($$->relations.end(), $3->relations.begin(), $3->relations.end());
-      $$->conditions.insert($$->conditions.end(), $3->conditions.begin(), $3->conditions.end());
+      $$->conditions.insert($$->conditions.end(),
+          make_move_iterator($3->conditions.begin()), make_move_iterator($3->conditions.end()));
       delete $3;
     }
     ;
@@ -553,7 +556,8 @@ table_ref:
       $$ = $1;
       $$->relations.emplace_back(*$4);
       if ($6 != nullptr) {
-        $$->conditions.insert($$->conditions.end(), $6->begin(), $6->end());
+        $$->conditions.insert($$->conditions.end(),
+            make_move_iterator($6->begin()), make_move_iterator($6->end()));
         delete $6;
       }
       delete $4;
@@ -705,70 +709,29 @@ where:
 condition_list:
     condition {
       $$ = new vector<ConditionSqlNode>;
-      $$->emplace_back(*$1);
+      $$->emplace_back(std::move(*$1));
       delete $1;
     }
     | condition_list AND condition {
       $$ = $1;
       $3->conjunction = ConditionConjunction::AND;
-      $$->emplace_back(*$3);
+      $$->emplace_back(std::move(*$3));
       delete $3;
     }
     | condition_list OR condition {
       $$ = $1;
       $3->conjunction = ConditionConjunction::OR;
-      $$->emplace_back(*$3);
+      $$->emplace_back(std::move(*$3));
       delete $3;
     }
     ;
 condition:
-    rel_attr comp_op value
+    expression comp_op expression
     {
       $$ = new ConditionSqlNode;
-      $$->left_is_attr = 1;
-      $$->left_attr = *$1;
-      $$->right_is_attr = 0;
-      $$->right_value = *$3;
+      $$->left_expr.reset($1);
+      $$->right_expr.reset($3);
       $$->comp = $2;
-
-      delete $1;
-      delete $3;
-    }
-    | value comp_op value 
-    {
-      $$ = new ConditionSqlNode;
-      $$->left_is_attr = 0;
-      $$->left_value = *$1;
-      $$->right_is_attr = 0;
-      $$->right_value = *$3;
-      $$->comp = $2;
-
-      delete $1;
-      delete $3;
-    }
-    | rel_attr comp_op rel_attr
-    {
-      $$ = new ConditionSqlNode;
-      $$->left_is_attr = 1;
-      $$->left_attr = *$1;
-      $$->right_is_attr = 1;
-      $$->right_attr = *$3;
-      $$->comp = $2;
-
-      delete $1;
-      delete $3;
-    }
-    | value comp_op rel_attr
-    {
-      $$ = new ConditionSqlNode;
-      $$->left_is_attr = 0;
-      $$->left_value = *$1;
-      $$->right_is_attr = 1;
-      $$->right_attr = *$3;
-      $$->comp = $2;
-
-      delete $1;
-      delete $3;
     }
     ;
 
