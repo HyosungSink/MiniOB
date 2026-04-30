@@ -36,6 +36,28 @@ static string lower_identifier(const string &identifier)
   return lowered;
 }
 
+static unique_ptr<Expression> find_projection_alias(
+    const Expression &order_expression, const vector<unique_ptr<Expression>> &bound_expressions)
+{
+  if (order_expression.type() != ExprType::UNBOUND_FIELD) {
+    return nullptr;
+  }
+
+  const auto &unbound_field = static_cast<const UnboundFieldExpr &>(order_expression);
+  if (!is_blank(unbound_field.table_name())) {
+    return nullptr;
+  }
+
+  const char *field_name = unbound_field.field_name();
+  for (const unique_ptr<Expression> &expression : bound_expressions) {
+    const char *alias = expression->name();
+    if (!is_blank(alias) && 0 == strcasecmp(alias, field_name)) {
+      return expression->copy();
+    }
+  }
+  return nullptr;
+}
+
 SelectStmt::~SelectStmt()
 {
   if (nullptr != filter_stmt_) {
@@ -120,8 +142,12 @@ RC SelectStmt::create(Db *db, SelectSqlNode &select_sql, Stmt *&stmt, const Bind
   for (OrderBySqlNode &order_by : select_sql.order_by) {
     RC rc = expression_binder.bind_expression(order_by.expression, order_by_expressions);
     if (OB_FAIL(rc)) {
-      LOG_INFO("bind order by expression failed. rc=%s", strrc(rc));
-      return rc;
+      unique_ptr<Expression> alias_expression = find_projection_alias(*order_by.expression, bound_expressions);
+      if (alias_expression == nullptr) {
+        LOG_INFO("bind order by expression failed. rc=%s", strrc(rc));
+        return rc;
+      }
+      order_by_expressions.emplace_back(std::move(alias_expression));
     }
     order_by_asc.push_back(order_by.asc);
   }
