@@ -34,7 +34,14 @@ private:
     vector<Value>  keys;
   };
 
+  struct SortKeyRef
+  {
+    int cell_index = -1;
+    int key_index  = -1;
+  };
+
   RC init_output_specs(const Tuple &tuple);
+  RC init_sort_key_refs();
   RC materialize_tuple_cells(const Tuple &tuple, ValueListTuple &value_list) const;
 
 private:
@@ -43,5 +50,6 @@ private:
   int                            limit_ = -1;
   vector<OrderedTuple>           rows_;
   vector<TupleCellSpec>           output_specs_;
+  vector<SortKeyRef>              sort_key_refs_;
   size_t                         position_ = 0;
 };

@@ -344,6 +344,8 @@ public:
     return RC::SUCCESS;
   }
 
+  const Value &cell_ref(int index) const { return cells_[index]; }
+
   RC spec_at(int index, TupleCellSpec &spec) const override
   {
     if (index < 0 || index >= cell_num()) {
