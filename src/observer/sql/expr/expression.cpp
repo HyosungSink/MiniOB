@@ -199,6 +199,9 @@ RC ComparisonExpr::compare_value(const Value &left, const Value &right, bool &re
   if (left.is_null() || right.is_null()) {
     return rc;
   }
+  if ((left.attr_type() == AttrType::VECTORS || right.attr_type() == AttrType::VECTORS) && comp_ != EQUAL_TO) {
+    return RC::UNSUPPORTED;
+  }
 
   int cmp_result = 0;
   if (left.attr_type() == AttrType::BOOLEANS && right.attr_type() == AttrType::BOOLEANS) {
@@ -1028,6 +1031,9 @@ static RC compare_with_op(CompOp comp, const Value &left, const Value &right, bo
   result = false;
   if (left.is_null() || right.is_null()) {
     return RC::SUCCESS;
+  }
+  if ((left.attr_type() == AttrType::VECTORS || right.attr_type() == AttrType::VECTORS) && comp != EQUAL_TO) {
+    return RC::UNSUPPORTED;
   }
 
   int cmp_result = 0;
