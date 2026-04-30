@@ -20,6 +20,7 @@ See the Mulan PSL v2 for more details. */
 #include "common/lang/unordered_map.h"
 #include "common/lang/memory.h"
 #include "common/lang/span.h"
+#include "sql/expr/expression.h"
 #include "sql/parser/parse_defs.h"
 #include "storage/buffer/disk_buffer_pool.h"
 #include "storage/clog/disk_log_handler.h"
@@ -37,11 +38,18 @@ struct ViewColumnMapping
   string base_column;
 };
 
+struct ViewPredicate
+{
+  ConditionConjunction conjunction = ConditionConjunction::AND;
+  unique_ptr<Expression> expression;
+};
+
 struct ViewDefinition
 {
   string                    view_name;
   string                    base_table_name;
   vector<ViewColumnMapping> columns;
+  vector<ViewPredicate>     predicates;
   bool                      updatable = false;
   bool                      mirrors_base_table = false;
 

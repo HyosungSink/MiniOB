@@ -14,6 +14,7 @@ See the Mulan PSL v2 for more details. */
 
 #include "sql/stmt/insert_stmt.h"
 #include "common/log/log.h"
+#include "sql/expr/tuple.h"
 #include "storage/db/db.h"
 #include "storage/table/table.h"
 
@@ -27,6 +28,79 @@ static RC field_index(const TableMeta &table_meta, const char *field_name, int &
     }
   }
   return RC::SCHEMA_FIELD_NOT_EXIST;
+}
+
+static RC view_row_matches(Table *base_table, const ViewDefinition &view, const vector<Value> &base_row, bool &matches)
+{
+  matches = true;
+  if (view.predicates.empty()) {
+    return RC::SUCCESS;
+  }
+
+  Record record;
+  RC rc = base_table->make_record(static_cast<int>(base_row.size()), base_row.data(), record);
+  if (OB_FAIL(rc)) {
+    return rc;
+  }
+
+  RowTuple tuple;
+  tuple.set_schema(base_table, base_table->table_meta().field_metas());
+  tuple.set_record(&record);
+
+  bool initialized = false;
+  bool result      = true;
+  for (const ViewPredicate &predicate : view.predicates) {
+    Value value;
+    rc = predicate.expression->get_value(tuple, value);
+    if (OB_FAIL(rc)) {
+      return rc;
+    }
+
+    const bool current = !value.is_null() && value.get_boolean();
+    if (!initialized) {
+      result = current;
+      initialized = true;
+    } else if (predicate.conjunction == ConditionConjunction::OR) {
+      result = result || current;
+    } else {
+      result = result && current;
+    }
+  }
+
+  matches = initialized ? result : true;
+  return RC::SUCCESS;
+}
+
+static RC project_base_row_to_view(
+    Table *base_table, Table *view_table, const ViewDefinition &view, const vector<Value> &base_row, vector<Value> &view_row)
+{
+  const TableMeta &base_meta = base_table->table_meta();
+  const TableMeta &view_meta = view_table->table_meta();
+  const int        view_field_num = view_meta.field_num() - view_meta.sys_field_num();
+
+  view_row.assign(view_field_num, Value());
+  for (Value &value : view_row) {
+    value.set_null();
+  }
+
+  for (const ViewColumnMapping &column : view.columns) {
+    int base_index = -1;
+    RC rc = field_index(base_meta, column.base_column.c_str(), base_index);
+    if (OB_FAIL(rc)) {
+      return rc;
+    }
+
+    int view_index = -1;
+    rc = field_index(view_meta, column.view_column.c_str(), view_index);
+    if (OB_FAIL(rc)) {
+      return rc;
+    }
+    if (base_index < 0 || base_index >= static_cast<int>(base_row.size())) {
+      return RC::SCHEMA_FIELD_MISSING;
+    }
+    view_row[view_index] = base_row[base_index];
+  }
+  return RC::SUCCESS;
 }
 
 static RC create_view_insert_stmt(Db *db, const InsertSqlNode &inserts, const ViewDefinition &view, Stmt *&stmt)
@@ -101,7 +175,15 @@ static RC create_view_insert_stmt(Db *db, const InsertSqlNode &inserts, const Vi
       view_row[view_index] = row[i];
     }
     base_rows.emplace_back(std::move(base_row));
-    view_rows.emplace_back(std::move(view_row));
+
+    bool matches = true;
+    RC rc = view_row_matches(base_table, view, base_rows.back(), matches);
+    if (OB_FAIL(rc)) {
+      return rc;
+    }
+    if (matches) {
+      view_rows.emplace_back(std::move(view_row));
+    }
   }
 
   auto insert_stmt = new InsertStmt(base_table, base_rows);
@@ -172,7 +254,29 @@ RC InsertStmt::create(Db *db, const InsertSqlNode &inserts, Stmt *&stmt)
       delete insert_stmt;
       return RC::SCHEMA_TABLE_NOT_EXIST;
     }
-    insert_stmt->set_mirror_insert(view_table, vector<vector<Value>>(*value_rows));
+
+    vector<vector<Value>> mirror_rows;
+    mirror_rows.reserve(value_rows->size());
+    for (const vector<Value> &row : *value_rows) {
+      bool matches = true;
+      RC rc = view_row_matches(table, *mirror_view, row, matches);
+      if (OB_FAIL(rc)) {
+        delete insert_stmt;
+        return rc;
+      }
+      if (!matches) {
+        continue;
+      }
+
+      vector<Value> mirror_row;
+      rc = project_base_row_to_view(table, view_table, *mirror_view, row, mirror_row);
+      if (OB_FAIL(rc)) {
+        delete insert_stmt;
+        return rc;
+      }
+      mirror_rows.emplace_back(std::move(mirror_row));
+    }
+    insert_stmt->set_mirror_insert(view_table, std::move(mirror_rows));
   }
   stmt = insert_stmt;
   return RC::SUCCESS;

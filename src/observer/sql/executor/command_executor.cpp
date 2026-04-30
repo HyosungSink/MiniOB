@@ -77,8 +77,19 @@ static ViewDefinition build_view_definition(const CreateViewStmt &create_view_st
     const string view_column = i < attribute_names.size() ? attribute_names[i] : expression->name();
     view.columns.push_back({view_column, field_expr->field_name()});
   }
+
+  if (select_stmt.tables().size() == 1) {
+    for (const FilterUnit *unit : select_stmt.filter_stmt()->filter_units()) {
+      ViewPredicate predicate;
+      predicate.conjunction = unit->conjunction();
+      predicate.expression = make_unique<ComparisonExpr>(
+          unit->comp(), unit->left().expression->copy(), unit->right().expression->copy());
+      view.predicates.emplace_back(std::move(predicate));
+    }
+  }
+
   view.updatable = !view.columns.empty();
-  if (view.updatable && select_stmt.tables().size() == 1 && select_stmt.filter_stmt()->filter_units().empty() &&
+  if (view.updatable && select_stmt.tables().size() == 1 &&
       select_stmt.having_filter_stmt()->filter_units().empty() && select_stmt.order_by().empty() && select_stmt.limit() < 0) {
     const TableMeta &base_meta = select_stmt.tables().front()->table_meta();
     int visible_field_num = base_meta.field_num() - base_meta.sys_field_num();
