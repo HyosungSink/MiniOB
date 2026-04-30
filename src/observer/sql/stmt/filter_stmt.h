@@ -17,6 +17,7 @@ See the Mulan PSL v2 for more details. */
 #include "common/lang/unordered_map.h"
 #include "common/lang/vector.h"
 #include "sql/expr/expression.h"
+#include "sql/parser/expression_binder.h"
 #include "sql/parser/parse_defs.h"
 #include "sql/stmt/stmt.h"
 
@@ -26,21 +27,7 @@ class FieldMeta;
 
 struct FilterObj
 {
-  bool  is_attr;
-  Field field;
-  Value value;
-
-  void init_attr(const Field &field)
-  {
-    is_attr     = true;
-    this->field = field;
-  }
-
-  void init_value(const Value &value)
-  {
-    is_attr     = false;
-    this->value = value;
-  }
+  unique_ptr<Expression> expression;
 };
 
 class FilterUnit
@@ -56,8 +43,8 @@ public:
   void set_conjunction(ConditionConjunction conjunction) { conjunction_ = conjunction; }
   ConditionConjunction conjunction() const { return conjunction_; }
 
-  void set_left(const FilterObj &obj) { left_ = obj; }
-  void set_right(const FilterObj &obj) { right_ = obj; }
+  void set_left(unique_ptr<Expression> expr) { left_.expression = std::move(expr); }
+  void set_right(unique_ptr<Expression> expr) { right_.expression = std::move(expr); }
 
   const FilterObj &left() const { return left_; }
   const FilterObj &right() const { return right_; }
@@ -87,7 +74,7 @@ public:
       const ConditionSqlNode *conditions, int condition_num, FilterStmt *&stmt);
 
   static RC create_filter_unit(Db *db, Table *default_table, unordered_map<string, Table *> *tables,
-      const ConditionSqlNode &condition, FilterUnit *&filter_unit);
+      const ConditionSqlNode &condition, FilterUnit *&filter_unit, BinderContext *binder_context = nullptr);
 
 private:
   vector<FilterUnit *> filter_units_;

@@ -16,6 +16,7 @@ See the Mulan PSL v2 for more details. */
 #include "common/lang/string.h"
 #include "common/log/log.h"
 #include "common/sys/rc.h"
+#include "sql/parser/expression_binder.h"
 #include "storage/db/db.h"
 #include "storage/table/table.h"
 
@@ -33,11 +34,26 @@ RC FilterStmt::create(Db *db, Table *default_table, unordered_map<string, Table 
   RC rc = RC::SUCCESS;
   stmt  = nullptr;
 
+  BinderContext binder_context;
+  if (tables != nullptr) {
+    for (auto &entry : *tables) {
+      const string &name  = entry.first;
+      Table        *table = entry.second;
+      string alias;
+      if (0 != strcasecmp(name.c_str(), table->name())) {
+        alias = name;
+      }
+      binder_context.add_table(table, alias);
+    }
+  } else if (default_table != nullptr) {
+    binder_context.add_table(default_table, "");
+  }
+
   FilterStmt *tmp_stmt = new FilterStmt();
   for (int i = 0; i < condition_num; i++) {
     FilterUnit *filter_unit = nullptr;
 
-    rc = create_filter_unit(db, default_table, tables, conditions[i], filter_unit);
+    rc = create_filter_unit(db, default_table, tables, conditions[i], filter_unit, &binder_context);
     if (rc != RC::SUCCESS) {
       delete tmp_stmt;
       LOG_WARN("failed to create filter unit. condition index=%d", i);
@@ -79,7 +95,7 @@ RC get_table_and_field(Db *db, Table *default_table, unordered_map<string, Table
 }
 
 RC FilterStmt::create_filter_unit(Db *db, Table *default_table, unordered_map<string, Table *> *tables,
-    const ConditionSqlNode &condition, FilterUnit *&filter_unit)
+    const ConditionSqlNode &condition, FilterUnit *&filter_unit, BinderContext *binder_context)
 {
   RC rc = RC::SUCCESS;
 
@@ -91,39 +107,44 @@ RC FilterStmt::create_filter_unit(Db *db, Table *default_table, unordered_map<st
 
   filter_unit = new FilterUnit;
 
-  if (condition.left_is_attr) {
-    Table           *table = nullptr;
-    const FieldMeta *field = nullptr;
-    rc                     = get_table_and_field(db, default_table, tables, condition.left_attr, table, field);
-    if (rc != RC::SUCCESS) {
-      LOG_WARN("cannot find attr");
-      return rc;
-    }
-    FilterObj filter_obj;
-    filter_obj.init_attr(Field(table, field));
-    filter_unit->set_left(filter_obj);
-  } else {
-    FilterObj filter_obj;
-    filter_obj.init_value(condition.left_value);
-    filter_unit->set_left(filter_obj);
+  if (condition.left_expr == nullptr || condition.right_expr == nullptr || binder_context == nullptr) {
+    LOG_WARN("invalid filter expression");
+    delete filter_unit;
+    filter_unit = nullptr;
+    return RC::INVALID_ARGUMENT;
   }
 
-  if (condition.right_is_attr) {
-    Table           *table = nullptr;
-    const FieldMeta *field = nullptr;
-    rc                     = get_table_and_field(db, default_table, tables, condition.right_attr, table, field);
-    if (rc != RC::SUCCESS) {
-      LOG_WARN("cannot find attr");
-      return rc;
-    }
-    FilterObj filter_obj;
-    filter_obj.init_attr(Field(table, field));
-    filter_unit->set_right(filter_obj);
-  } else {
-    FilterObj filter_obj;
-    filter_obj.init_value(condition.right_value);
-    filter_unit->set_right(filter_obj);
+  ExpressionBinder expression_binder(*binder_context);
+
+  unique_ptr<Expression> left_expr = condition.left_expr->copy();
+  vector<unique_ptr<Expression>> left_bound_expressions;
+  rc = expression_binder.bind_expression(left_expr, left_bound_expressions);
+  if (OB_FAIL(rc)) {
+    delete filter_unit;
+    filter_unit = nullptr;
+    return rc;
   }
+  if (left_bound_expressions.size() != 1) {
+    delete filter_unit;
+    filter_unit = nullptr;
+    return RC::INVALID_ARGUMENT;
+  }
+  filter_unit->set_left(std::move(left_bound_expressions[0]));
+
+  unique_ptr<Expression> right_expr = condition.right_expr->copy();
+  vector<unique_ptr<Expression>> right_bound_expressions;
+  rc = expression_binder.bind_expression(right_expr, right_bound_expressions);
+  if (OB_FAIL(rc)) {
+    delete filter_unit;
+    filter_unit = nullptr;
+    return rc;
+  }
+  if (right_bound_expressions.size() != 1) {
+    delete filter_unit;
+    filter_unit = nullptr;
+    return RC::INVALID_ARGUMENT;
+  }
+  filter_unit->set_right(std::move(right_bound_expressions[0]));
 
   filter_unit->set_comp(comp);
   filter_unit->set_conjunction(condition.conjunction);
