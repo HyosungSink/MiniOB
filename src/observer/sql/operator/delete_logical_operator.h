@@ -29,7 +29,10 @@ public:
   LogicalOperatorType type() const override { return LogicalOperatorType::DELETE; }
   OpType              get_op_type() const override { return OpType::LOGICALDELETE; }
   Table              *table() const { return table_; }
+  void                set_mirror_delete(Table *table) { mirror_table_ = table; }
+  Table              *mirror_table() const { return mirror_table_; }
 
 private:
-  Table *table_ = nullptr;
+  Table *table_        = nullptr;
+  Table *mirror_table_ = nullptr;
 };

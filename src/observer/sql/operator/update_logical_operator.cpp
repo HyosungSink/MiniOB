@@ -15,3 +15,11 @@ UpdateLogicalOperator::UpdateLogicalOperator(
     Table *table, const vector<const FieldMeta *> &field_metas, vector<unique_ptr<Expression>> &&expressions)
     : table_(table), field_metas_(field_metas), expressions_(std::move(expressions))
 {}
+
+void UpdateLogicalOperator::set_mirror_update(
+    Table *table, vector<const FieldMeta *> &&field_metas, vector<unique_ptr<Expression>> &&expressions)
+{
+  mirror_table_       = table;
+  mirror_field_metas_ = std::move(field_metas);
+  mirror_expressions_ = std::move(expressions);
+}

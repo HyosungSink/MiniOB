@@ -37,9 +37,18 @@ public:
   vector<unique_ptr<Expression>> &expressions() { return expressions_; }
   const vector<unique_ptr<Expression>> &expressions() const { return expressions_; }
   const FieldMeta               *field_meta() const { return field_metas_.empty() ? nullptr : field_metas_.front(); }
+  void set_mirror_update(
+      Table *table, vector<const FieldMeta *> &&field_metas, vector<unique_ptr<Expression>> &&expressions);
+  Table                         *mirror_table() const { return mirror_table_; }
+  const vector<const FieldMeta *> &mirror_field_metas() const { return mirror_field_metas_; }
+  vector<unique_ptr<Expression>> &mirror_expressions() { return mirror_expressions_; }
+  const vector<unique_ptr<Expression>> &mirror_expressions() const { return mirror_expressions_; }
 
 private:
   Table                    *table_ = nullptr;
   vector<const FieldMeta *> field_metas_;
   vector<unique_ptr<Expression>> expressions_;
+  Table                    *mirror_table_ = nullptr;
+  vector<const FieldMeta *> mirror_field_metas_;
+  vector<unique_ptr<Expression>> mirror_expressions_;
 };
