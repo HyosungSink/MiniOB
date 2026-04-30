@@ -25,6 +25,7 @@ select b1, c1, d1 from big_order_b, big_order_c, big_order_d order by b1 asc, b2
 
 -- echo order by every field prefix
 select a1, b1, c1, d1 from big_order_a, big_order_b, big_order_c, big_order_d order by a1, a2, a3, a4, a5, b1, b2, b3, b4, b5, c1, c2, c3, c4, c5, d1, d2, d3, d4, d5 limit 15;
+select * from big_order_a, big_order_b, big_order_c, big_order_d order by a11, d9, d14, d15, d16, c15, b4, d13, a1, b1, c1, d1 limit 5;
 
 -- echo big order boundary errors
 select a1 from big_order_a order by missing_col;
