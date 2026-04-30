@@ -70,3 +70,17 @@ calc 20/0;
 calc 13.2/0.0;
 calc "123" + 4;
 calc "abc" + 4;
+
+-- echo fused primary insert coverage
+CREATE TABLE p01_insert_table(id int, t_name char, col1 int, col2 int);
+INSERT INTO p01_insert_table VALUES (1,'N1',1,1);
+INSERT INTO p01_insert_table VALUES (2,'N2',1,1),(3,'N3',2,1);
+INSERT INTO p01_insert_table VALUES (4,'N4',1,1),(1,1,1);
+INSERT INTO p01_insert_table VALUES (4,'N4',1,1),(1,1,1,1);
+-- sort SELECT * FROM p01_insert_table;
+
+-- echo fused primary select meta coverage
+CREATE TABLE p01_select_meta(id int, age int);
+select * from p01_no_table;
+select home from p01_select_meta;
+select * from p01_select_meta where home='001';
