@@ -60,6 +60,15 @@ insert into t_update_mvcc values(13, 13, 'a');
 insert into t_update_mvcc values(14, 14, 'a');
 insert into t_update_mvcc values(15, 15, 'a');
 insert into t_update_mvcc values(16, 16, 'a');
+insert into t_update_mvcc values(17, 17, 'a');
+insert into t_update_mvcc values(18, 18, 'a');
+insert into t_update_mvcc values(19, 19, 'a');
+insert into t_update_mvcc values(20, 20, 'a');
+insert into t_update_mvcc values(21, 21, 'a');
+insert into t_update_mvcc values(22, 22, 'a');
+insert into t_update_mvcc values(23, 23, 'a');
+insert into t_update_mvcc values(24, 24, 'a');
+insert into t_update_mvcc values(25, 25, 'a');
 -- connect client1
 -- connect client2
 -- connection client1
@@ -68,3 +77,10 @@ update t_update_mvcc set age = 954 where id = 16;
 select age from t_update_mvcc where id = 16;
 commit;
 select age from t_update_mvcc where id = 16;
+begin;
+update t_update_mvcc set age = 390 where id = 25;
+commit;
+begin;
+update t_update_mvcc set age = 394 where id = 25;
+select age from t_update_mvcc where id = 25;
+commit;
