@@ -18,6 +18,7 @@ See the Mulan PSL v2 for more details. */
 #include "common/lang/vector.h"
 
 class SqlResult;
+class Tuple;
 
 /**
  * @brief 与客户端进行通讯
@@ -37,7 +38,8 @@ private:
   RC write_state(SessionEvent *event, bool &need_disconnect);
   RC write_debug(SessionEvent *event, bool &need_disconnect);
   RC write_result_internal(SessionEvent *event, bool &need_disconnect);
-  RC write_tuple_result(SqlResult *sql_result);
+  RC write_tuple_row(SqlResult *sql_result, Tuple *tuple);
+  RC write_tuple_result(SqlResult *sql_result, Tuple *first_tuple, bool eof_prefetched);
   RC write_chunk_result(SqlResult *sql_result);
 
 protected:

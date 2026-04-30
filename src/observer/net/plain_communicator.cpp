@@ -207,6 +207,22 @@ RC PlainCommunicator::write_result_internal(SessionEvent *event, bool &need_disc
 
   const TupleSchema &schema   = sql_result->tuple_schema();
   const int          cell_num = schema.cell_num();
+  const bool         use_chunk_result = event->session()->get_execution_mode() == ExecutionMode::CHUNK_ITERATOR
+                                && event->session()->used_chunk_mode();
+
+  Tuple *first_tuple = nullptr;
+  bool   eof_prefetched = false;
+  if (!use_chunk_result) {
+    rc = sql_result->next_tuple(first_tuple);
+    if (rc == RC::RECORD_EOF) {
+      rc             = RC::SUCCESS;
+      eof_prefetched = true;
+    } else if (OB_FAIL(rc)) {
+      sql_result->set_return_code(rc);
+      sql_result->close();
+      return write_state(event, need_disconnect);
+    }
+  }
 
   for (int i = 0; i < cell_num; i++) {
     const TupleCellSpec &spec  = schema.cell_at(i);
@@ -245,11 +261,10 @@ RC PlainCommunicator::write_result_internal(SessionEvent *event, bool &need_disc
   }
 
   rc = RC::SUCCESS;
-  if (event->session()->get_execution_mode() == ExecutionMode::CHUNK_ITERATOR
-      && event->session()->used_chunk_mode()) {
+  if (use_chunk_result) {
     rc = write_chunk_result(sql_result);
   } else {
-    rc = write_tuple_result(sql_result);
+    rc = write_tuple_result(sql_result, first_tuple, eof_prefetched);
   }
 
   if (OB_FAIL(rc)) {
@@ -278,37 +293,17 @@ RC PlainCommunicator::write_result_internal(SessionEvent *event, bool &need_disc
   return rc;
 }
 
-RC PlainCommunicator::write_tuple_result(SqlResult *sql_result)
+RC PlainCommunicator::write_tuple_row(SqlResult *sql_result, Tuple *tuple)
 {
   RC rc = RC::SUCCESS;
-  Tuple *tuple = nullptr;
-  while (RC::SUCCESS == (rc = sql_result->next_tuple(tuple))) {
-    assert(tuple != nullptr);
+  assert(tuple != nullptr);
 
-    int cell_num = tuple->cell_num();
-    for (int i = 0; i < cell_num; i++) {
-      if (i != 0) {
-        const char *delim = " | ";
+  int cell_num = tuple->cell_num();
+  for (int i = 0; i < cell_num; i++) {
+    if (i != 0) {
+      const char *delim = " | ";
 
-        rc = writer_->writen(delim, strlen(delim));
-        if (OB_FAIL(rc)) {
-          LOG_WARN("failed to send data to client. err=%s", strerror(errno));
-          sql_result->close();
-          return rc;
-        }
-      }
-
-      Value value;
-      rc = tuple->cell_at(i, value);
-      if (rc != RC::SUCCESS) {
-        LOG_WARN("failed to get tuple cell value. rc=%s", strrc(rc));
-        sql_result->close();
-        return rc;
-      }
-
-      string cell_str = value.to_string();
-
-      rc = writer_->writen(cell_str.data(), cell_str.size());
+      rc = writer_->writen(delim, strlen(delim));
       if (OB_FAIL(rc)) {
         LOG_WARN("failed to send data to client. err=%s", strerror(errno));
         sql_result->close();
@@ -316,12 +311,51 @@ RC PlainCommunicator::write_tuple_result(SqlResult *sql_result)
       }
     }
 
-    char newline = '\n';
+    Value value;
+    rc = tuple->cell_at(i, value);
+    if (rc != RC::SUCCESS) {
+      LOG_WARN("failed to get tuple cell value. rc=%s", strrc(rc));
+      sql_result->close();
+      return rc;
+    }
 
-    rc = writer_->writen(&newline, 1);
+    string cell_str = value.to_string();
+
+    rc = writer_->writen(cell_str.data(), cell_str.size());
     if (OB_FAIL(rc)) {
       LOG_WARN("failed to send data to client. err=%s", strerror(errno));
       sql_result->close();
+      return rc;
+    }
+  }
+
+  char newline = '\n';
+  rc = writer_->writen(&newline, 1);
+  if (OB_FAIL(rc)) {
+    LOG_WARN("failed to send data to client. err=%s", strerror(errno));
+    sql_result->close();
+  }
+  return rc;
+}
+
+RC PlainCommunicator::write_tuple_result(SqlResult *sql_result, Tuple *first_tuple, bool eof_prefetched)
+{
+  RC rc = RC::SUCCESS;
+  if (first_tuple != nullptr) {
+    rc = write_tuple_row(sql_result, first_tuple);
+    if (OB_FAIL(rc)) {
+      return rc;
+    }
+  }
+
+  if (eof_prefetched) {
+    return RC::SUCCESS;
+  }
+
+  Tuple *tuple = nullptr;
+  while (RC::SUCCESS == (rc = sql_result->next_tuple(tuple))) {
+    rc = write_tuple_row(sql_result, tuple);
+    if (OB_FAIL(rc)) {
       return rc;
     }
   }
