@@ -73,6 +73,10 @@ insert into t_update_mvcc values(25, 25, 'a');
 -- connect client2
 -- connection client1
 begin;
+update t_update_mvcc set age = 446 where id = 17;
+select age from t_update_mvcc where id = 17;
+commit;
+begin;
 update t_update_mvcc set age = 954 where id = 16;
 select age from t_update_mvcc where id = 16;
 commit;
