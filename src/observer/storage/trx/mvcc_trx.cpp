@@ -259,6 +259,10 @@ RC MvccTrx::start_if_need()
 
 RC MvccTrx::commit()
 {
+  if (!started_ && operations_.empty()) {
+    return RC::SUCCESS;
+  }
+
   int32_t commit_id = trx_kit_.next_trx_id();
   return commit_with_trx_id(commit_id);
 }
@@ -333,6 +337,10 @@ RC MvccTrx::commit_with_trx_id(int32_t commit_xid)
 
 RC MvccTrx::rollback()
 {
+  if (!started_ && operations_.empty()) {
+    return RC::SUCCESS;
+  }
+
   RC rc    = RC::SUCCESS;
   started_ = false;
 
