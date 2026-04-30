@@ -120,14 +120,18 @@ public:
   string   get_string() const;
   string_t get_string_t() const;
   bool     get_boolean() const;
+  const float *get_vector() const;
+  int          get_vector_dimension() const;
 
 public:
   void set_int(int val);
   void set_float(float val, int precision = 2);
   void set_date(int val);
   void set_string(const char *s, int len = 0);
+  void set_vector(const float *values, int dimension);
   void set_empty_string(int len);
   void set_string_from_other(const Value &other);
+  void set_vector_from_other(const Value &other);
 
 private:
   AttrType attr_type_ = AttrType::UNDEFINED;
