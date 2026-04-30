@@ -17,6 +17,10 @@ See the Mulan PSL v2 for more details. */
 #include "sql/expr/tuple.h"
 #include "sql/expr/arithmetic_operator.hpp"
 
+#include <cmath>
+#include <cstdio>
+#include <strings.h>
+
 using namespace std;
 
 RC FieldExpr::get_value(const Tuple &tuple, Value &value) const
@@ -613,6 +617,184 @@ unique_ptr<Expression> UnboundFunctionExpr::copy() const
     arguments.emplace_back(argument->copy());
   }
   return make_unique<UnboundFunctionExpr>(function_name_.c_str(), std::move(arguments));
+}
+
+////////////////////////////////////////////////////////////////////////////////
+FunctionExpr::FunctionExpr(Type type, vector<unique_ptr<Expression>> arguments)
+    : function_type_(type), arguments_(std::move(arguments))
+{}
+
+unique_ptr<Expression> FunctionExpr::copy() const
+{
+  vector<unique_ptr<Expression>> arguments;
+  for (const unique_ptr<Expression> &argument : arguments_) {
+    arguments.emplace_back(argument->copy());
+  }
+  auto expr = make_unique<FunctionExpr>(function_type_, std::move(arguments));
+  expr->set_name(name());
+  return expr;
+}
+
+AttrType FunctionExpr::value_type() const
+{
+  switch (function_type_) {
+    case Type::LENGTH: return AttrType::INTS;
+    case Type::ROUND: return arguments_.size() == 1 ? AttrType::INTS : AttrType::FLOATS;
+    case Type::DATE_FORMAT: return AttrType::CHARS;
+  }
+  return AttrType::UNDEFINED;
+}
+
+int FunctionExpr::value_length() const
+{
+  switch (value_type()) {
+    case AttrType::INTS: return sizeof(int);
+    case AttrType::FLOATS: return sizeof(float);
+    case AttrType::CHARS: return 64;
+    default: return -1;
+  }
+}
+
+static string ordinal_day(int day)
+{
+  const char *suffix = "TH";
+  if (day % 100 < 11 || day % 100 > 13) {
+    switch (day % 10) {
+      case 1: suffix = "ST"; break;
+      case 2: suffix = "ND"; break;
+      case 3: suffix = "RD"; break;
+      default: break;
+    }
+  }
+
+  char buffer[16];
+  snprintf(buffer, sizeof(buffer), "%d%s", day, suffix);
+  return string(buffer);
+}
+
+static string format_date_value(int date, const string &format)
+{
+  static const char *MONTH_NAMES[] = {"", "January", "February", "March", "April", "May", "June",
+      "July", "August", "September", "October", "November", "December"};
+
+  int year  = date / 10000;
+  int month = (date / 100) % 100;
+  int day   = date % 100;
+
+  string result;
+  char   buffer[32];
+  for (size_t i = 0; i < format.size(); i++) {
+    if (format[i] != '%' || i + 1 >= format.size()) {
+      result.push_back(format[i]);
+      continue;
+    }
+
+    char spec = format[++i];
+    switch (spec) {
+      case 'Y':
+        snprintf(buffer, sizeof(buffer), "%04d", year);
+        result.append(buffer);
+        break;
+      case 'y':
+        snprintf(buffer, sizeof(buffer), "%02d", year % 100);
+        result.append(buffer);
+        break;
+      case 'm':
+        snprintf(buffer, sizeof(buffer), "%02d", month);
+        result.append(buffer);
+        break;
+      case 'd':
+        snprintf(buffer, sizeof(buffer), "%02d", day);
+        result.append(buffer);
+        break;
+      case 'D': result.append(ordinal_day(day)); break;
+      case 'M':
+        if (month >= 1 && month <= 12) {
+          result.append(MONTH_NAMES[month]);
+        }
+        break;
+      default: result.push_back(spec); break;
+    }
+  }
+  return result;
+}
+
+RC FunctionExpr::eval_arguments(const vector<Value> &arguments, Value &value) const
+{
+  for (const Value &argument : arguments) {
+    if (argument.is_null()) {
+      value.set_null();
+      return RC::SUCCESS;
+    }
+  }
+
+  switch (function_type_) {
+    case Type::LENGTH: {
+      value.set_int(static_cast<int>(arguments[0].get_string_t().size()));
+    } break;
+    case Type::ROUND: {
+      float input = arguments[0].get_float();
+      if (arguments.size() == 1) {
+        value.set_int(static_cast<int>(std::trunc(input)));
+      } else {
+        int   precision = arguments[1].get_int();
+        float scale     = std::pow(10.0f, static_cast<float>(precision));
+        value.set_float(std::trunc(input * scale) / scale);
+      }
+    } break;
+    case Type::DATE_FORMAT: {
+      value.set_string(format_date_value(arguments[0].get_date(), arguments[1].get_string()).c_str());
+    } break;
+  }
+
+  return RC::SUCCESS;
+}
+
+RC FunctionExpr::get_value(const Tuple &tuple, Value &value) const
+{
+  vector<Value> arguments;
+  arguments.reserve(arguments_.size());
+  for (const unique_ptr<Expression> &argument_expr : arguments_) {
+    Value argument;
+    RC rc = argument_expr->get_value(tuple, argument);
+    if (OB_FAIL(rc)) {
+      return rc;
+    }
+    arguments.emplace_back(std::move(argument));
+  }
+  return eval_arguments(arguments, value);
+}
+
+RC FunctionExpr::try_get_value(Value &value) const
+{
+  vector<Value> arguments;
+  arguments.reserve(arguments_.size());
+  for (const unique_ptr<Expression> &argument_expr : arguments_) {
+    Value argument;
+    RC rc = argument_expr->try_get_value(argument);
+    if (OB_FAIL(rc)) {
+      return rc;
+    }
+    arguments.emplace_back(std::move(argument));
+  }
+  return eval_arguments(arguments, value);
+}
+
+RC FunctionExpr::type_from_string(const char *type_str, FunctionExpr::Type &type)
+{
+  if (0 == strcasecmp(type_str, "length")) {
+    type = Type::LENGTH;
+    return RC::SUCCESS;
+  }
+  if (0 == strcasecmp(type_str, "round")) {
+    type = Type::ROUND;
+    return RC::SUCCESS;
+  }
+  if (0 == strcasecmp(type_str, "date_format")) {
+    type = Type::DATE_FORMAT;
+    return RC::SUCCESS;
+  }
+  return RC::INVALID_ARGUMENT;
 }
 
 ////////////////////////////////////////////////////////////////////////////////

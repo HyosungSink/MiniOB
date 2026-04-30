@@ -47,6 +47,7 @@ enum class ExprType
   COMPARISON,   ///< 需要做比较的表达式
   CONJUNCTION,  ///< 多个表达式使用同一种关系(AND或OR)来联结
   ARITHMETIC,   ///< 算术运算
+  FUNCTION,     ///< 标量函数
   AGGREGATION,  ///< 聚合运算
 };
 
@@ -486,6 +487,45 @@ public:
 
 private:
   string                         function_name_;
+  vector<unique_ptr<Expression>> arguments_;
+};
+
+class FunctionExpr : public Expression
+{
+public:
+  enum class Type
+  {
+    LENGTH,
+    ROUND,
+    DATE_FORMAT,
+  };
+
+public:
+  FunctionExpr(Type type, vector<unique_ptr<Expression>> arguments);
+  virtual ~FunctionExpr() = default;
+
+  unique_ptr<Expression> copy() const override;
+
+  ExprType type() const override { return ExprType::FUNCTION; }
+
+  AttrType value_type() const override;
+  int      value_length() const override;
+
+  RC get_value(const Tuple &tuple, Value &value) const override;
+  RC try_get_value(Value &value) const override;
+
+  Type function_type() const { return function_type_; }
+
+  vector<unique_ptr<Expression>> &arguments() { return arguments_; }
+
+public:
+  static RC type_from_string(const char *type_str, Type &type);
+
+private:
+  RC eval_arguments(const vector<Value> &arguments, Value &value) const;
+
+private:
+  Type                           function_type_;
   vector<unique_ptr<Expression>> arguments_;
 };
 

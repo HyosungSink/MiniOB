@@ -59,6 +59,16 @@ RC ExpressionIterator::iterate_child_expr(Expression &expr, function<RC(unique_p
       }
     } break;
 
+    case ExprType::FUNCTION: {
+      auto &function_expr = static_cast<FunctionExpr &>(expr);
+      for (auto &argument : function_expr.arguments()) {
+        rc = callback(argument);
+        if (OB_FAIL(rc)) {
+          break;
+        }
+      }
+    } break;
+
     case ExprType::AGGREGATION: {
       auto &aggregate_expr = static_cast<AggregateExpr &>(expr);
       rc = callback(aggregate_expr.child());
@@ -67,6 +77,7 @@ RC ExpressionIterator::iterate_child_expr(Expression &expr, function<RC(unique_p
     case ExprType::NONE:
     case ExprType::STAR:
     case ExprType::UNBOUND_FIELD:
+    case ExprType::UNBOUND_FUNCTION:
     case ExprType::FIELD:
     case ExprType::VALUE: {
       // Do nothing
