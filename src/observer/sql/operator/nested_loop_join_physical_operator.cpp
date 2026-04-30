@@ -16,6 +16,10 @@ See the Mulan PSL v2 for more details. */
 
 NestedLoopJoinPhysicalOperator::NestedLoopJoinPhysicalOperator() {}
 
+NestedLoopJoinPhysicalOperator::NestedLoopJoinPhysicalOperator(vector<unique_ptr<Expression>> predicates)
+    : predicates_(std::move(predicates))
+{}
+
 RC NestedLoopJoinPhysicalOperator::open(Trx *trx)
 {
   if (children_.size() != 2) {
@@ -59,6 +63,15 @@ RC NestedLoopJoinPhysicalOperator::next()
       } else {
         return rc;
       }
+    }
+
+    bool filter_result = true;
+    rc = filter(filter_result);
+    if (rc != RC::SUCCESS) {
+      return rc;
+    }
+    if (filter_result) {
+      return RC::SUCCESS;
     }
   }
   return rc;
@@ -130,4 +143,22 @@ RC NestedLoopJoinPhysicalOperator::right_next()
   right_tuple_ = right_->current_tuple();
   joined_tuple_.set_right(right_tuple_);
   return rc;
+}
+
+RC NestedLoopJoinPhysicalOperator::filter(bool &result)
+{
+  RC    rc = RC::SUCCESS;
+  Value value;
+  for (unique_ptr<Expression> &expr : predicates_) {
+    rc = expr->get_value(joined_tuple_, value);
+    if (rc != RC::SUCCESS) {
+      return rc;
+    }
+    if (!value.get_boolean()) {
+      result = false;
+      return RC::SUCCESS;
+    }
+  }
+  result = true;
+  return RC::SUCCESS;
 }

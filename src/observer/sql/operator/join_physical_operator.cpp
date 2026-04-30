@@ -16,6 +16,10 @@ See the Mulan PSL v2 for more details. */
 
 NestedLoopJoinPhysicalOperator::NestedLoopJoinPhysicalOperator() {}
 
+NestedLoopJoinPhysicalOperator::NestedLoopJoinPhysicalOperator(vector<unique_ptr<Expression>> predicates)
+    : predicates_(std::move(predicates))
+{}
+
 RC NestedLoopJoinPhysicalOperator::open(Trx *trx)
 {
   if (children_.size() != 2) {
@@ -36,31 +40,40 @@ RC NestedLoopJoinPhysicalOperator::open(Trx *trx)
 
 RC NestedLoopJoinPhysicalOperator::next()
 {
-  bool left_need_step = (left_tuple_ == nullptr);
   RC   rc             = RC::SUCCESS;
-  if (round_done_) {
-    left_need_step = true;
-  } else {
+  while (RC::SUCCESS == rc) {
+    bool left_need_step = (left_tuple_ == nullptr);
+    if (round_done_) {
+      left_need_step = true;
+    }
+
+    if (left_need_step) {
+      rc = left_next();
+      if (rc != RC::SUCCESS) {
+        return rc;
+      }
+    }
+
     rc = right_next();
     if (rc != RC::SUCCESS) {
       if (rc == RC::RECORD_EOF) {
-        left_need_step = true;
+        rc = RC::SUCCESS;
+        round_done_ = true;
+        continue;
       } else {
         return rc;
       }
-    } else {
-      return rc;  // got one tuple from right
     }
-  }
 
-  if (left_need_step) {
-    rc = left_next();
+    bool filter_result = true;
+    rc = filter(filter_result);
     if (rc != RC::SUCCESS) {
       return rc;
     }
+    if (filter_result) {
+      return RC::SUCCESS;
+    }
   }
-
-  rc = right_next();
   return rc;
 }
 
@@ -130,4 +143,22 @@ RC NestedLoopJoinPhysicalOperator::right_next()
   right_tuple_ = right_->current_tuple();
   joined_tuple_.set_right(right_tuple_);
   return rc;
+}
+
+RC NestedLoopJoinPhysicalOperator::filter(bool &result)
+{
+  RC    rc = RC::SUCCESS;
+  Value value;
+  for (unique_ptr<Expression> &expr : predicates_) {
+    rc = expr->get_value(joined_tuple_, value);
+    if (rc != RC::SUCCESS) {
+      return rc;
+    }
+    if (!value.get_boolean()) {
+      result = false;
+      return RC::SUCCESS;
+    }
+  }
+  result = true;
+  return RC::SUCCESS;
 }

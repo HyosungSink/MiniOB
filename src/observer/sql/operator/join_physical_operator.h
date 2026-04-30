@@ -26,9 +26,21 @@ class NestedLoopJoinPhysicalOperator : public PhysicalOperator
 {
 public:
   NestedLoopJoinPhysicalOperator();
+  explicit NestedLoopJoinPhysicalOperator(vector<unique_ptr<Expression>> predicates);
   virtual ~NestedLoopJoinPhysicalOperator() = default;
 
   PhysicalOperatorType type() const override { return PhysicalOperatorType::NESTED_LOOP_JOIN; }
+
+  OpType get_op_type() const override { return OpType::INNERNLJOIN; }
+
+  virtual double calculate_cost(
+      LogicalProperty *prop, const vector<LogicalProperty *> &child_log_props, CostModel *cm) override
+  {
+    if (child_log_props.size() != 2) {
+      return 0.0;
+    }
+    return child_log_props[0]->get_card() * child_log_props[1]->get_card() * cm->cpu_op();
+  }
 
   RC     open(Trx *trx) override;
   RC     next() override;
@@ -38,6 +50,7 @@ public:
 private:
   RC left_next();   //! 左表遍历下一条数据
   RC right_next();  //! 右表遍历下一条数据，如果上一轮结束了就重新开始新的一轮
+  RC filter(bool &result);
 
 private:
   Trx *trx_ = nullptr;
@@ -50,4 +63,5 @@ private:
   JoinedTuple       joined_tuple_;         //! 当前关联的左右两个tuple
   bool              round_done_   = true;  //! 右表遍历的一轮是否结束
   bool              right_closed_ = true;  //! 右表算子是否已经关闭
+  vector<unique_ptr<Expression>> predicates_;
 };
