@@ -55,3 +55,88 @@ select * from null_table6;
 -- echo null boundary errors
 insert into null_t values(null, 1, 1.0, 'x');
 select id from null_t where missing_col is null;
+
+-- echo fused primary null coverage
+-- echo initialization
+CREATE TABLE p13_null_table(id int not null, num int null, price float not null, birthday date null);
+CREATE TABLE p13_p13_null_table2(id int not null, num int null, price float not null, birthday date null);
+CREATE INDEX index_num on p13_null_table(num);
+
+-- echo 1. insert
+INSERT INTO p13_null_table VALUES (1, 18, 10.0, '2020-01-01');
+INSERT INTO p13_null_table VALUES (2, null, 20.0, '2010-01-11');
+INSERT INTO p13_null_table VALUES (3, 12, 30.0, null);
+INSERT INTO p13_null_table VALUES (4, 15, 30.0, '2021-01-31');
+INSERT INTO p13_p13_null_table2 VALUES (1, 18, 30.0, '2021-01-31');
+INSERT INTO p13_p13_null_table2 VALUES (2, null, 40.0, null);
+
+INSERT INTO p13_null_table VALUES (5, 15, null, '2021-01-31');
+INSERT INTO p13_null_table VALUES (null, 15, 30.0, '2021-01-31');
+
+-- echo 2. SELECT
+-- sort SELECT * FROM p13_null_table;
+
+-- echo 3. SELECT WITH CONSTANT
+-- sort SELECT * FROM p13_null_table where 1 is null;
+-- sort SELECT * FROM p13_null_table where 1 is not null;
+-- sort SELECT * FROM p13_null_table where null=1;
+-- sort SELECT * FROM p13_null_table where 1=null;
+-- sort SELECT * FROM p13_null_table where 1<>null;
+-- sort SELECT * FROM p13_null_table where 1<null;
+-- sort SELECT * FROM p13_null_table where 1>null;
+
+-- sort SELECT * FROM p13_null_table where null is null;
+-- sort SELECT * FROM p13_null_table where null is not null;
+-- sort SELECT * FROM p13_null_table WHERE null=null;
+-- sort SELECT * FROM p13_null_table WHERE null<>null;
+-- sort SELECT * FROM p13_null_table WHERE null>null;
+-- sort SELECT * FROM p13_null_table WHERE null<null;
+
+-- sort SELECT * FROM p13_null_table where 'a' is null;
+-- sort SELECT * FROM p13_null_table where 'a' is not null;
+-- sort SELECT * FROM p13_null_table WHERE null='a';
+-- sort SELECT * FROM p13_null_table WHERE 'a'=null;
+-- sort SELECT * FROM p13_null_table WHERE 'a'<>null;
+-- sort SELECT * FROM p13_null_table WHERE 'a'>null;
+-- sort SELECT * FROM p13_null_table WHERE 'a'<null;
+
+-- sort SELECT * FROM p13_null_table where '2021-01-31' is null;
+-- sort SELECT * FROM p13_null_table where '2021-01-31' is not null;
+-- sort SELECT * FROM p13_null_table WHERE null='2021-01-31';
+-- sort SELECT * FROM p13_null_table WHERE '2021-01-31'=null;
+-- sort SELECT * FROM p13_null_table WHERE '2021-01-31'>null;
+-- sort SELECT * FROM p13_null_table WHERE '2021-01-31'<null;
+
+-- echo 4. SELECT WITH COLUMN
+-- sort SELECT * FROM p13_null_table where birthday is not null;
+-- sort SELECT * FROM p13_null_table where birthday is null;
+-- sort SELECT * FROM p13_null_table where birthday = null;
+-- sort SELECT * FROM p13_null_table where null = birthday;
+-- sort SELECT * FROM p13_null_table where birthday <> null;
+-- sort SELECT * FROM p13_null_table where birthday > null;
+-- sort SELECT * FROM p13_null_table where birthday < null;
+
+-- sort SELECT * FROM p13_null_table where num is not null;
+-- sort SELECT * FROM p13_null_table where num is null;
+-- sort SELECT * FROM p13_null_table where num = null;
+-- sort SELECT * FROM p13_null_table where null = num;
+-- sort SELECT * FROM p13_null_table where num <> null;
+-- sort SELECT * FROM p13_null_table where num > null;
+-- sort SELECT * FROM p13_null_table where num < null;
+
+-- sort SELECT p13_null_table.num,p13_p13_null_table2.num,p13_null_table.birthday FROM p13_null_table,p13_p13_null_table2 where p13_null_table.num=p13_p13_null_table2.num;
+
+-- echo 5. aggregation
+SELECT count(*) FROM p13_null_table;
+SELECT count(price) FROM p13_null_table;
+SELECT count(birthday) FROM p13_null_table;
+SELECT avg(num) FROM p13_null_table;
+
+-- echo 6. aggregation with null columns
+CREATE TABLE p13_p13_null_table3(id int not null, num int null);
+INSERT INTO p13_p13_null_table3 VALUES (1, null);
+INSERT INTO p13_p13_null_table3 VALUES (2, null);
+SELECT count(num) FROM p13_p13_null_table3;
+SELECT min(num) FROM p13_p13_null_table3;
+SELECT max(num) FROM p13_p13_null_table3;
+SELECT avg(num) FROM p13_p13_null_table3;
