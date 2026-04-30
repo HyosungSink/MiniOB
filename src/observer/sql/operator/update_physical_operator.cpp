@@ -120,6 +120,11 @@ RC UpdatePhysicalOperator::make_updated_record(const Record &old_record, Record 
       return rc;
     }
 
+    if (value.is_null()) {
+      Value::set_null_data(new_record.data() + field_meta->offset(), field_meta->len(), field_meta->type());
+      continue;
+    }
+
     int copy_len = value.length();
     if (field_meta->type() == AttrType::CHARS) {
       copy_len = min(field_meta->len(), value.length() + 1);

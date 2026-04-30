@@ -63,7 +63,13 @@ RC UpdateStmt::create(Db *db, const UpdateSqlNode &update, Stmt *&stmt)
     }
 
     Value value;
-    if (assignment.value.attr_type() == field_meta->type()) {
+    if (assignment.value.is_null()) {
+      if (!field_meta->nullable()) {
+        LOG_WARN("field can not be null. table=%s, field=%s", table_name, field_meta->name());
+        return RC::SCHEMA_FIELD_TYPE_MISMATCH;
+      }
+      value = assignment.value;
+    } else if (assignment.value.attr_type() == field_meta->type()) {
       value = assignment.value;
     } else {
       rc = Value::cast_to(assignment.value, field_meta->type(), value);
