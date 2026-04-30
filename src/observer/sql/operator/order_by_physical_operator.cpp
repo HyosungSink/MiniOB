@@ -29,6 +29,7 @@ RC OrderByPhysicalOperator::open(Trx *trx)
 
   rows_.clear();
   output_specs_.clear();
+  cell_infos_.clear();
   sort_key_refs_.clear();
   position_ = 0;
 
@@ -39,14 +40,9 @@ RC OrderByPhysicalOperator::open(Trx *trx)
     return rc;
   }
 
-  auto row_key = [this](const OrderedTuple &row, size_t key_index) -> const Value & {
-    const SortKeyRef &key_ref = sort_key_refs_[key_index];
-    return key_ref.cell_index >= 0 ? row.tuple.cell_ref(key_ref.cell_index) : row.keys[key_ref.key_index];
-  };
-
-  auto comes_before = [&row_key, this](const OrderedTuple &left, const OrderedTuple &right) {
+  auto comes_before = [this](const OrderedTuple &left, const OrderedTuple &right) {
     for (size_t i = 0; i < expressions_.size(); i++) {
-      int cmp = row_key(left, i).compare(row_key(right, i));
+      int cmp = compare_sort_key(left, right, i);
       if (cmp != 0) {
         return asc_[i] ? cmp < 0 : cmp > 0;
       }
@@ -54,9 +50,9 @@ RC OrderByPhysicalOperator::open(Trx *trx)
     return false;
   };
 
-  auto keys_come_before = [&row_key, this](const vector<Value> &left_keys, const OrderedTuple &right) {
+  auto keys_come_before = [this](const vector<Value> &left_keys, const OrderedTuple &right) {
     for (size_t i = 0; i < expressions_.size(); i++) {
-      int cmp = left_keys[i].compare(row_key(right, i));
+      int cmp = compare_evaluated_key(left_keys, right, i);
       if (cmp != 0) {
         return asc_[i] ? cmp < 0 : cmp > 0;
       }
@@ -86,6 +82,13 @@ RC OrderByPhysicalOperator::open(Trx *trx)
       return rc;
     }
 
+    rc = init_cell_infos(*tuple);
+    if (OB_FAIL(rc)) {
+      LOG_WARN("failed to init order by cell infos. rc=%s", strrc(rc));
+      child->close();
+      return rc;
+    }
+
     vector<Value> evaluated_keys;
     evaluated_keys.reserve(expressions_.size());
     for (const unique_ptr<Expression> &expression : expressions_) {
@@ -108,7 +111,7 @@ RC OrderByPhysicalOperator::open(Trx *trx)
     }
 
     OrderedTuple ordered_tuple;
-    rc = materialize_tuple_cells(*tuple, ordered_tuple.tuple);
+    rc = materialize_tuple_cells(*tuple, ordered_tuple);
     if (OB_FAIL(rc)) {
       LOG_WARN("failed to materialize tuple for order by. rc=%s", strrc(rc));
       child->close();
@@ -193,6 +196,8 @@ RC OrderByPhysicalOperator::close()
   }
   rows_.clear();
   output_specs_.clear();
+  cell_infos_.clear();
+  sort_key_refs_.clear();
   position_ = 0;
   return RC::SUCCESS;
 }
@@ -203,7 +208,8 @@ Tuple *OrderByPhysicalOperator::current_tuple()
     return nullptr;
   }
 
-  return &rows_[position_ - 1].tuple;
+  current_tuple_.set_context(&rows_[position_ - 1], &output_specs_, &cell_infos_);
+  return &current_tuple_;
 }
 
 RC OrderByPhysicalOperator::tuple_schema(TupleSchema &schema) const
@@ -233,21 +239,181 @@ RC OrderByPhysicalOperator::init_output_specs(const Tuple &tuple)
   return RC::SUCCESS;
 }
 
-RC OrderByPhysicalOperator::materialize_tuple_cells(const Tuple &tuple, ValueListTuple &value_list) const
+RC OrderByPhysicalOperator::init_cell_infos(const Tuple &tuple)
 {
-  vector<Value> cells;
+  if (!cell_infos_.empty()) {
+    return RC::SUCCESS;
+  }
+
   const int cell_num = tuple.cell_num();
-  cells.reserve(cell_num);
+  cell_infos_.reserve(cell_num);
+
+  int offset = 0;
   for (int i = 0; i < cell_num; i++) {
     Value cell;
     RC rc = tuple.cell_at(i, cell);
     if (OB_FAIL(rc)) {
       return rc;
     }
-    cells.push_back(std::move(cell));
+
+    if (cell.attr_type() != AttrType::INTS && cell.attr_type() != AttrType::FLOATS &&
+        cell.attr_type() != AttrType::DATES) {
+      cell_infos_.clear();
+      return RC::SUCCESS;
+    }
+
+    CellInfo info;
+    info.type   = cell.attr_type();
+    info.offset = offset;
+    info.length = cell.length();
+    offset += info.length;
+    cell_infos_.push_back(info);
   }
 
-  value_list.set_names_ref(&output_specs_);
-  value_list.set_cells(cells);
   return RC::SUCCESS;
+}
+
+RC OrderByPhysicalOperator::materialize_tuple_cells(const Tuple &tuple, OrderedTuple &ordered_tuple) const
+{
+  const int cell_num = tuple.cell_num();
+
+  if (!cell_infos_.empty()) {
+    const CellInfo &last_info = cell_infos_.back();
+    ordered_tuple.packed_cells.resize(last_info.offset + last_info.length);
+    for (int i = 0; i < cell_num; i++) {
+      Value cell;
+      RC rc = tuple.cell_at(i, cell);
+      if (OB_FAIL(rc)) {
+        return rc;
+      }
+
+      const CellInfo &info = cell_infos_[i];
+      char *cell_data = ordered_tuple.packed_cells.data() + info.offset;
+      if (cell.is_null()) {
+        Value::set_null_data(cell_data, info.length, info.type);
+      } else {
+        memcpy(cell_data, cell.data(), info.length);
+      }
+    }
+    return RC::SUCCESS;
+  }
+
+  ordered_tuple.cells.reserve(cell_num);
+  for (int i = 0; i < cell_num; i++) {
+    Value cell;
+    RC rc = tuple.cell_at(i, cell);
+    if (OB_FAIL(rc)) {
+      return rc;
+    }
+    ordered_tuple.cells.push_back(std::move(cell));
+  }
+
+  return RC::SUCCESS;
+}
+
+void OrderByPhysicalOperator::read_cell_value(const OrderedTuple &row, int cell_index, Value &cell) const
+{
+  if (!row.packed_cells.empty()) {
+    const CellInfo &info = cell_infos_[cell_index];
+    const char     *data = row.packed_cells.data() + info.offset;
+    if (Value::is_null_data(data, info.length, info.type)) {
+      cell.set_null();
+      return;
+    }
+    cell.set_type(info.type);
+    cell.set_data(data, info.length);
+    return;
+  }
+
+  cell = row.cells[cell_index];
+}
+
+int OrderByPhysicalOperator::compare_sort_key(
+    const OrderedTuple &left, const OrderedTuple &right, size_t key_index) const
+{
+  const SortKeyRef &key_ref = sort_key_refs_[key_index];
+  if (key_ref.cell_index < 0) {
+    return left.keys[key_ref.key_index].compare(right.keys[key_ref.key_index]);
+  }
+
+  Value left_value;
+  Value right_value;
+  read_cell_value(left, key_ref.cell_index, left_value);
+  read_cell_value(right, key_ref.cell_index, right_value);
+  return left_value.compare(right_value);
+}
+
+int OrderByPhysicalOperator::compare_evaluated_key(
+    const vector<Value> &left_keys, const OrderedTuple &right, size_t key_index) const
+{
+  const SortKeyRef &key_ref = sort_key_refs_[key_index];
+  if (key_ref.cell_index < 0) {
+    return left_keys[key_index].compare(right.keys[key_ref.key_index]);
+  }
+
+  Value right_value;
+  read_cell_value(right, key_ref.cell_index, right_value);
+  return left_keys[key_index].compare(right_value);
+}
+
+void OrderByPhysicalOperator::MaterializedTuple::set_context(
+    const OrderedTuple *row, const vector<TupleCellSpec> *specs, const vector<CellInfo> *cell_infos)
+{
+  row_        = row;
+  specs_      = specs;
+  cell_infos_ = cell_infos;
+}
+
+int OrderByPhysicalOperator::MaterializedTuple::cell_num() const
+{
+  if (specs_ == nullptr) {
+    return 0;
+  }
+  return static_cast<int>(specs_->size());
+}
+
+RC OrderByPhysicalOperator::MaterializedTuple::cell_at(int index, Value &cell) const
+{
+  if (row_ == nullptr || index < 0 || index >= cell_num()) {
+    return RC::NOTFOUND;
+  }
+
+  if (!row_->packed_cells.empty()) {
+    const CellInfo &info = (*cell_infos_)[index];
+    const char     *data = row_->packed_cells.data() + info.offset;
+    if (Value::is_null_data(data, info.length, info.type)) {
+      cell.set_null();
+    } else {
+      cell.set_type(info.type);
+      cell.set_data(data, info.length);
+    }
+  } else {
+    cell = row_->cells[index];
+  }
+  return RC::SUCCESS;
+}
+
+RC OrderByPhysicalOperator::MaterializedTuple::spec_at(int index, TupleCellSpec &spec) const
+{
+  if (specs_ == nullptr || index < 0 || index >= cell_num()) {
+    return RC::NOTFOUND;
+  }
+
+  spec = (*specs_)[index];
+  return RC::SUCCESS;
+}
+
+RC OrderByPhysicalOperator::MaterializedTuple::find_cell(const TupleCellSpec &spec, Value &cell) const
+{
+  if (specs_ == nullptr) {
+    return RC::NOTFOUND;
+  }
+
+  const int size = static_cast<int>(specs_->size());
+  for (int i = 0; i < size; i++) {
+    if ((*specs_)[i].equals(spec)) {
+      return cell_at(i, cell);
+    }
+  }
+  return RC::NOTFOUND;
 }

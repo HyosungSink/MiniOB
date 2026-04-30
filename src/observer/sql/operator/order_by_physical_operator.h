@@ -28,10 +28,18 @@ public:
   RC     tuple_schema(TupleSchema &schema) const override;
 
 private:
+  struct CellInfo
+  {
+    AttrType type   = AttrType::UNDEFINED;
+    int      offset = 0;
+    int      length = 0;
+  };
+
   struct OrderedTuple
   {
-    ValueListTuple tuple;
-    vector<Value>  keys;
+    vector<Value> cells;
+    string        packed_cells;
+    vector<Value> keys;
   };
 
   struct SortKeyRef
@@ -40,9 +48,30 @@ private:
     int key_index  = -1;
   };
 
+  class MaterializedTuple : public Tuple
+  {
+  public:
+    void set_context(
+        const OrderedTuple *row, const vector<TupleCellSpec> *specs, const vector<CellInfo> *cell_infos);
+
+    int cell_num() const override;
+    RC  cell_at(int index, Value &cell) const override;
+    RC  spec_at(int index, TupleCellSpec &spec) const override;
+    RC  find_cell(const TupleCellSpec &spec, Value &cell) const override;
+
+  private:
+    const OrderedTuple          *row_        = nullptr;
+    const vector<TupleCellSpec> *specs_      = nullptr;
+    const vector<CellInfo>      *cell_infos_ = nullptr;
+  };
+
   RC init_output_specs(const Tuple &tuple);
   RC init_sort_key_refs();
-  RC materialize_tuple_cells(const Tuple &tuple, ValueListTuple &value_list) const;
+  RC init_cell_infos(const Tuple &tuple);
+  RC materialize_tuple_cells(const Tuple &tuple, OrderedTuple &ordered_tuple) const;
+  void read_cell_value(const OrderedTuple &row, int cell_index, Value &cell) const;
+  int  compare_sort_key(const OrderedTuple &left, const OrderedTuple &right, size_t key_index) const;
+  int  compare_evaluated_key(const vector<Value> &left_keys, const OrderedTuple &right, size_t key_index) const;
 
 private:
   vector<unique_ptr<Expression>> expressions_;
@@ -50,6 +79,8 @@ private:
   int                            limit_ = -1;
   vector<OrderedTuple>           rows_;
   vector<TupleCellSpec>           output_specs_;
+  vector<CellInfo>                cell_infos_;
   vector<SortKeyRef>              sort_key_refs_;
+  MaterializedTuple               current_tuple_;
   size_t                         position_ = 0;
 };
