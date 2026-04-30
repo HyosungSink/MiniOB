@@ -26,6 +26,9 @@ insert into create_view_v1 values(193, 193, 'TJ4JHV');
 insert into create_view_v1 values(83, 83, '2DLDAT9GLO');
 insert into create_view_v1 values(177, 177, 'Q09KYCS');
 select count(*) from create_view_v1;
+update create_view_v1 set age=120 where id=193;
+delete from create_view_v1 where id=83;
+select sum(age) from create_view_v1;
 
 -- echo view with aliases and filters
 create view view_alias as select id as vid, name as vname from view_t1 where age>=20;
