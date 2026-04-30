@@ -266,7 +266,7 @@ RC Table::make_record(int value_num, const Value *values, Record &record)
             table_meta_.name(), field->name(), value.to_string().c_str());
         break;
       }
-      if ((field->type() == AttrType::VECTORS && real_value.length() > field->len()) ||
+      if ((field->type() == AttrType::VECTORS && real_value.length() != field->len()) ||
           (field->type() == AttrType::CHARS && real_value.length() > field->len()) ||
           (field->type() == AttrType::TEXTS && real_value.length() > TEXT_MAX_LENGTH)) {
         rc = RC::SCHEMA_FIELD_TYPE_MISMATCH;
@@ -274,7 +274,7 @@ RC Table::make_record(int value_num, const Value *values, Record &record)
       }
       rc = set_value_to_record(record_data, real_value, field);
     } else {
-      if ((field->type() == AttrType::VECTORS && value.length() > field->len()) ||
+      if ((field->type() == AttrType::VECTORS && value.length() != field->len()) ||
           (field->type() == AttrType::CHARS && value.length() > field->len()) ||
           (field->type() == AttrType::TEXTS && value.length() > TEXT_MAX_LENGTH)) {
         rc = RC::SCHEMA_FIELD_TYPE_MISMATCH;
