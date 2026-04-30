@@ -78,6 +78,8 @@ private:
       unique_ptr<Expression> &in_subquery_expr, vector<unique_ptr<Expression>> &bound_expressions);
   RC bind_is_null_expression(
       unique_ptr<Expression> &is_null_expr, vector<unique_ptr<Expression>> &bound_expressions);
+  RC bind_quantified_comparison_expression(
+      unique_ptr<Expression> &comp_subquery_expr, vector<unique_ptr<Expression>> &bound_expressions);
   RC bind_arithmetic_expression(
       unique_ptr<Expression> &arithmetic_expr, vector<unique_ptr<Expression>> &bound_expressions);
   RC bind_function_expression(

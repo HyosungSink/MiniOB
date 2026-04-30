@@ -131,6 +131,10 @@ RC ExpressionBinder::bind_expression(unique_ptr<Expression> &expr, vector<unique
       return bind_is_null_expression(expr, bound_expressions);
     } break;
 
+    case ExprType::COMP_SUBQUERY: {
+      return bind_quantified_comparison_expression(expr, bound_expressions);
+    } break;
+
     case ExprType::ARITHMETIC: {
       return bind_arithmetic_expression(expr, bound_expressions);
     } break;
@@ -566,6 +570,55 @@ RC ExpressionBinder::bind_is_null_expression(unique_ptr<Expression> &expr, vecto
   unique_ptr<Expression> &child = child_bound_expressions[0];
   if (child.get() != child_expr.get()) {
     child_expr.reset(child.release());
+  }
+
+  bound_expressions.emplace_back(std::move(expr));
+  return RC::SUCCESS;
+}
+
+RC ExpressionBinder::bind_quantified_comparison_expression(
+    unique_ptr<Expression> &expr, vector<unique_ptr<Expression>> &bound_expressions)
+{
+  if (nullptr == expr) {
+    return RC::SUCCESS;
+  }
+
+  auto comp_subquery_expr = static_cast<QuantifiedComparisonExpr *>(expr.get());
+
+  vector<unique_ptr<Expression>> child_bound_expressions;
+  unique_ptr<Expression>        &left_expr = comp_subquery_expr->left();
+  RC rc = bind_expression(left_expr, child_bound_expressions);
+  if (OB_FAIL(rc)) {
+    return rc;
+  }
+  if (child_bound_expressions.size() != 1) {
+    LOG_WARN("invalid left children number of quantified subquery expression: %d", child_bound_expressions.size());
+    return RC::INVALID_ARGUMENT;
+  }
+
+  unique_ptr<Expression> &left = child_bound_expressions[0];
+  if (left.get() != left_expr.get()) {
+    left_expr.reset(left.release());
+  }
+
+  SubqueryExpr &subquery = comp_subquery_expr->subquery();
+  rc = infer_subquery_value_info(context_.db(), subquery);
+  if (OB_FAIL(rc)) {
+    return rc;
+  }
+
+  AttrType left_type     = left_expr->value_type();
+  AttrType subquery_type = subquery.value_type();
+  if (left_type != AttrType::UNDEFINED && subquery_type != AttrType::UNDEFINED && left_type != subquery_type &&
+      !(is_numerical_type(left_type) && is_numerical_type(subquery_type))) {
+    int cast_cost = DataType::type_instance(subquery_type)->cast_cost(left_type);
+    if (cast_cost == INT32_MAX) {
+      LOG_WARN("unsupported quantified subquery cast from %s to %s",
+          attr_type_to_string(subquery_type),
+          attr_type_to_string(left_type));
+      return RC::UNSUPPORTED;
+    }
+    subquery.set_cast_type(left_type);
   }
 
   bound_expressions.emplace_back(std::move(expr));
