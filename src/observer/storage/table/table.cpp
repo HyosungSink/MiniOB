@@ -229,6 +229,11 @@ RC Table::validate_unique_constraints(const Record &record, const RID *skip_rid)
   return engine_->validate_unique_constraints(record, skip_rid);
 }
 
+RC Table::validate_unique_constraints(const Record &record, const RID *skip_rid, Trx *trx)
+{
+  return engine_->validate_unique_constraints(record, skip_rid, trx);
+}
+
 const char *Table::name() const { return table_meta_.name(); }
 
 const TableMeta &Table::table_meta() const { return table_meta_; }

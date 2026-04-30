@@ -84,7 +84,7 @@ RC UpdatePhysicalOperator::open(Trx *trx)
       return rc;
     }
 
-    rc = table_->validate_unique_constraints(new_record, &old_record.rid());
+    rc = table_->validate_unique_constraints(new_record, &old_record.rid(), trx);
     if (OB_FAIL(rc)) {
       LOG_WARN("unique constraint check failed while updating. rc=%s", strrc(rc));
       return rc;

@@ -37,6 +37,7 @@ public:
   }
   RC get_record(const RID &rid, Record &record) override;
   RC validate_unique_constraints(const Record &record, const RID *skip_rid) override;
+  RC validate_unique_constraints(const Record &record, const RID *skip_rid, Trx *trx) override;
 
   RC create_index(Trx *trx, const vector<const FieldMeta *> &field_metas, const char *index_name, bool unique) override;
   RC drop_index(const char *index_name) override;
@@ -55,7 +56,6 @@ private:
   RC insert_entry_of_indexes(const char *record, const RID &rid);
   RC delete_entry_of_indexes(const char *record, const RID &rid, bool error_on_not_exists);
   bool unique_key_equal(const char *left_record, const char *right_record, const IndexMeta &index_meta) const;
-  RC validate_unique_constraints(const Record &record, const RID *skip_rid, Trx *trx);
   RC validate_unique_index_existing(const IndexMeta &index_meta, Trx *trx);
 
 private:

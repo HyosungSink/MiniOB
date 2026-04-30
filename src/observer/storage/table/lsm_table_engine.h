@@ -39,6 +39,7 @@ public:
   }
   RC get_record(const RID &rid, Record &record) override { return RC::UNIMPLEMENTED; }
   RC validate_unique_constraints(const Record &record, const RID *skip_rid) override { return RC::SUCCESS; }
+  RC validate_unique_constraints(const Record &record, const RID *skip_rid, Trx *trx) override { return RC::SUCCESS; }
 
   RC create_index(Trx *trx, const vector<const FieldMeta *> &field_metas, const char *index_name, bool unique) override
   {
