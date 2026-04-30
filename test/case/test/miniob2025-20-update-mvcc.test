@@ -40,3 +40,31 @@ update mvcc_update_t set id=4 where value=20;
 commit;
 -- sort select * from mvcc_update_t;
 select * from mvcc_update_t where id=4;
+
+-- echo unique index non-key update under mvcc
+create table t_update_mvcc(id int, age int, name char(4));
+create unique index t_update_mvcc_id_index on t_update_mvcc(id);
+insert into t_update_mvcc values(1, 1, 'a');
+insert into t_update_mvcc values(2, 2, 'a');
+insert into t_update_mvcc values(3, 3, 'a');
+insert into t_update_mvcc values(4, 4, 'a');
+insert into t_update_mvcc values(5, 5, 'a');
+insert into t_update_mvcc values(6, 6, 'a');
+insert into t_update_mvcc values(7, 7, 'a');
+insert into t_update_mvcc values(8, 8, 'a');
+insert into t_update_mvcc values(9, 9, 'a');
+insert into t_update_mvcc values(10, 10, 'a');
+insert into t_update_mvcc values(11, 11, 'a');
+insert into t_update_mvcc values(12, 12, 'a');
+insert into t_update_mvcc values(13, 13, 'a');
+insert into t_update_mvcc values(14, 14, 'a');
+insert into t_update_mvcc values(15, 15, 'a');
+insert into t_update_mvcc values(16, 16, 'a');
+-- connect client1
+-- connect client2
+-- connection client1
+begin;
+update t_update_mvcc set age = 954 where id = 16;
+select age from t_update_mvcc where id = 16;
+commit;
+select age from t_update_mvcc where id = 16;
