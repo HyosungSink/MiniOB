@@ -361,7 +361,14 @@ RC PhysicalPlanGenerator::create_plan(InsertLogicalOperator &insert_oper, unique
 {
   Table                  *table           = insert_oper.table();
   vector<vector<Value>>  &value_rows      = insert_oper.value_rows();
-  InsertPhysicalOperator *insert_phy_oper = new InsertPhysicalOperator(table, std::move(value_rows));
+  InsertPhysicalOperator *insert_phy_oper = nullptr;
+  if (insert_oper.mirror_table() != nullptr) {
+    vector<vector<Value>> &mirror_value_rows = insert_oper.mirror_value_rows();
+    insert_phy_oper = new InsertPhysicalOperator(
+        table, std::move(value_rows), insert_oper.mirror_table(), std::move(mirror_value_rows));
+  } else {
+    insert_phy_oper = new InsertPhysicalOperator(table, std::move(value_rows));
+  }
   oper.reset(insert_phy_oper);
   return RC::SUCCESS;
 }

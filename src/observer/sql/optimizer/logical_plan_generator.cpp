@@ -332,7 +332,14 @@ RC LogicalPlanGenerator::create_plan(InsertStmt *insert_stmt, unique_ptr<Logical
   Table        *table = insert_stmt->table();
   vector<vector<Value>> value_rows = insert_stmt->value_rows();
 
-  InsertLogicalOperator *insert_operator = new InsertLogicalOperator(table, std::move(value_rows));
+  InsertLogicalOperator *insert_operator = nullptr;
+  if (insert_stmt->mirror_table() != nullptr) {
+    vector<vector<Value>> mirror_value_rows = insert_stmt->mirror_value_rows();
+    insert_operator = new InsertLogicalOperator(
+        table, std::move(value_rows), insert_stmt->mirror_table(), std::move(mirror_value_rows));
+  } else {
+    insert_operator = new InsertLogicalOperator(table, std::move(value_rows));
+  }
   logical_operator.reset(insert_operator);
   return RC::SUCCESS;
 }
