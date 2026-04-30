@@ -40,10 +40,17 @@ static unique_ptr<Expression> copy_rewrite_view_expr(const Expression &expr, con
   return expr.copy();
 }
 
+static RC create_table_update_stmt(Db *db, const UpdateSqlNode &update, Table *table, Stmt *&stmt);
+
 static RC create_view_update_stmt(Db *db, const UpdateSqlNode &update, const ViewDefinition &view, Stmt *&stmt)
 {
   if (!view.updatable) {
     return RC::INVALID_ARGUMENT;
+  }
+
+  Table *view_table = db->find_table(view.view_name.c_str());
+  if (view_table == nullptr) {
+    return RC::SCHEMA_TABLE_NOT_EXIST;
   }
 
   UpdateSqlNode base_update;
@@ -77,7 +84,29 @@ static RC create_view_update_stmt(Db *db, const UpdateSqlNode &update, const Vie
     base_update.conditions.emplace_back(std::move(base_condition));
   }
 
-  return UpdateStmt::create(db, base_update, stmt);
+  Stmt *base_stmt = nullptr;
+  RC rc = create_table_update_stmt(db, base_update, db->find_table(view.base_table_name.c_str()), base_stmt);
+  if (OB_FAIL(rc)) {
+    return rc;
+  }
+
+  Stmt *mirror_stmt = nullptr;
+  rc = create_table_update_stmt(db, update, view_table, mirror_stmt);
+  if (OB_FAIL(rc)) {
+    delete base_stmt;
+    return rc;
+  }
+
+  auto *base_update_stmt   = static_cast<UpdateStmt *>(base_stmt);
+  auto *mirror_update_stmt = static_cast<UpdateStmt *>(mirror_stmt);
+  base_update_stmt->set_mirror_update(mirror_update_stmt->table(),
+      mirror_update_stmt->take_field_metas(),
+      mirror_update_stmt->take_expressions(),
+      mirror_update_stmt->release_filter_stmt());
+  delete mirror_update_stmt;
+
+  stmt = base_update_stmt;
+  return RC::SUCCESS;
 }
 
 UpdateStmt::UpdateStmt(
@@ -94,9 +123,22 @@ UpdateStmt::~UpdateStmt()
     delete filter_stmt_;
     filter_stmt_ = nullptr;
   }
+  if (mirror_filter_stmt_ != nullptr) {
+    delete mirror_filter_stmt_;
+    mirror_filter_stmt_ = nullptr;
+  }
 }
 
-RC UpdateStmt::create(Db *db, const UpdateSqlNode &update, Stmt *&stmt)
+void UpdateStmt::set_mirror_update(
+    Table *table, vector<const FieldMeta *> &&field_metas, vector<unique_ptr<Expression>> &&expressions, FilterStmt *filter_stmt)
+{
+  mirror_table_       = table;
+  mirror_field_metas_ = std::move(field_metas);
+  mirror_expressions_ = std::move(expressions);
+  mirror_filter_stmt_ = filter_stmt;
+}
+
+static RC create_table_update_stmt(Db *db, const UpdateSqlNode &update, Table *table, Stmt *&stmt)
 {
   stmt = nullptr;
 
@@ -107,12 +149,6 @@ RC UpdateStmt::create(Db *db, const UpdateSqlNode &update, Stmt *&stmt)
     return RC::INVALID_ARGUMENT;
   }
 
-  const ViewDefinition *view = db->find_view(table_name);
-  if (view != nullptr) {
-    return create_view_update_stmt(db, update, *view, stmt);
-  }
-
-  Table *table = db->find_table(table_name);
   if (table == nullptr) {
     LOG_WARN("no such table. db=%s, table=%s", db->name(), table_name);
     return RC::SCHEMA_TABLE_NOT_EXIST;
@@ -210,4 +246,23 @@ RC UpdateStmt::create(Db *db, const UpdateSqlNode &update, Stmt *&stmt)
 
   stmt = new UpdateStmt(table, field_metas, std::move(expressions), filter_stmt);
   return RC::SUCCESS;
+}
+
+RC UpdateStmt::create(Db *db, const UpdateSqlNode &update, Stmt *&stmt)
+{
+  stmt = nullptr;
+
+  const char *table_name = update.relation_name.c_str();
+  if (db == nullptr || common::is_blank(table_name) || update.assignments.empty()) {
+    LOG_WARN("invalid update statement. db=%p, table=%s, assignment_num=%d",
+        db, table_name, static_cast<int>(update.assignments.size()));
+    return RC::INVALID_ARGUMENT;
+  }
+
+  const ViewDefinition *view = db->find_view(table_name);
+  if (view != nullptr) {
+    return create_view_update_stmt(db, update, *view, stmt);
+  }
+
+  return create_table_update_stmt(db, update, db->find_table(table_name), stmt);
 }
