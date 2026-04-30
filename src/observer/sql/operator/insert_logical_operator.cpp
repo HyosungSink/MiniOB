@@ -23,3 +23,8 @@ InsertLogicalOperator::InsertLogicalOperator(Table *table, vector<Value> values)
 InsertLogicalOperator::InsertLogicalOperator(Table *table, vector<vector<Value>> value_rows)
     : table_(table), value_rows_(std::move(value_rows))
 {}
+
+InsertLogicalOperator::InsertLogicalOperator(
+    Table *table, vector<vector<Value>> value_rows, Table *mirror_table, vector<vector<Value>> mirror_value_rows)
+    : table_(table), mirror_table_(mirror_table), value_rows_(std::move(value_rows)), mirror_value_rows_(std::move(mirror_value_rows))
+{}

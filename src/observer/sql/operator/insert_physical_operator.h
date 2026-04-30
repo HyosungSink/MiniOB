@@ -28,6 +28,8 @@ class InsertPhysicalOperator : public PhysicalOperator
 public:
   InsertPhysicalOperator(Table *table, vector<Value> &&values);
   InsertPhysicalOperator(Table *table, vector<vector<Value>> &&value_rows);
+  InsertPhysicalOperator(
+      Table *table, vector<vector<Value>> &&value_rows, Table *mirror_table, vector<vector<Value>> &&mirror_value_rows);
 
   virtual ~InsertPhysicalOperator() = default;
 
@@ -43,5 +45,7 @@ public:
 
 private:
   Table                 *table_ = nullptr;
+  Table                 *mirror_table_ = nullptr;
   vector<vector<Value>>  value_rows_;
+  vector<vector<Value>>  mirror_value_rows_;
 };

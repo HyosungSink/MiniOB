@@ -26,6 +26,8 @@ class InsertLogicalOperator : public LogicalOperator
 public:
   InsertLogicalOperator(Table *table, vector<Value> values);
   InsertLogicalOperator(Table *table, vector<vector<Value>> value_rows);
+  InsertLogicalOperator(
+      Table *table, vector<vector<Value>> value_rows, Table *mirror_table, vector<vector<Value>> mirror_value_rows);
   virtual ~InsertLogicalOperator() = default;
 
   LogicalOperatorType type() const override { return LogicalOperatorType::INSERT; }
@@ -33,12 +35,16 @@ public:
   OpType get_op_type() const override { return OpType::LOGICALINSERT; }
 
   Table               *table() const { return table_; }
+  Table               *mirror_table() const { return mirror_table_; }
   const vector<Value> &values() const { return value_rows_.front(); }
   vector<Value>       &values() { return value_rows_.front(); }
   const vector<vector<Value>> &value_rows() const { return value_rows_; }
   vector<vector<Value>>       &value_rows() { return value_rows_; }
+  vector<vector<Value>>       &mirror_value_rows() { return mirror_value_rows_; }
 
 private:
   Table                 *table_ = nullptr;
+  Table                 *mirror_table_ = nullptr;
   vector<vector<Value>>  value_rows_;
+  vector<vector<Value>>  mirror_value_rows_;
 };

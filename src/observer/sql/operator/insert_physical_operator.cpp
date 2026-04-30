@@ -29,6 +29,11 @@ InsertPhysicalOperator::InsertPhysicalOperator(Table *table, vector<vector<Value
     : table_(table), value_rows_(std::move(value_rows))
 {}
 
+InsertPhysicalOperator::InsertPhysicalOperator(
+    Table *table, vector<vector<Value>> &&value_rows, Table *mirror_table, vector<vector<Value>> &&mirror_value_rows)
+    : table_(table), mirror_table_(mirror_table), value_rows_(std::move(value_rows)), mirror_value_rows_(std::move(mirror_value_rows))
+{}
+
 RC InsertPhysicalOperator::open(Trx *trx)
 {
   RC rc = RC::SUCCESS;
@@ -44,6 +49,22 @@ RC InsertPhysicalOperator::open(Trx *trx)
     if (rc != RC::SUCCESS) {
       LOG_WARN("failed to insert record by transaction. rc=%s", strrc(rc));
       return rc;
+    }
+  }
+  if (mirror_table_ != nullptr) {
+    for (vector<Value> &values : mirror_value_rows_) {
+      Record record;
+      rc = mirror_table_->make_record(static_cast<int>(values.size()), values.data(), record);
+      if (rc != RC::SUCCESS) {
+        LOG_WARN("failed to make mirror record. rc=%s", strrc(rc));
+        return rc;
+      }
+
+      rc = trx->insert_record(mirror_table_, record);
+      if (rc != RC::SUCCESS) {
+        LOG_WARN("failed to insert mirror record by transaction. rc=%s", strrc(rc));
+        return rc;
+      }
     }
   }
   return RC::SUCCESS;
