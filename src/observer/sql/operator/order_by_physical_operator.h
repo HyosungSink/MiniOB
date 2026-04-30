@@ -34,10 +34,14 @@ private:
     vector<Value>  keys;
   };
 
+  RC init_output_specs(const Tuple &tuple);
+  RC materialize_tuple_cells(const Tuple &tuple, ValueListTuple &value_list) const;
+
 private:
   vector<unique_ptr<Expression>> expressions_;
   vector<bool>                   asc_;
   int                            limit_ = -1;
   vector<OrderedTuple>           rows_;
+  vector<TupleCellSpec>           output_specs_;
   size_t                         position_ = 0;
 };

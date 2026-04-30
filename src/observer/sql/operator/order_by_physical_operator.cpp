@@ -27,6 +27,7 @@ RC OrderByPhysicalOperator::open(Trx *trx)
   }
 
   rows_.clear();
+  output_specs_.clear();
   position_ = 0;
 
   PhysicalOperator *child = children_[0].get();
@@ -51,7 +52,14 @@ RC OrderByPhysicalOperator::open(Trx *trx)
       ordered_tuple.keys.emplace_back(value);
     }
 
-    rc = ValueListTuple::make(*tuple, ordered_tuple.tuple);
+    rc = init_output_specs(*tuple);
+    if (OB_FAIL(rc)) {
+      LOG_WARN("failed to init order by output specs. rc=%s", strrc(rc));
+      child->close();
+      return rc;
+    }
+
+    rc = materialize_tuple_cells(*tuple, ordered_tuple.tuple);
     if (OB_FAIL(rc)) {
       LOG_WARN("failed to materialize tuple for order by. rc=%s", strrc(rc));
       child->close();
@@ -101,6 +109,7 @@ RC OrderByPhysicalOperator::close()
     children_[0]->close();
   }
   rows_.clear();
+  output_specs_.clear();
   position_ = 0;
   return RC::SUCCESS;
 }
@@ -120,4 +129,42 @@ RC OrderByPhysicalOperator::tuple_schema(TupleSchema &schema) const
     return RC::INTERNAL;
   }
   return children_[0]->tuple_schema(schema);
+}
+
+RC OrderByPhysicalOperator::init_output_specs(const Tuple &tuple)
+{
+  if (!output_specs_.empty()) {
+    return RC::SUCCESS;
+  }
+
+  const int cell_num = tuple.cell_num();
+  output_specs_.reserve(cell_num);
+  for (int i = 0; i < cell_num; i++) {
+    TupleCellSpec spec;
+    RC rc = tuple.spec_at(i, spec);
+    if (OB_FAIL(rc)) {
+      return rc;
+    }
+    output_specs_.push_back(std::move(spec));
+  }
+  return RC::SUCCESS;
+}
+
+RC OrderByPhysicalOperator::materialize_tuple_cells(const Tuple &tuple, ValueListTuple &value_list) const
+{
+  vector<Value> cells;
+  const int cell_num = tuple.cell_num();
+  cells.reserve(cell_num);
+  for (int i = 0; i < cell_num; i++) {
+    Value cell;
+    RC rc = tuple.cell_at(i, cell);
+    if (OB_FAIL(rc)) {
+      return rc;
+    }
+    cells.push_back(std::move(cell));
+  }
+
+  value_list.set_names_ref(&output_specs_);
+  value_list.set_cells(cells);
+  return RC::SUCCESS;
 }

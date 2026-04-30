@@ -329,6 +329,7 @@ public:
   virtual ~ValueListTuple() = default;
 
   void set_names(const vector<TupleCellSpec> &specs) { specs_ = specs; }
+  void set_names_ref(const vector<TupleCellSpec> *specs) { specs_ref_ = specs; }
   void set_cells(const vector<Value> &cells) { cells_ = cells; }
 
   virtual int cell_num() const override { return static_cast<int>(cells_.size()); }
@@ -349,17 +350,26 @@ public:
       return RC::NOTFOUND;
     }
 
-    spec = specs_[index];
+    const vector<TupleCellSpec> *specs = tuple_specs();
+    if (specs == nullptr || index >= static_cast<int>(specs->size())) {
+      return RC::NOTFOUND;
+    }
+
+    spec = (*specs)[index];
     return RC::SUCCESS;
   }
 
   virtual RC find_cell(const TupleCellSpec &spec, Value &cell) const override
   {
-    ASSERT(cells_.size() == specs_.size(), "cells_.size()=%d, specs_.size()=%d", cells_.size(), specs_.size());
+    const vector<TupleCellSpec> *specs = tuple_specs();
+    if (specs == nullptr) {
+      return RC::NOTFOUND;
+    }
+    ASSERT(cells_.size() == specs->size(), "cells_.size()=%d, specs.size()=%d", cells_.size(), specs->size());
 
-    const int size = static_cast<int>(specs_.size());
+    const int size = static_cast<int>(specs->size());
     for (int i = 0; i < size; i++) {
-      if (specs_[i].equals(spec)) {
+      if ((*specs)[i].equals(spec)) {
         cell = cells_[i];
         return RC::SUCCESS;
       }
@@ -390,8 +400,12 @@ public:
   }
 
 private:
+  const vector<TupleCellSpec> *tuple_specs() const { return specs_ref_ != nullptr ? specs_ref_ : &specs_; }
+
+private:
   vector<Value>         cells_;
   vector<TupleCellSpec> specs_;
+  const vector<TupleCellSpec> *specs_ref_ = nullptr;
 };
 
 /**
