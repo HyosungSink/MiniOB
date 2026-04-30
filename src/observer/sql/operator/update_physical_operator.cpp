@@ -161,6 +161,9 @@ RC UpdatePhysicalOperator::make_updated_record(const Record &old_record, Record 
     if (field_meta->type() == AttrType::VECTORS && value_to_store->length() != field_meta->len()) {
       return RC::SCHEMA_FIELD_TYPE_MISMATCH;
     }
+    if (field_meta->type() == AttrType::CHARS && value_to_store->length() > field_meta->len()) {
+      return RC::SCHEMA_FIELD_TYPE_MISMATCH;
+    }
 
     int copy_len = value_to_store->length();
     if (field_meta->type() == AttrType::CHARS) {
