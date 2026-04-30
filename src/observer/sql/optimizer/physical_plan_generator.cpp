@@ -321,7 +321,10 @@ RC PhysicalPlanGenerator::create_plan(ProjectLogicalOperator &project_oper, uniq
 RC PhysicalPlanGenerator::create_plan(OrderByLogicalOperator &order_by_oper, unique_ptr<PhysicalOperator> &oper, Session *session)
 {
   vector<unique_ptr<LogicalOperator>> &child_opers = order_by_oper.children();
-  ASSERT(child_opers.size() == 1, "order by logical operator should have one child");
+  if (child_opers.size() != 1 || child_opers.front() == nullptr) {
+    LOG_WARN("order by logical operator should have one valid child");
+    return RC::INVALID_ARGUMENT;
+  }
 
   unique_ptr<PhysicalOperator> child_phy_oper;
   RC rc = create(*child_opers.front(), child_phy_oper, session);
