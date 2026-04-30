@@ -15,13 +15,18 @@ See the Mulan PSL v2 for more details. */
 #include "sql/stmt/update_stmt.h"
 #include "common/lang/string.h"
 #include "common/log/log.h"
+#include "sql/expr/expression_iterator.h"
+#include "sql/parser/expression_binder.h"
 #include "sql/stmt/filter_stmt.h"
 #include "storage/db/db.h"
 #include "storage/table/table.h"
 
 UpdateStmt::UpdateStmt(
-    Table *table, const vector<const FieldMeta *> &field_metas, const vector<Value> &values, FilterStmt *filter_stmt)
-    : table_(table), field_metas_(field_metas), values_(values), filter_stmt_(filter_stmt)
+    Table *table,
+    const vector<const FieldMeta *> &field_metas,
+    vector<unique_ptr<Expression>> &&expressions,
+    FilterStmt *filter_stmt)
+    : table_(table), field_metas_(field_metas), expressions_(std::move(expressions)), filter_stmt_(filter_stmt)
 {}
 
 UpdateStmt::~UpdateStmt()
@@ -50,11 +55,33 @@ RC UpdateStmt::create(Db *db, const UpdateSqlNode &update, Stmt *&stmt)
   }
 
   vector<const FieldMeta *> field_metas;
-  vector<Value>             values;
+  vector<unique_ptr<Expression>> expressions;
   field_metas.reserve(update.assignments.size());
-  values.reserve(update.assignments.size());
+  expressions.reserve(update.assignments.size());
 
   RC rc = RC::SUCCESS;
+  BinderContext binder_context;
+  binder_context.set_db(db);
+  binder_context.add_table(table);
+  ExpressionBinder expression_binder(binder_context);
+
+  auto reject_aggregate_expression = [](Expression &expr) -> RC {
+    if (expr.type() == ExprType::AGGREGATION) {
+      LOG_WARN("aggregate expression is not allowed in update assignment");
+      return RC::INVALID_ARGUMENT;
+    }
+
+    function<RC(unique_ptr<Expression> &)> check_child = [&](unique_ptr<Expression> &child) -> RC {
+      if (child->type() == ExprType::AGGREGATION) {
+        LOG_WARN("aggregate expression is not allowed in update assignment");
+        return RC::INVALID_ARGUMENT;
+      }
+      return ExpressionIterator::iterate_child_expr(*child, check_child);
+    };
+
+    return ExpressionIterator::iterate_child_expr(expr, check_child);
+  };
+
   for (const UpdateAssignmentSqlNode &assignment : update.assignments) {
     const FieldMeta *field_meta = table->table_meta().field(assignment.attribute_name.c_str());
     if (field_meta == nullptr) {
@@ -62,25 +89,31 @@ RC UpdateStmt::create(Db *db, const UpdateSqlNode &update, Stmt *&stmt)
       return RC::SCHEMA_FIELD_NOT_EXIST;
     }
 
-    Value value;
-    if (assignment.value.is_null()) {
-      if (!field_meta->nullable()) {
-        LOG_WARN("field can not be null. table=%s, field=%s", table_name, field_meta->name());
-        return RC::SCHEMA_FIELD_TYPE_MISMATCH;
-      }
-      value = assignment.value;
-    } else if (assignment.value.attr_type() == field_meta->type()) {
-      value = assignment.value;
-    } else {
-      rc = Value::cast_to(assignment.value, field_meta->type(), value);
-      if (OB_FAIL(rc)) {
-        LOG_WARN("failed to cast update value. table=%s, field=%s, rc=%s", table_name, field_meta->name(), strrc(rc));
-        return rc;
-      }
+    if (assignment.expression == nullptr) {
+      LOG_WARN("update assignment expression is null. table=%s, field=%s", table_name, field_meta->name());
+      return RC::INVALID_ARGUMENT;
+    }
+
+    unique_ptr<Expression> expression = assignment.expression->copy();
+    vector<unique_ptr<Expression>> bound_expressions;
+    rc = expression_binder.bind_expression(expression, bound_expressions);
+    if (OB_FAIL(rc)) {
+      LOG_WARN("failed to bind update expression. table=%s, field=%s, rc=%s", table_name, field_meta->name(), strrc(rc));
+      return rc;
+    }
+    if (bound_expressions.size() != 1) {
+      LOG_WARN("invalid update assignment expression count. table=%s, field=%s, count=%d",
+          table_name, field_meta->name(), static_cast<int>(bound_expressions.size()));
+      return RC::INVALID_ARGUMENT;
+    }
+
+    rc = reject_aggregate_expression(*bound_expressions[0]);
+    if (OB_FAIL(rc)) {
+      return rc;
     }
 
     field_metas.push_back(field_meta);
-    values.push_back(value);
+    expressions.emplace_back(std::move(bound_expressions[0]));
   }
 
   unordered_map<string, Table *> table_map;
@@ -94,6 +127,6 @@ RC UpdateStmt::create(Db *db, const UpdateSqlNode &update, Stmt *&stmt)
     return rc;
   }
 
-  stmt = new UpdateStmt(table, field_metas, values, filter_stmt);
+  stmt = new UpdateStmt(table, field_metas, std::move(expressions), filter_stmt);
   return RC::SUCCESS;
 }
