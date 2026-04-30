@@ -97,7 +97,10 @@ class MysqlMiniobResultGenerator:
     if isinstance(value, datetime.date):
       return value.isoformat()
     if isinstance(value, decimal.Decimal):
-      return format(value.normalize(), "f").rstrip("0").rstrip(".") or "0"
+      text = format(value.normalize(), "f")
+      if "." in text:
+        text = text.rstrip("0").rstrip(".")
+      return text or "0"
     if isinstance(value, float):
       if not math.isfinite(value):
         return str(value)
