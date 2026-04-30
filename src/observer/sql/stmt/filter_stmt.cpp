@@ -36,6 +36,7 @@ RC FilterStmt::create(Db *db, Table *default_table, unordered_map<string, Table 
   stmt  = nullptr;
 
   BinderContext binder_context;
+  binder_context.set_db(db);
   if (tables != nullptr) {
     for (auto &entry : *tables) {
       const string &name  = entry.first;

@@ -56,6 +56,7 @@ RC SelectStmt::create(Db *db, SelectSqlNode &select_sql, Stmt *&stmt)
   }
 
   BinderContext binder_context;
+  binder_context.set_db(db);
 
   // collect tables in `from` statement
   vector<Table *>                tables;
