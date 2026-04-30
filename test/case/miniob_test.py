@@ -180,7 +180,16 @@ class MiniObServer:
       observer_command.append('-p')
       observer_command.append(str(self.__server_port))
 
-    process = subprocess.Popen(observer_command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, cwd=self.__data_dir)
+    observer_env = os.environ.copy()
+    memtracer_so = observer_env.get('MINIOB_MEMTRACER_SO', '')
+    mem_limit = observer_env.get('MINIOB_MEM_LIMIT', '')
+    if memtracer_so:
+      observer_env['LD_PRELOAD'] = memtracer_so
+    if mem_limit:
+      observer_env['MT_MEMORY_LIMIT'] = mem_limit
+
+    process = subprocess.Popen(
+        observer_command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, cwd=self.__data_dir, env=observer_env)
     return_code = process.poll()
     if return_code != None:
       _logger.error("Failed to start observer, exit with code %d", return_code)
