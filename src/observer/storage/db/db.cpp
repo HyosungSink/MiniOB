@@ -185,6 +185,42 @@ Table *Db::find_table(const char *table_name) const
   return nullptr;
 }
 
+RC Db::drop_table(const char *table_name)
+{
+  auto iter = opened_tables_.find(table_name);
+  if (iter == opened_tables_.end()) {
+    LOG_WARN("no such table to drop. db=%s, table_name=%s", name_.c_str(), table_name);
+    return RC::SCHEMA_TABLE_NOT_EXIST;
+  }
+
+  Table *table = iter->second;
+
+  // Collect index file paths before deleting the table
+  const TableMeta &table_meta = table->table_meta();
+  vector<string> index_files;
+  for (int i = 0; i < table_meta.index_num(); i++) {
+    const IndexMeta *index_meta = table_meta.index(i);
+    index_files.push_back(table_index_file(path_.c_str(), table_name, index_meta->name()));
+  }
+
+  string meta_file = table_meta_file(path_.c_str(), table_name);
+  string data_file = table_data_file(path_.c_str(), table_name);
+
+  // Remove from map and delete table object (closes buffer pools and files)
+  opened_tables_.erase(iter);
+  delete table;
+
+  // Remove physical files
+  filesystem::remove(meta_file);
+  filesystem::remove(data_file);
+  for (const string &idx_file : index_files) {
+    filesystem::remove(idx_file);
+  }
+
+  LOG_INFO("Drop table success. table name=%s", table_name);
+  return RC::SUCCESS;
+}
+
 Table *Db::find_table(int32_t table_id) const
 {
   for (auto pair : opened_tables_) {
