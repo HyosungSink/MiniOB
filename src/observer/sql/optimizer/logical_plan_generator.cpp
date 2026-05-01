@@ -219,8 +219,44 @@ RC LogicalPlanGenerator::create_plan(FilterStmt *filter_stmt, unique_ptr<Logical
 
   unique_ptr<PredicateLogicalOperator> predicate_oper;
   if (!cmp_exprs.empty()) {
-    unique_ptr<ConjunctionExpr> conjunction_expr(new ConjunctionExpr(ConjunctionExpr::Type::AND, cmp_exprs));
-    predicate_oper = unique_ptr<PredicateLogicalOperator>(new PredicateLogicalOperator(std::move(conjunction_expr)));
+    // Build AND/OR conjunction tree: group consecutive AND-connected conditions,
+    // then combine groups with OR.
+    vector<unique_ptr<Expression>> or_groups;
+    vector<unique_ptr<Expression>> and_group;
+    for (size_t i = 0; i < cmp_exprs.size(); i++) {
+      // The filter_units list has conditions in reversed order from the parser
+      // (right-recursive grammar produces [Cn, ..., C1]).
+      // is_or on filter_units[i] means this condition is OR-connected to the
+      // NEXT condition in the reversed list (i+1). We flush the AND group
+      // BEFORE adding the current element when is_or is true, so the current
+      // element starts a new OR group.
+      bool is_or = (i < filter_units.size()) ? filter_units[i]->is_or() : false;
+      if (is_or && !and_group.empty()) {
+        if (and_group.size() == 1) {
+          or_groups.emplace_back(std::move(and_group[0]));
+        } else {
+          or_groups.emplace_back(make_unique<ConjunctionExpr>(ConjunctionExpr::Type::AND, and_group));
+        }
+        and_group.clear();
+      }
+      and_group.emplace_back(std::move(cmp_exprs[i]));
+    }
+    // Flush remaining AND group
+    if (!and_group.empty()) {
+      if (and_group.size() == 1) {
+        or_groups.emplace_back(std::move(and_group[0]));
+      } else {
+        or_groups.emplace_back(make_unique<ConjunctionExpr>(ConjunctionExpr::Type::AND, and_group));
+      }
+    }
+
+    unique_ptr<Expression> root_expr;
+    if (or_groups.size() == 1) {
+      root_expr = std::move(or_groups[0]);
+    } else {
+      root_expr = make_unique<ConjunctionExpr>(ConjunctionExpr::Type::OR, or_groups);
+    }
+    predicate_oper = unique_ptr<PredicateLogicalOperator>(new PredicateLogicalOperator(std::move(root_expr)));
   }
 
   logical_operator = std::move(predicate_oper);

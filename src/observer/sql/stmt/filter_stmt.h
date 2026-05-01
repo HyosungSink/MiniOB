@@ -59,10 +59,14 @@ public:
   const FilterObj &left() const { return left_; }
   const FilterObj &right() const { return right_; }
 
+  void set_is_or(bool is_or) { is_or_ = is_or; }
+  bool is_or() const { return is_or_; }
+
 private:
   CompOp    comp_ = NO_OP;
   FilterObj left_;
   FilterObj right_;
+  bool      is_or_ = false;
 };
 
 /**

@@ -23,6 +23,7 @@ enum class AttrType
   VECTORS,   ///< 向量类型
   BOOLEANS,  ///< boolean类型，当前不是由parser解析出来的，是程序内部使用的
   NULLS,     ///< NULL类型
+  DATES,     ///< 日期类型(存储为int32_t，表示从1970-01-01开始的天数)
   MAXTYPE,   ///< 请在 UNDEFINED 与 MAXTYPE 之间增加新类型
 };
 

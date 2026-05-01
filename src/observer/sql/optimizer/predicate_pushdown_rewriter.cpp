@@ -94,10 +94,8 @@ RC PredicatePushdownRewriter::get_exprs_can_pushdown(
   RC rc = RC::SUCCESS;
   if (expr->type() == ExprType::CONJUNCTION) {
     ConjunctionExpr *conjunction_expr = static_cast<ConjunctionExpr *>(expr.get());
-    // 或 操作的比较，太复杂，现在不考虑
+    // OR expressions cannot be pushed down to table scan; keep them in the predicate operator
     if (conjunction_expr->conjunction_type() == ConjunctionExpr::Type::OR) {
-      LOG_WARN("unsupported or operation");
-      rc = RC::UNIMPLEMENTED;
       return rc;
     }
 
