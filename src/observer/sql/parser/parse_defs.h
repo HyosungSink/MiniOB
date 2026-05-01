@@ -110,8 +110,8 @@ struct CalcSqlNode
  */
 struct InsertSqlNode
 {
-  string        relation_name;  ///< Relation to insert into
-  vector<Value> values;         ///< 要插入的值
+  string               relation_name;  ///< Relation to insert into
+  vector<vector<Value>> values_rows;   ///< 要插入的值，每行一个vector
 };
 
 /**

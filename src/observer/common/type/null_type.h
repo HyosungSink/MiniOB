@@ -8,12 +8,16 @@ EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
 MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
 See the Mulan PSL v2 for more details. */
 
-//
-// Created by WangYunlai on 2023/4/25.
-//
+#pragma once
 
-#include "sql/operator/insert_logical_operator.h"
+#include "common/type/data_type.h"
 
-InsertLogicalOperator::InsertLogicalOperator(Table *table, vector<vector<Value>> values_rows)
-    : table_(table), values_rows_(std::move(values_rows))
-{}
+class NullType : public DataType
+{
+public:
+  NullType() : DataType(AttrType::NULLS) {}
+
+  virtual ~NullType() = default;
+
+  RC to_string(const Value &val, string &result) const override;
+};

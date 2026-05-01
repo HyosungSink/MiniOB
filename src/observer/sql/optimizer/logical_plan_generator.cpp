@@ -229,10 +229,10 @@ int LogicalPlanGenerator::implicit_cast_cost(AttrType from, AttrType to)
 
 RC LogicalPlanGenerator::create_plan(InsertStmt *insert_stmt, unique_ptr<LogicalOperator> &logical_operator)
 {
-  Table        *table = insert_stmt->table();
-  vector<Value> values(insert_stmt->values(), insert_stmt->values() + insert_stmt->value_amount());
+  Table                 *table       = insert_stmt->table();
+  vector<vector<Value>>  values_rows = insert_stmt->values_rows();
 
-  InsertLogicalOperator *insert_operator = new InsertLogicalOperator(table, values);
+  InsertLogicalOperator *insert_operator = new InsertLogicalOperator(table, std::move(values_rows));
   logical_operator.reset(insert_operator);
   return RC::SUCCESS;
 }
