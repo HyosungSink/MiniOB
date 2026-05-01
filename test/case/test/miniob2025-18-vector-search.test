@@ -1,0 +1,25 @@
+-- echo miniob2025 vector setup
+create table vector_search_t(id int, label char, emb vector(3));
+insert into vector_search_t values(1, 'a', string_to_vector('[1, 0, 0]'));
+insert into vector_search_t values(2, 'b', string_to_vector('[0, 1, 0]'));
+insert into vector_search_t values(3, 'c', string_to_vector('[0, 0, 1]'));
+insert into vector_search_t values(4, 'd', string_to_vector('[1, 1, 0]'));
+insert into vector_search_t values(5, 'e', string_to_vector('[-1, 0, 0]'));
+
+-- echo vector conversion and distance
+select id, vector_to_string(emb) as emb_text from vector_search_t where id=1;
+select distance(string_to_vector('[1, 0, 0]'), string_to_vector('[0, 1, 0]'), 'EUCLIDEAN') as dist_euc;
+select distance(string_to_vector('[1, 0, 0]'), string_to_vector('[0, 1, 0]'), 'COSINE') as dist_cos;
+select distance(string_to_vector('[1, 0, 0]'), string_to_vector('[0, 1, 0]'), 'DOT') as dist_dot;
+
+-- echo exact vector search
+select id from vector_search_t order by distance(emb, string_to_vector('[1, 0, 0]'), 'EUCLIDEAN') asc limit 1;
+select id, label from vector_search_t order by distance(emb, string_to_vector('[0, 0, 1]'), 'EUCLIDEAN') asc, id asc limit 3;
+select id from vector_search_t order by distance(emb, string_to_vector('[1, 0, 0]'), 'DOT') desc, id asc limit 2;
+select id from vector_search_t order by distance(emb, string_to_vector('[1, 0, 0]'), 'COSINE') asc, id asc limit 3;
+
+-- echo vector boundary checks
+insert into vector_search_t values(6, 'f', string_to_vector('[1, 2]'));
+insert into vector_search_t values(7, 'g', string_to_vector('[1, x, 3]'));
+select distance(emb, string_to_vector('[1, 2]'), 'EUCLIDEAN') from vector_search_t;
+select distance(emb, string_to_vector('[1, 0, 0]'), 'UNKNOWN') from vector_search_t;

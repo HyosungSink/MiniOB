@@ -1,0 +1,17 @@
+-- echo official miniob2025-13-null-debug-official
+# -- Debug NULL functionality step by step
+CREATE TABLE test_null_simple(id int, name char(10));
+DESC test_null_simple;
+INSERT INTO test_null_simple VALUES (1, 'Alice');
+INSERT INTO test_null_simple VALUES (2, 'Bob');
+SELECT * FROM test_null_simple;
+SELECT * FROM test_null_simple WHERE id = 1;
+SELECT * FROM test_null_simple WHERE id = 2;
+SELECT * FROM test_null_simple WHERE name = 'Bob';
+# -- Now test with NULL literal - this should return empty result (not FAILURE)
+SELECT * FROM test_null_simple WHERE id = NULL;
+SELECT * FROM test_null_simple WHERE name = NULL;
+# -- Test constant NULL comparison
+SELECT 1 WHERE 1 = NULL;
+SELECT 1 WHERE NULL = NULL;
+DROP TABLE test_null_simple;

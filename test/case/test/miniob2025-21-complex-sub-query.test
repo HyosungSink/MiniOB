@@ -1,0 +1,122 @@
+-- echo miniob2025 21 complex sub query setup
+create table complex_user(id int, dept int, score int, name char);
+create table complex_order(uid int, amount int);
+insert into complex_user values(1, 10, 80, 'a');
+insert into complex_user values(2, 10, 90, 'b');
+insert into complex_user values(3, 20, 70, 'c');
+insert into complex_user values(4, 20, 95, 'd');
+insert into complex_order values(1, 100);
+insert into complex_order values(1, 200);
+insert into complex_order values(3, 300);
+
+-- echo complex sub query checks
+-- sort select u.id, u.name from complex_user u where exists (select 1 from complex_order o where o.uid=u.id and o.amount>150);
+-- sort select id, name from complex_user outer_u where score>(select avg(score) from complex_user inner_u where inner_u.dept=outer_u.dept);
+-- sort select id from complex_user where dept in (select dept from complex_user where id in (select uid from complex_order where amount>=300));
+select id from complex_user where score=(select max(score) from complex_user where dept=20);
+
+-- echo exists select star with scalar aggregate
+create table csq_1(id int, col1 int, feat1 float);
+create table csq_2(id int, col2 int, feat2 float);
+create table csq_3(id int, col3 int, feat3 float);
+create table csq_4(id int, col4 int, feat4 float);
+insert into csq_1 values(82, 37, 29.77);
+insert into csq_1 values(54, 68, 57.96);
+insert into csq_1 values(91, 12, 2.50);
+insert into csq_2 values(1, 11, 60.00);
+insert into csq_2 values(2, 12, 42.00);
+insert into csq_3 values(1, 67, 1.00);
+insert into csq_3 values(2, 90, 2.00);
+select * from csq_1 where (select max(csq_2.feat2) from csq_2) > feat1 and exists (select * from csq_3 where csq_3.col3 < csq_1.col1);
+
+-- echo complex sub query boundary errors
+select id from complex_user where score=(select amount from complex_order where uid=1);
+select id from complex_user where exists (select missing_col from complex_order where complex_order.uid=complex_user.id);
+
+-- echo nested correlated scalar subquery error
+drop table csq_1;
+drop table csq_2;
+drop table csq_3;
+drop table csq_4;
+create table csq_1(id int, col1 int, feat1 float);
+create table csq_2(id int, col2 int, feat2 float);
+create table csq_3(id int, col3 int, feat3 float);
+create table csq_4(id int, col4 int, feat4 float);
+insert into csq_1 values(65, 90, 81.41);
+insert into csq_2 values(2, 20, 3.0);
+insert into csq_3 values(2, 7, 1.0);
+insert into csq_4 values(9, 9, 1.0);
+insert into csq_4 values(10, 10, 1.0);
+select * from csq_1 where feat1 > (select min(csq_2.feat2) from csq_2 where csq_2.id in (select csq_3.id from csq_3 where csq_3.col3 <> (select csq_4.col4 from csq_4 where csq_4.id <> csq_1.id)));
+
+-- echo nested correlated not in
+drop table csq_1;
+drop table csq_2;
+drop table csq_3;
+drop table csq_4;
+create table csq_1(id int, col1 int, feat1 float);
+create table csq_2(id int, col2 int, feat2 float);
+create table csq_3(id int, col3 int, feat3 float);
+create table csq_4(id int, col4 int, feat4 float);
+insert into csq_1 values(34, 98, 25.55);
+insert into csq_1 values(11, 20, 1.00);
+insert into csq_2 values(34, 98, 1.00);
+insert into csq_2 values(11, 40, 1.00);
+insert into csq_3 values(34, 0, 1.00);
+select * from csq_1 where col1 not in (select csq_2.col2 from csq_2 where csq_2.id in (select csq_3.id from csq_3 where csq_1.id = csq_3.id));
+
+-- echo fused primary complex subquery coverage
+-- echo initialization
+CREATE TABLE p21_csq_1(id int, col1 int, feat1 float);
+CREATE TABLE p21_csq_2(id int, col2 int, feat2 float);
+CREATE TABLE p21_csq_3(id int, col3 int, feat3 float);
+CREATE TABLE p21_csq_4(id int, col4 int, feat4 float);
+
+INSERT INTO p21_csq_1 VALUES (1, 4, 11.2);
+INSERT INTO p21_csq_1 VALUES (2, 2, 12.0);
+INSERT INTO p21_csq_1 VALUES (3, 3, 13.5);
+INSERT INTO p21_csq_2 VALUES (1, 2, 13.0);
+INSERT INTO p21_csq_2 VALUES (2, 7, 10.5);
+INSERT INTO p21_csq_2 VALUES (5, 3, 12.6);
+INSERT INTO p21_csq_3 VALUES (1, 2, 11.0);
+INSERT INTO p21_csq_3 VALUES (3, 6, 16.5);
+INSERT INTO p21_csq_3 VALUES (5, 5, 14.6);
+
+-- echo 1. Select
+-- sort select * from p21_csq_1 where id in (select p21_csq_2.id from p21_csq_2 where p21_csq_2.id in (select p21_csq_3.id from p21_csq_3));
+
+-- sort select * from p21_csq_1 where id in (select p21_csq_2.id from p21_csq_2 where p21_csq_2.id not in (select p21_csq_3.id from p21_csq_3));
+
+-- sort select * from p21_csq_1 where col1 not in (select p21_csq_2.col2 from p21_csq_2 where p21_csq_2.id not in (select p21_csq_3.id from p21_csq_3));
+
+-- sort select * from p21_csq_1 where col1 not in (select p21_csq_2.col2 from p21_csq_2 where p21_csq_2.id in (select p21_csq_3.id from p21_csq_3));
+
+-- sort select * from p21_csq_1 where col1 > (select avg(p21_csq_2.col2) from p21_csq_2 where p21_csq_2.feat2 >= (select min(p21_csq_3.feat3) from p21_csq_3));
+
+-- sort select * from p21_csq_1 where (select avg(p21_csq_2.col2) from p21_csq_2 where p21_csq_2.feat2 > (select min(p21_csq_3.feat3) from p21_csq_3)) = col1;
+
+-- sort select * from p21_csq_1 where (select avg(p21_csq_2.col2) from p21_csq_2) <> (select avg(p21_csq_3.col3) from p21_csq_3);
+
+-- sort select * from p21_csq_1 where feat1 > (select min(p21_csq_2.feat2) from p21_csq_2) and col1 <= (select min(p21_csq_3.col3) from p21_csq_3);
+
+-- sort select * from p21_csq_1 where (select max(p21_csq_2.feat2) from p21_csq_2) > feat1 and col1 > (select min(p21_csq_3.col3) from p21_csq_3);
+
+-- sort select * from p21_csq_1 where (select max(p21_csq_2.feat2) from p21_csq_2) > feat1 and (select min(p21_csq_3.col3) from p21_csq_3) < col1;
+
+-- sort select * from p21_csq_1 where feat1 <> (select avg(p21_csq_2.feat2) from p21_csq_2 where p21_csq_2.feat2 > p21_csq_1.feat1);
+
+-- sort select * from p21_csq_1 where col1 not in (select p21_csq_2.col2 from p21_csq_2 where p21_csq_2.id in (select p21_csq_3.id from p21_csq_3 where p21_csq_1.id = p21_csq_3.id));
+
+-- echo 2. Select with empty table
+-- sort select * from p21_csq_1 where id in (select p21_csq_2.id from p21_csq_2 where p21_csq_2.id in (select p21_csq_3.id from p21_csq_3 where 1=0));
+-- sort select * from p21_csq_1 where id in (select p21_csq_2.id from p21_csq_2 where p21_csq_2.id in (select p21_csq_3.id from p21_csq_3 where 1=0) and 1=0);
+-- sort select * from p21_csq_1 where col1 not in (select p21_csq_2.col2 from p21_csq_2 where p21_csq_2.id not in (select p21_csq_3.id from p21_csq_3 where 1=0));
+-- sort select * from p21_csq_1 where col1 not in (select p21_csq_2.col2 from p21_csq_2 where p21_csq_2.id not in (select p21_csq_3.id from p21_csq_3) and 1=0);
+-- sort select * from p21_csq_3 where feat3 < (select max(p21_csq_2.feat2) from p21_csq_2 where p21_csq_2.id not in (select p21_csq_3.id from p21_csq_3 where 1=0));
+-- sort select * from p21_csq_3 where feat3 < (select max(p21_csq_2.feat2) from p21_csq_2 where p21_csq_2.id not in (select p21_csq_3.id from p21_csq_3 ) and 1=0);
+
+--echo 3. error
+select * from p21_csq_1 where col1 = (select p21_csq_2.col2 from p21_csq_2);
+select * from p21_csq_1 where col1 = (select * from p21_csq_2);
+select * from p21_csq_1 where col1 in (select * from p21_csq_2);
+select * from p21_csq_1 where col1 not in (select * from p21_csq_2);

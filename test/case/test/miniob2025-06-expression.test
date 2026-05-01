@@ -1,0 +1,69 @@
+-- echo miniob2025 06 expression setup
+create table expr_t(id int, a int, b int, c float);
+insert into expr_t values(1, 10, 2, 1.5);
+insert into expr_t values(2, 5, 0, 2.5);
+insert into expr_t values(3, -3, 4, 3.5);
+
+-- echo expression checks
+select id, a + b as add_value, a - b as sub_value from expr_t where id=1;
+-- sort select id, a * b as mul_value, a / b as div_value from expr_t;
+-- sort select id from expr_t where 5 + b < a + 6;
+select id, (a + b) * 2 as nested_value from expr_t where id=3;
+
+-- echo expression boundary checks
+select id, a / b as div_zero from expr_t where id=2;
+select unknown_col + 1 from expr_t;
+select id from expr_t where a + > 0;
+
+-- echo expression unary zero regression
+create table exp_table(id int, col1 int, col2 int, col3 float, col4 float);
+insert into exp_table values(4, 6, 5, 7.67, 2.45);
+insert into exp_table values(6, 5, 1, 4.86, 8.79);
+insert into exp_table values(6, 8, 3, 4.6, 1.3);
+insert into exp_table values(7, 4, 8, 7.63, 2.2);
+insert into exp_table values(2, 8, 9, 9.95, 1.64);
+-- sort select * from exp_table where -0 < col1 - col2;
+
+-- echo expression division null regression
+drop table exp_table;
+create table exp_table(id int, col1 int, col2 int, col3 float, col4 float);
+insert into exp_table values(9, 2, 1, 2.42, 2.17);
+insert into exp_table values(7, 1, 1, 5.18, 4.75);
+insert into exp_table values(2, 8, 5, 9.52, 1.92);
+select id,2*col1*(col2+1) from exp_table where 3*col1*(col2+2)+8/0 > 4;
+select * from exp_table where 8/0 = 6/0;
+
+-- echo fused primary expression coverage
+-- echo initialization
+create table p06_exp_table(id int, col1 int, col2 int, col3 float, col4 float);
+insert into p06_exp_table VALUES (1, 1, 1, 1.0, 1.5);
+insert into p06_exp_table VALUES (2, 2, -2, 5.5, 1.0);
+insert into p06_exp_table VALUES (3, 3, 4, 5.0, 4.0);
+
+-- echo 1. select
+-- sort select * from p06_exp_table where 1 = 5/4;
+-- sort select * from p06_exp_table where col1-2 > 0;
+-- sort select * from p06_exp_table where 2+col2 < 1;
+-- sort select * from p06_exp_table where col1*col2 < 0;
+
+-- sort select * from p06_exp_table where 5/4 = 1;
+-- sort select * from p06_exp_table where 0 < col1-2;
+-- sort select * from p06_exp_table where 1.0 > 2+col2;
+-- sort select * from p06_exp_table where -0 < col1-col2;
+-- sort select * from p06_exp_table where 0 < -2+col1;
+
+-- sort select * from p06_exp_table where 1+1 = 2*1.0;
+-- sort select * from p06_exp_table where 5/4*8 < 4+col2*col3/2;
+-- sort select * from p06_exp_table where 5/4*8 < (4+col2)*col3/2;
+
+-- sort select id,-(col2*(-1)+1)+(col4+2)*(col1+col3*2),(4+col2)*col3/2 from p06_exp_table where -(col2*(-1)+1)+(col4+2)*(col1+col3*2) > (4+col2)*col3/2;
+-- sort select id,col1,col2,col3,col4,6-(col2*(1+col1))+(col4+2)/(1+col1*4+col3*2) from p06_exp_table where 6-(col2*(1+col1))+(col4+2)/(1+col1*4+col3*2) > 5;
+-- sort select id,col1,col2,col3,col4,3*col1/(col2+2) from p06_exp_table where 3*col1/(col2+2) > 1;
+-- sort select id,3*col1/(col2+2) from p06_exp_table where 3*col1/(col2+2)+1/0 > 1;
+-- sort select * from p06_exp_table where 1/0 = 1/0;
+
+-- echo 2. expression about many tables
+create table p06_p06_exp_table2(id int, col1 int);
+insert into p06_p06_exp_table2 VALUES (1, 1);
+insert into p06_p06_exp_table2 VALUES (2, 3);
+-- sort select p06_exp_table.id,3*p06_p06_exp_table2.col1/(p06_exp_table.col2+2) from p06_exp_table,p06_p06_exp_table2 where 3*p06_p06_exp_table2.col1/(p06_exp_table.col2+2)>1;

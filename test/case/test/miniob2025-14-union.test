@@ -1,0 +1,26 @@
+-- echo miniob2025 union setup
+create table union_a(id int, tag char);
+create table union_b(id int, tag char);
+create table union_c(id int, tag char);
+insert into union_a values(1, 'a');
+insert into union_a values(1, 'a');
+insert into union_a values(2, 'b');
+insert into union_b values(2, 'b');
+insert into union_b values(3, 'c');
+insert into union_c values(3, 'c');
+insert into union_c values(4, 'd');
+
+-- echo union distinct and union all
+-- sort select id, tag from union_a union select id, tag from union_b;
+-- sort select id, tag from union_a union all select id, tag from union_b;
+-- sort select id from union_a union select id from union_b union select id from union_c;
+-- sort select id from union_a union all select id from union_b union select id from union_c;
+
+-- echo union with filters and projection aliases
+-- sort select id as value_id from union_a where id<=2 union select id as value_id from union_b where id>=2;
+-- sort select tag from union_a where id in (select id from union_b) union all select tag from union_c;
+
+-- echo union boundary errors
+select id from union_a union select id, tag from union_b;
+select id from union_a union select id from missing_union;
+select id from union_a union all select unknown_col from union_b;

@@ -1,0 +1,60 @@
+-- echo miniob2025 alias setup
+create table alias_t1(id int, score int, name char);
+create table alias_t2(id int, score int, name char);
+insert into alias_t1 values(1, 10, 'a');
+insert into alias_t1 values(2, 20, 'b');
+insert into alias_t1 values(3, 20, 'c');
+insert into alias_t2 values(1, 100, 'x');
+insert into alias_t2 values(2, 200, 'y');
+insert into alias_t2 values(4, 400, 'z');
+
+-- echo column aliases
+select id as alias_id, score as alias_score from alias_t1 where id=1;
+select id alias_id_no_as, name alias_name_no_as from alias_t1 where id=2;
+select id + score as total_score from alias_t1 where id=1;
+select count(*) as row_count, avg(score) as avg_score from alias_t1;
+
+-- echo table aliases
+-- sort select a.id, a.name, b.score from alias_t1 as a, alias_t2 as b where a.id=b.id;
+-- sort select a.id as left_id, b.id as right_id from alias_t1 a inner join alias_t2 b on a.id=b.id;
+-- sort select outer_t.id from alias_t1 as outer_t where outer_t.id in (select inner_t.id from alias_t2 as inner_t);
+
+-- echo alias wildcard projection
+create table table_alias_1(id int, col1 int, feat1 float);
+create table table_alias_2(id int, col2 int, feat2 float);
+create table table_alias_3(id int, col3 int, feat3 float);
+insert into table_alias_1 values (12, 60, 45.5);
+insert into table_alias_1 values (16, 71, 49.9);
+insert into table_alias_1 values (16, 84, 80.9);
+insert into table_alias_1 values (28, 42, 78.9);
+insert into table_alias_1 values (69, 89, 64.7);
+insert into table_alias_1 values (81, 13, 10.1);
+insert into table_alias_2 values (42, 54, 50);
+insert into table_alias_2 values (55, 21, 82.9);
+insert into table_alias_2 values (77, 36, 29.9);
+insert into table_alias_3 values (99, 1, 1.1);
+-- sort select t1.id as num, t1.col1 as age, t1.feat1, t2.* from table_alias_1 t1, table_alias_2 t2 where t1.id < t2.id;
+
+-- echo alias aggregate precision
+drop table table_alias_1;
+drop table table_alias_2;
+drop table table_alias_3;
+create table table_alias_1(id int, col1 int, feat1 float);
+create table table_alias_2(id int, col2 int, feat2 float);
+insert into table_alias_1 values (1, 66, 17.3);
+insert into table_alias_1 values (2, 3, 52.0);
+insert into table_alias_1 values (25, 35, 13.5);
+insert into table_alias_1 values (35, 55, 42.4);
+insert into table_alias_1 values (45, 43, 11.1);
+insert into table_alias_2 values (20, 1, 1.0);
+insert into table_alias_2 values (30, 2, 2.0);
+insert into table_alias_2 values (40, 3, 3.0);
+insert into table_alias_2 values (50, 4, 4.0);
+select count(*) as num, avg(t1.col1) score from table_alias_1 t1, table_alias_2 t2 where t1.id < t2.id;
+
+-- echo alias boundary errors
+select a.id from alias_t1 as a, alias_t2 as a where a.id=1;
+select alias_t1.id from alias_t1 as a where a.id=1;
+select a.unknown_col from alias_t1 as a;
+select * as alias from table_alias_1 t1;
+select id as from alias_t1;

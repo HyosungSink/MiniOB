@@ -1,0 +1,22 @@
+-- echo miniob2025 p24 no-limit order by memory regression
+create table p24_mem_0(i0 int, i1 int, i2 int, i3 int, i4 int, i5 int, i6 int, i7 int, i8 int, i9 int, i10 int, i11 int, i12 int, i13 int, i14 int, i15 int, i16 int, i17 int, i18 int, i19 int);
+create table p24_mem_1(i0 int, i1 int, i2 int, i3 int, i4 int, i5 int, i6 int, i7 int, i8 int, i9 int, i10 int, i11 int, i12 int, i13 int, i14 int, i15 int, i16 int, i17 int, i18 int, i19 int);
+create table p24_mem_2(i0 int, i1 int, i2 int, i3 int, i4 int, i5 int, i6 int, i7 int, i8 int, i9 int, i10 int, i11 int, i12 int, i13 int, i14 int, i15 int, i16 int, i17 int, i18 int, i19 int);
+create table p24_mem_3(i0 int, i1 int, i2 int, i3 int, i4 int, i5 int, i6 int, i7 int, i8 int, i9 int, i10 int, i11 int, i12 int, i13 int, i14 int, i15 int, i16 int, i17 int, i18 int, i19 int);
+insert into p24_mem_0 values(100, 117, 134, 151, 168, 185, 202, 219, 236, 253, 270, 287, 304, 321, 338, 355, 372, 389, 406, 423);
+insert into p24_mem_0 values(137, 154, 171, 188, 205, 222, 239, 256, 273, 290, 307, 324, 341, 358, 375, 392, 409, 426, 443, 460);
+insert into p24_mem_0 values(174, 191, 208, 225, 242, 259, 276, 293, 310, 327, 344, 361, 378, 395, 412, 429, 446, 463, 480, 497);
+insert into p24_mem_0 values(211, 228, 245, 262, 279, 296, 313, 330, 347, 364, 381, 398, 415, 432, 449, 466, 483, 500, 517, 534);
+insert into p24_mem_1 values(200, 217, 234, 251, 268, 285, 302, 319, 336, 353, 370, 387, 404, 421, 438, 455, 472, 489, 506, 523);
+insert into p24_mem_1 values(237, 254, 271, 288, 305, 322, 339, 356, 373, 390, 407, 424, 441, 458, 475, 492, 509, 526, 543, 560);
+insert into p24_mem_1 values(274, 291, 308, 325, 342, 359, 376, 393, 410, 427, 444, 461, 478, 495, 512, 529, 546, 563, 580, 597);
+insert into p24_mem_1 values(311, 328, 345, 362, 379, 396, 413, 430, 447, 464, 481, 498, 515, 532, 549, 566, 583, 600, 617, 634);
+insert into p24_mem_2 values(300, 317, 334, 351, 368, 385, 402, 419, 436, 453, 470, 487, 504, 521, 538, 555, 572, 589, 606, 623);
+insert into p24_mem_2 values(337, 354, 371, 388, 405, 422, 439, 456, 473, 490, 507, 524, 541, 558, 575, 592, 609, 626, 643, 660);
+insert into p24_mem_2 values(374, 391, 408, 425, 442, 459, 476, 493, 510, 527, 544, 561, 578, 595, 612, 629, 646, 663, 680, 697);
+insert into p24_mem_2 values(411, 428, 445, 462, 479, 496, 513, 530, 547, 564, 581, 598, 615, 632, 649, 666, 683, 700, 717, 734);
+insert into p24_mem_3 values(400, 417, 434, 451, 468, 485, 502, 519, 536, 553, 570, 587, 604, 621, 638, 655, 672, 689, 706, 723);
+insert into p24_mem_3 values(437, 454, 471, 488, 505, 522, 539, 556, 573, 590, 607, 624, 641, 658, 675, 692, 709, 726, 743, 760);
+insert into p24_mem_3 values(474, 491, 508, 525, 542, 559, 576, 593, 610, 627, 644, 661, 678, 695, 712, 729, 746, 763, 780, 797);
+insert into p24_mem_3 values(511, 528, 545, 562, 579, 596, 613, 630, 647, 664, 681, 698, 715, 732, 749, 766, 783, 800, 817, 834);
+select * from p24_mem_0, p24_mem_1, p24_mem_2, p24_mem_3 order by p24_mem_3.i4, p24_mem_1.i5, p24_mem_3.i9, p24_mem_2.i8, p24_mem_2.i1, p24_mem_0.i9, p24_mem_1.i9, p24_mem_3.i11, p24_mem_3.i1, p24_mem_0.i1, p24_mem_1.i1, p24_mem_2.i1;

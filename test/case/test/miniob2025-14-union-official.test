@@ -1,0 +1,21 @@
+-- echo official miniob2025-14-union-official
+
+DROP TABLE union_table_1;
+CREATE TABLE union_table_1(id INT, col1 INT);
+
+# -- id 在 (11,49) 内的行会同时命中两边子查询 → 触发 UNION 去重
+INSERT INTO union_table_1 VALUES (13, 17);
+
+
+INSERT INTO union_table_1 VALUES (20, 20);
+INSERT INTO union_table_1 VALUES (20, 20);
+
+INSERT INTO union_table_1 VALUES (38, 79);
+INSERT INTO union_table_1 VALUES (39, 62);
+
+# -- 这些只命中第一条子查询 (id < 50)，不会命中第二条
+INSERT INTO union_table_1 VALUES (6, 50);
+INSERT INTO union_table_1 VALUES (9, 18);
+
+# -- 校验（UNION 会去重；为便于目视核对，这里加排序）
+SELECT * FROM union_table_1 WHERE id < 50 UNION SELECT * FROM union_table_1 WHERE id > 10 ORDER BY id, col1;

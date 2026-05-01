@@ -1,0 +1,35 @@
+-- echo miniob2025 09 unique setup
+create table unique_t(id int, email int, region int, tag char);
+create unique index idx_unique_email on unique_t(email);
+create unique index idx_unique_region_tag on unique_t(region, tag);
+insert into unique_t values(1, 100, 1, 'a');
+insert into unique_t values(2, 200, 1, 'b');
+
+-- echo unique checks
+insert into unique_t values(3, 300, 2, 'a');
+-- sort select id, email, region, tag from unique_t;
+insert into unique_t values(4, 100, 3, 'c');
+insert into unique_t values(5, 500, 1, 'a');
+update unique_t set email=200 where id=3;
+drop index idx_unique_email on unique_t;
+insert into unique_t values(6, 100, 3, 'd');
+-- sort select id, email from unique_t;
+
+-- echo unique boundary errors
+drop index missing_unique_idx on unique_t;
+create unique index idx_unique_bad on unique_t(missing_col);
+
+-- echo fused primary unique coverage
+-- echo initialization
+CREATE TABLE unique_table(id int, col1 int, col2 int);
+INSERT INTO unique_table VALUES (1,1,1);
+
+-- echo 1. unique test
+CREATE UNIQUE INDEX index_id on unique_table(id);
+INSERT INTO unique_table VALUES (2,1,1);
+CREATE UNIQUE INDEX index_id on unique_table(id);
+INSERT INTO unique_table VALUES (3,2,1);
+INSERT INTO unique_table VALUES (1,2,1);
+
+-- echo 2. select
+-- sort SELECT * FROM unique_table;

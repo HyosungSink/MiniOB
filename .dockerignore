@@ -1,0 +1,45 @@
+.git
+.gitignore
+
+# Local build products. These dominate the repository size and should be
+# rebuilt inside the container when needed.
+build
+build_*
+cmake-build-*
+
+# Keep optional MySQL source available, but drop heavyweight local state.
+mysql-server/.git
+mysql-server/build
+mysql-server/build_*
+mysql-server/**/build
+mysql-server/**/build_*
+mysql-server/data
+mysql-server/mysql-files
+
+# Runtime/test scratch data.
+miniob.*
+nohup.txt*
+*.log
+*.pid
+*.sock
+*.tmp
+*.core
+core
+core.*
+tmp
+/tmp
+test/case/result_output
+test/integration_test/result
+
+# Editor and OS metadata.
+.DS_Store
+.idea
+.vscode
+*.swp
+*.swo
+
+# Python cache.
+__pycache__
+**/__pycache__
+.pytest_cache
+*.pyc

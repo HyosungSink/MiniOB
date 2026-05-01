@@ -1,0 +1,78 @@
+-- echo miniob2025 07 function setup
+create table function_t(id int, name char, score float, d date);
+insert into function_t values(1, 'a', 1.234, '2020-01-01');
+insert into function_t values(2, 'b', 2.500, '2024-02-29');
+insert into function_t values(3, null, null, null);
+
+-- echo function checks
+-- sort select id, length(name), round(score), round(score, 1) from function_t;
+select date_format(d, '%D,%M,%Y') as formatted_date from function_t where id=1;
+select date_format(d, 'abc %z def %n ghi') as formatted_date from function_t where id=2;
+select length(null), round(null), date_format(null, '%Y');
+select length('13IGW0E0VW0PZIOL3NAWHB6HFDS') len1, length('II8XP21F3YW9T37C01YZDAEFYHMPDWPKBFWVOXSYC94OAV2O6TVEXE7FGAETX8YRNX') len2;
+select round(15.6077, 2) as round_value;
+select date_format('2016-10-21', '%y/%m/%d') as date_type;
+
+-- echo function boundary errors
+select length() from function_t;
+select round() from function_t;
+select date_format(d) from function_t;
+
+-- echo fused primary aggregation function coverage
+-- echo initialization
+CREATE TABLE aggregation_func(id int, num int, price float, addr char, birthday date);
+
+INSERT INTO aggregation_func VALUES (1, 18, 10.0, 'abc', '2020-01-01');
+INSERT INTO aggregation_func VALUES (2, 15, 20.0, 'abc', '2010-01-11');
+INSERT INTO aggregation_func VALUES (3, 12, 30.0, 'def', '2021-01-21');
+INSERT INTO aggregation_func VALUES (4, 15, 30.0, 'dei', '2021-01-31');
+
+-- echo 1. count
+SELECT count(*) FROM aggregation_func;
+
+SELECT count(num) FROM aggregation_func;
+
+-- echo 2. min
+SELECT min(num) FROM aggregation_func;
+
+SELECT min(price) FROM aggregation_func;
+
+SELECT min(addr) FROM aggregation_func;
+
+-- echo 3. max
+SELECT max(num) FROM aggregation_func;
+
+SELECT max(price) FROM aggregation_func;
+
+SELECT max(addr) FROM aggregation_func;
+
+-- echo 4. avg
+SELECT avg(num) FROM aggregation_func;
+
+SELECT avg(price) FROM aggregation_func;
+
+-- echo 5. error with *
+SELECT min(*) FROM aggregation_func;
+SELECT max(*) FROM aggregation_func;
+SELECT avg(*) FROM aggregation_func;
+
+-- echo 6. error with redundant columns
+SELECT count(*,num) FROM aggregation_func;
+SELECT min(num,price) FROM aggregation_func;
+SELECT max(num,price) FROM aggregation_func;
+SELECT avg(num,price) FROM aggregation_func;
+
+-- echo 7. error with empty columns
+SELECT count() FROM aggregation_func;
+SELECT min() FROM aggregation_func;
+SELECT max() FROM aggregation_func;
+SELECT avg() FROM aggregation_func;
+
+-- echo 8. error with non-existent columns
+SELECT count(id2) FROM aggregation_func;
+SELECT min(id2) FROM aggregation_func;
+SELECT max(id2) FROM aggregation_func;
+SELECT avg(id2) FROM aggregation_func;
+
+-- echo 9. select many aggregation
+SELECT min(num),max(num),avg(num) FROM aggregation_func;

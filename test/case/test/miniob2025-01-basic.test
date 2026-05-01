@@ -1,0 +1,86 @@
+-- echo miniob2025 01 basic setup
+create table basic_t(id int, age int, name char, score float);
+create index idx_basic_id on basic_t(id);
+insert into basic_t values(1, 18, 'a', 1.5);
+insert into basic_t values(2, 20, 'b', 2.5);
+insert into basic_t values(3, 18, 'c', 3.5);
+
+-- echo basic select insert delete
+select * from basic_t where id=1;
+-- sort select id, age, name from basic_t where age=18;
+delete from basic_t where id=2;
+-- sort select * from basic_t;
+insert into basic_t values(4, 30, 'd', 4.5);
+-- sort select id, score from basic_t;
+
+-- echo basic boundary errors
+create table basic_t(id int);
+insert into basic_t values(5);
+select missing_col from basic_t;
+
+-- echo fused basic SQL coverage
+-- echo basic insert
+
+create table t_basic(id int, age int, name char, score float);
+insert into t_basic values(1,1, 'a', 1.0);
+insert into t_basic values(2,2, 'b', 2.0);
+insert into t_basic values(4,4, 'c', 3.0);
+insert into t_basic values(3,3, 'd', 4.0);
+insert into t_basic values(5,5, 'e', 5.5);
+insert into t_basic values(6,6, 'f', 6.6);
+insert into t_basic values(7,7, 'g', 7.7);
+
+--sort select * from t_basic;
+
+-- echo basic delete
+delete from t_basic where id=3;
+-- sort select * from t_basic;
+
+-- echo basic select
+select * from t_basic where id=1;
+
+-- sort select * from t_basic where id>=5;
+
+select * from t_basic where age>1 and age<3;
+
+select * from t_basic where t_basic.id=1 and t_basic.age=1;
+
+select * from t_basic where id=1 and age=1;
+
+-- sort select id, age, name, score from t_basic;
+
+-- sort select t_basic.id, t_basic.age, t_basic.name, t_basic.score from t_basic;
+
+-- sort select t_basic.id, t_basic.age, name from t_basic;
+
+-- echo create index
+create index i_id on t_basic (id);
+-- sort select * from t_basic;
+
+-- echo test calc expression
+calc 1, 2, 3;
+calc 1 + 2 - 3+4;
+calc 2* 4;
+calc 3/2;
+calc 2* (1+3);
+calc (1+3) *2;
+calc 2 *-(10+2);
+calc (1+2) * (2 * (20+-(5*1)));
+calc 20/0;
+calc 13.2/0.0;
+calc "123" + 4;
+calc "abc" + 4;
+
+-- echo fused primary insert coverage
+CREATE TABLE p01_insert_table(id int, t_name char, col1 int, col2 int);
+INSERT INTO p01_insert_table VALUES (1,'N1',1,1);
+INSERT INTO p01_insert_table VALUES (2,'N2',1,1),(3,'N3',2,1);
+INSERT INTO p01_insert_table VALUES (4,'N4',1,1),(1,1,1);
+INSERT INTO p01_insert_table VALUES (4,'N4',1,1),(1,1,1,1);
+-- sort SELECT * FROM p01_insert_table;
+
+-- echo fused primary select meta coverage
+CREATE TABLE p01_select_meta(id int, age int);
+select * from p01_no_table;
+select home from p01_select_meta;
+select * from p01_select_meta where home='001';

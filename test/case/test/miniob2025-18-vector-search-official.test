@@ -1,0 +1,99 @@
+-- echo official miniob2025-18-vector-search-official
+# -- 0) 干净环境
+
+DROP TABLE TAB_VEC;
+
+# -- 1) 建表与插入
+CREATE TABLE TAB_VEC (id INT, A VECTOR(3), B VECTOR(3));
+
+# -- 期望：SUCCESS
+
+# -- 插入简单可算的数据点
+INSERT INTO TAB_VEC VALUES (1, STRING_TO_VECTOR('[1, 0, 0]'), STRING_TO_VECTOR('[10, 0, 5]')), (2, STRING_TO_VECTOR('[0, 1, 0]'), STRING_TO_VECTOR('[9, 0, 5]')), (3, STRING_TO_VECTOR('[-1, 0, 0]'), STRING_TO_VECTOR('[10, 1, 5]')), (4, STRING_TO_VECTOR('[1, 1, 0]'), STRING_TO_VECTOR('[7, 4, 5]'));
+
+# -- 期望：SUCCESS
+
+# -- 可视化检查（可选）
+SELECT id, VECTOR_TO_STRING(A) AS A_STR, VECTOR_TO_STRING(B) AS B_STR FROM TAB_VEC ORDER BY id;
+
+# -- 正确输出（示例）：
+# -- 1 | [1.00000e+00,0.00000e+00,0.00000e+00] | [1.00000e+01,0.00000e+00,5.00000e+00]
+# -- 2 | [0.00000e+00,1.00000e+00,0.00000e+00] | [9.00000e+00,0.00000e+00,5.00000e+00]
+# -- 3 | [-1.00000e+00,0.00000e+00,0.00000e+00]| [1.00000e+01,1.00000e+00,5.00000e+00]
+# -- 4 | [1.00000e+00,1.00000e+00,0.00000e+00] | [7.00000e+00,4.00000e+00,5.00000e+00]
+
+
+# -- 2) 欧氏距离最近邻（列 vs 常量）
+# --    查询：按 B 到 q=[10,0,5] 的欧氏距离升序，取1个最近邻
+
+SELECT id, DISTANCE(B, STRING_TO_VECTOR('[10, 0, 5]'), 'EUCLIDEAN') AS D_EUC FROM TAB_VEC ORDER BY D_EUC, id LIMIT 1;
+
+# -- 正确输出：
+# -- 1 | 0
+
+# -- Top-3（含并列时按 id 次序稳定）
+SELECT id,DISTANCE(B, STRING_TO_VECTOR('[10, 0, 5]'), 'EUCLIDEAN') AS D_EUC FROM TAB_VEC ORDER BY D_EUC, id LIMIT 3;
+
+# -- 正确输出（数值示例）：
+# -- 1 | 0
+# -- 2 | 1
+# -- 3 | 1
+
+
+# -- 3) 余弦距离排序（列 vs 常量）
+# --    q2 = [1,0,0]；余弦距离 = 1 - cos_sim
+# --    期望顺序：id=1 (0), id=4 (~0.29289), id=2 (1), id=3 (2)
+
+SELECT id,DISTANCE(A, STRING_TO_VECTOR('[1, 0, 0]'), 'COSINE') AS D_COS FROM TAB_VEC ORDER BY D_COS, id;
+
+# -- 正确输出（示例）：
+# -- 1 | 0
+# -- 4 | 2.92893e-01  -- 约 0.292893
+# -- 2 | 1
+# -- 3 | 2
+
+# -- 4) 点积相似度Top-1（用 DISTANCE(...,'DOT')，取最大者）
+# --    q3 = [1,2,3]；点积：id1=1, id2=2, id3=-1, id4=3 → 最大为 id=4
+
+SELECT id, DISTANCE(A, STRING_TO_VECTOR('[1, 2, 3]'), 'DOT') AS DOT_SIM FROM TAB_VEC ORDER BY DOT_SIM DESC, id LIMIT 1;
+
+# -- 正确输出：
+# -- 4 | 3
+
+
+# -- 5) 过滤 + 距离排序：仅在 {2,4} 中找离 q 的最近
+
+SELECT id, DISTANCE(B, STRING_TO_VECTOR('[10, 0, 5]'), 'EUCLIDEAN') AS D_EUC FROM TAB_VEC WHERE id IN (2,4) ORDER BY D_EUC, id LIMIT 1;
+
+# -- 正确输出：
+# -- 2 | 1
+
+
+# -- 6) 错误用法与边界（应 FAILURE）
+
+
+# -- 6.1 维度不匹配
+SELECT DISTANCE(STRING_TO_VECTOR('[1,2]'), STRING_TO_VECTOR('[1,2,3]'), 'EUCLIDEAN');
+# -- 期望：FAILURE（维度不一致）
+
+# -- 6.2 第二参数不是向量（缺少 STRING_TO_VECTOR）
+SELECT DISTANCE(A, '[1,2,3]', 'EUCLIDEAN') FROM TAB_VEC LIMIT 1;
+# -- 期望：FAILURE（参数类型错误，需 STRING_TO_VECTOR 包裹）
+
+# -- 6.3 非法度量名
+SELECT DISTANCE(A, STRING_TO_VECTOR('[1,2,3]'), 'MANHATTAN') FROM TAB_VEC LIMIT 1;
+# -- 期望：FAILURE（不支持的度量方式）
+
+# -- 6.4 与非向量比较（若实现允许 WHERE 中比较向量，应仅支持相等；这里演示错误）
+SELECT * FROM TAB_VEC WHERE A > STRING_TO_VECTOR('[0,0,0]');
+# -- 期望：FAILURE（不支持的比较操作）
+
+
+# -- below are some requests executed before(partial) --
+# -- INITIALIZATION
+CREATE TABLE TAB_VEC(ID INT, A INT, B VECTOR(10));
+INSERT INTO TAB_VEC VALUES(1, 1, STRING_TO_VECTOR('[0.88,1.16,4.1,2.29,2.28,0.9,0.81,0.92,1.31,1.27]'));
+INSERT INTO TAB_VEC VALUES(2, 2, STRING_TO_VECTOR('[3.67,4.61,2.24,2.97,2.9,3.47,1.34,2.28,1.89,4.78]'));
+INSERT INTO TAB_VEC VALUES(3, 3, STRING_TO_VECTOR('[4.94,3.97,2.83,3.82,0.48,4.98,2.79,3.42,2.07,2.34]'));
+INSERT INTO TAB_VEC VALUES(4, 4, STRING_TO_VECTOR('[4.4,2.51,1.72,0.21,1.33,0.48,2.8,4.87,2.44,2.82]'));
+SELECT ID FROM TAB_VEC ORDER BY DISTANCE(B, STRING_TO_VECTOR('[4.99,3.37,4.69,4.38,1.02,0.97,2.67,2.5,1.34,4.44]'), 'EUCLIDEAN') LIMIT 1;

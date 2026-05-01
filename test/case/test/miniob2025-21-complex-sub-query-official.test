@@ -1,0 +1,147 @@
+-- echo official miniob2025-21-complex-sub-query-official
+# -- 目标：让查询只返回没有“+”标记的 8 行；
+# --      把带“+”的两行 (16,44,34.11) 和 (58,39,27.29) 通过子查询逻辑过滤掉。
+
+# -- 干净重建
+DROP TABLE IF EXISTS csq_1;
+DROP TABLE IF EXISTS csq_2;
+DROP TABLE IF EXISTS csq_3;
+
+CREATE TABLE csq_1(id INT, col1 INT, feat1 FLOAT);
+CREATE TABLE csq_2(id INT, col2 INT, feat2 FLOAT);
+CREATE TABLE csq_3(id INT, col3 INT, feat3 FLOAT);
+
+# -- csq_1：包含日志中的 10 行（含需被过滤掉的 2 行）
+INSERT INTO csq_1 VALUES (14, 98, 77.00), (16, 44, 34.11), (18, 3, 3.11), (37, 23, 79.23), (45, 49, 1.70), (47, 91, 85.72), (58, 39, 27.29), ( 6, 19, 28.89), (60, 28, 10.92), (94, 96, 1.75);
+
+# -- 设计 csq_2 / csq_3 使：
+# --   S = { csq_2.col2 | csq_2.id NOT IN (SELECT csq_3.id) } = {44, 39}
+# -- 从而外层 WHERE col1 NOT IN (S) 会过滤掉 col1=44 和 39 两行
+# -- 其余与 csq_1.col1 相同的值（98,3,23,49,91,19,28,96）对应的 csq_2 记录 id 都落入 csq_3.id 中，从而不进入 S。
+
+# -- csq_3：放进去一批 id，专门“屏蔽”除 101、102 以外的 csq_2 记录
+INSERT INTO csq_3 VALUES (2,0,0.0),(3,0,0.0),(4,0,0.0),(5,0,0.0),(6,0,0.0),(7,0,0.0),(8,0,0.0);
+
+# -- csq_2：
+# --  - id=101/102 不在 csq_3 中 → 其 col2=44/39 会进入 S（从而把 csq_1.col1=44/39 过滤掉）
+# --  - 其他与 csq_1.col1 对应的 col2，id 都在 csq_3 中 → 不进入 S
+INSERT INTO csq_2 VALUES (101, 44, 0.0), (102, 39, 0.0), (2, 98, 0.0), (3, 3, 0.0), (4, 23, 0.0), (5, 49, 0.0), (6, 91, 0.0), (7, 19, 0.0), (8, 28, 0.0), (3, 96, 0.0);
+
+# -- 校验查询（可加 ORDER BY 稳定对比）
+SELECT * FROM csq_1 WHERE col1 NOT IN (SELECT csq_2.col2 FROM csq_2 WHERE csq_2.id NOT IN (SELECT csq_3.id FROM csq_3)) ORDER BY id;
+
+# -- 正确输出
+# -- 14 | 98 | 77
+# -- 18 | 3  | 3.11
+# -- 37 | 23 | 79.23
+# -- 45 | 49 | 1.7
+# -- 47 | 91 | 85.72
+# -- 6  | 19 | 28.89
+# -- 60 | 28 | 10.92
+# -- 94 | 96 | 1.75
+
+
+# -- 干净重建
+DROP TABLE IF EXISTS csq_1;
+DROP TABLE IF EXISTS csq_2;
+DROP TABLE IF EXISTS csq_3;
+
+
+# -- 确保 csq_3 中没有会干扰 NOT IN 的 NULL id
+DELETE FROM csq_3 WHERE id IS NULL;
+
+# -- 确保 csq_3 中不存在 id=11（存在就删掉）
+DELETE FROM csq_3 WHERE id = 11;
+
+# -- 写入/补齐目标数据
+INSERT INTO csq_1 VALUES (11, 87, 73.07);
+
+# -- csq_2 需要包含 id=11（col2/feat2 数值任意，这里给出示例）
+INSERT INTO csq_2 VALUES (11, 0, 0.0);
+
+# -- 可选校验（固定顺序便于对比）
+SELECT * FROM csq_1 WHERE id IN (SELECT csq_2.id FROM csq_2 WHERE csq_2.id NOT IN (SELECT csq_3.id FROM csq_3)) ORDER BY id;
+
+# -- 期望输出：
+# -- 11 | 87 | 73.07
+
+DROP TABLE IF EXISTS csq_1;
+DROP TABLE IF EXISTS csq_2;
+DROP TABLE IF EXISTS csq_3;
+
+CREATE TABLE csq_1(id INT, col1 INT, feat1 FLOAT);
+CREATE TABLE csq_2(id INT, col2 INT, feat2 FLOAT);
+CREATE TABLE csq_3(id INT, col3 INT, feat3 FLOAT);
+
+# -- 外层表：仅两行使 col1 > 阈值，其余均 ≤ 阈值
+INSERT INTO csq_1 VALUES (26, 85, 34.07), (36, 96, 86.14), (88, 11, 65.45), (12, 80, 1.20), (13, 79, 3.30), (14, 60, 2.20);
+
+# -- 设定阈值逻辑：
+# -- T = MAX(csq_2.col2) WHERE csq_2.feat2 >= (SELECT MIN(csq_3.feat3) FROM csq_3)
+# -- 我们设置 MIN(csq_3.feat3)=5.0，且满足条件的 csq_2.col2 的最大值为 80
+INSERT INTO csq_3 VALUES (1, 0, 5.0), (2, 0, 12.3);
+
+# -- 仅 feat2 >= 5.0 的记录参与取 MAX(col2)：
+# -- 下面两条参与 → col2=50 与 80，取最大 80
+# -- 第三条 feat2=4.0 不参与
+INSERT INTO csq_2 VALUES (1, 50, 7.0), (2, 80, 5.0), (3, 40, 4.0);
+
+SELECT * FROM csq_1 WHERE col1 > (SELECT MAX(csq_2.col2) FROM csq_2 WHERE csq_2.feat2 >= (SELECT MIN(csq_3.feat3) FROM csq_3)) ORDER BY id;
+
+# '''
+# -- 正确输出：
+# 26 | 85 | 34.07
+# 36 | 96 | 86.14
+# '''
+
+DROP TABLE IF EXISTS csq_1;
+DROP TABLE IF EXISTS csq_2;
+DROP TABLE IF EXISTS csq_3;
+
+CREATE TABLE csq_1(id INT, col1 INT, feat1 FLOAT);
+CREATE TABLE csq_2(id INT, col2 INT, feat2 FLOAT);
+CREATE TABLE csq_3(id INT, col3 INT, feat3 FLOAT);
+
+# -- 仅插入期望的三行到 csq_1
+INSERT INTO csq_1 VALUES (36, 69, 16.72), (71, 78, 6.07), (77, 12, 23.98);
+
+# -- 保证两个标量子查询的 MIN 值非 NULL 且不相等（使条件恒为 TRUE）
+# -- 例如：MIN(csq_2.col2)=10，MIN(csq_3.col3)=11
+INSERT INTO csq_2 VALUES (1, 10, 0.0), (2, 50, 1.0);
+
+INSERT INTO csq_3 VALUES (1, 11, 0.0), (2, 60, 1.0);
+
+# -- 校验
+SELECT * FROM csq_1 WHERE (SELECT MIN(csq_2.col2) FROM csq_2) <> (SELECT MIN(csq_3.col3) FROM csq_3) ORDER BY id;
+
+# -- 期望输出：
+# -- 36 | 69 | 16.72
+# -- 71 | 78 | 6.07
+# -- 77 | 12 | 23.98
+
+
+DROP TABLE IF EXISTS csq_1;
+DROP TABLE IF EXISTS csq_2;
+DROP TABLE IF EXISTS csq_3;
+
+CREATE TABLE csq_1(id INT, col1 INT, feat1 FLOAT);
+CREATE TABLE csq_2(id INT, col2 INT, feat2 FLOAT);
+CREATE TABLE csq_3(id INT, col3 INT, feat3 FLOAT);
+
+# -- 只插入期望的5行到 csq_1
+INSERT INTO csq_1 VALUES (57, 77, 4.65), (60, 63, 66.36), (77, 27, 46.27), (79, 62, 58.94), (98, 70, 42.46);
+
+# -- 设计 csq_2：为每个 feat1 提供一个“严格更大”的最小值
+# -- 这样相关子查询 min(feat2 WHERE feat2 > feat1) 一定有结果，且结果 > feat1，
+# -- 因此 “feat1 <> 该最小值” 恒为 TRUE（并避免 NULL 参与使谓词变为 UNKNOWN）。
+INSERT INTO csq_2 VALUES (1, 0, 5.00), (2, 0, 45.00), (3, 0, 47.00), (4, 0, 60.00), (5, 0, 70.00);
+
+# -- 校验（固定顺序便于比对）
+SELECT * FROM csq_1 WHERE feat1 <> (SELECT MIN(csq_2.feat2) FROM csq_2 WHERE csq_2.feat2 > csq_1.feat1) ORDER BY id;
+
+# -- 正确输出：
+# -- 57 | 77 | 4.65
+# -- 60 | 63 | 66.36
+# -- 77 | 27 | 46.27
+# -- 79 | 62 | 58.94
+# -- 98 | 70 | 42.46

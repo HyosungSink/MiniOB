@@ -1,0 +1,12 @@
+-- echo miniob2025 fulltext bm25 regression
+CREATE TABLE texts (id INT, content TEXT);
+INSERT INTO texts VALUES (0, 'TENANT_ID字段的含义是什么？它的数据类型和是否可以为NULL的属性是怎样的？');
+INSERT INTO texts VALUES (1, 'DataFlowObject(DFO)在分布式计划中的作用是什么？');
+INSERT INTO texts VALUES (2, 'SA_SESSION.LABEL和SA_SESSION.SET_LABEL有什么区别？');
+INSERT INTO texts VALUES (3, 'COALESCE函数返回值的数据类型是什么？');
+INSERT INTO texts VALUES (4, 'OceanBase数据库中的租户资源隔离如何配置？');
+INSERT INTO texts VALUES (5, '如何查看SQL执行计划中的算子信息？');
+INSERT INTO texts VALUES (6, 'CDB_OB_BACKUP_JOB_HISTORY表记录哪些备份任务状态？');
+INSERT INTO texts VALUES (7, '在oceanbase.CDB_OB_RESTORE_HISTORY表中，哪些字段可以用于描述备份和恢复的路径信息？');
+ALTER TABLE texts ADD FULLTEXT INDEX idx_texts_jieba (content) WITH PARSER jieba;
+SELECT id, content, MATCH(content) AGAINST('字段说明') AS score FROM texts WHERE MATCH(content) AGAINST('字段说明') > 0 ORDER BY MATCH(content) AGAINST('字段说明') DESC, id ASC;

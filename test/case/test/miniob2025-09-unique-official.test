@@ -1,0 +1,33 @@
+-- echo official miniob2025-09-unique-official
+DROP TABLE unique_table2;
+CREATE TABLE unique_table2(id1 INT, id2 INT, col1 INT, col2 INT);
+
+CREATE UNIQUE INDEX index_id on unique_table2(col1,col2);
+
+INSERT INTO unique_table2 VALUES (1, 1, 1, 1);
+INSERT INTO unique_table2 VALUES (1, 2, 1, 2);
+
+UPDATE unique_table2 SET id1=1, id2=4 WHERE col1=1 AND col2=1;
+
+SELECT * FROM unique_table2 ORDER BY id1, id2, col1, col2;
+
+DROP TABLE unique_table2;
+CREATE TABLE unique_table2(id1 INT, id2 INT, col1 INT, col2 INT);
+CREATE UNIQUE INDEX index_id2 on unique_table2(id1,id2);
+INSERT INTO unique_table2 VALUES (1, 1, 1, 1);
+INSERT INTO unique_table2 VALUES (1, 2, 1, 1);
+INSERT INTO unique_table2 VALUES (2, 3, 1, 1);
+UPDATE unique_table2 SET id1=1,id2=4 where id2=2;
+SELECT * FROM unique_table2;
+
+DROP TABLE unique_table4;
+
+CREATE TABLE unique_table4 (id INT, name CHAR(4));
+
+
+CREATE UNIQUE INDEX unique_table4_id on unique_table4(name)
+INSERT INTO unique_table4 VALUES (1, 'aaaa');
+INSERT INTO unique_table4 VALUES (2, 'bbbb');
+INSERT INTO unique_table4 VALUES (3, 'cccc');
+
+DROP INDEX unique_table4_id ON unique_table4;

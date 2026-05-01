@@ -1,0 +1,111 @@
+-- echo official miniob2025-19-alter-official
+# -- 用例 1：ADD COLUMN（新增列为 NULL；新插入可赋值）
+
+DROP TABLE alter_add_1;
+
+CREATE TABLE alter_add_1 (id INT);
+# -- 期望：SUCCESS
+
+INSERT INTO alter_add_1 VALUES (1),(2);
+# -- 期望：SUCCESS
+
+ALTER TABLE alter_add_1 ADD COLUMN col INT;
+# -- 期望：SUCCESS
+
+INSERT INTO alter_add_1 VALUES (3,30);
+# -- 期望：SUCCESS
+
+SELECT id, col FROM alter_add_1 ORDER BY id;
+# -- 正确输出：
+# -- 1 | NULL
+# -- 2 | NULL
+# -- 3 | 30
+
+
+
+# -- 用例 2：CHANGE COLUMN（仅重命名，不改类型）
+# -- 验证：索引随列重命名仍可用，且可被正常 DROP
+
+DROP TABLE alter_change_1;
+
+CREATE TABLE alter_change_1 (col INT, b INT);
+# -- 期望：SUCCESS
+
+CREATE INDEX idx_col ON alter_change_1(col);
+# -- 期望：SUCCESS
+
+INSERT INTO alter_change_1 VALUES (10, 1),(20, 2);
+# -- 期望：SUCCESS
+
+# -- 将列 col 重命名为 id（类型仍为 INT）
+ALTER TABLE alter_change_1 CHANGE COLUMN col id INT;
+# -- 期望：SUCCESS
+
+# -- 重命名后，数据与新列名可正常查询
+SELECT id, b FROM alter_change_1 ORDER BY id;
+# -- 正确输出：
+# -- 10 | 1
+# -- 20 | 2
+
+# -- 原索引（idx_col）应随列重命名继续有效，可被正常删除
+DROP INDEX idx_col ON alter_change_1;
+# -- 期望：SUCCESS
+
+
+
+# -- 用例 3：DROP COLUMN（删除被索引的列）
+# -- 验证：删除列时，相应单列索引一并移除；后续再 DROP INDEX 将失败
+
+DROP TABLE alter_drop_1;
+
+CREATE TABLE alter_drop_1 (a INT, col INT, c INT);
+# -- 期望：SUCCESS
+
+CREATE INDEX idx_col ON alter_drop_1(col);
+# -- 期望：SUCCESS
+
+INSERT INTO alter_drop_1 VALUES (1, 100, 9),(2, 200, 8);
+# -- 期望：SUCCESS
+
+ALTER TABLE alter_drop_1 DROP COLUMN col;
+# -- 期望：SUCCESS
+
+# -- 删除后只剩两列 (a,c)
+SELECT * FROM alter_drop_1 ORDER BY a;
+# -- 正确输出：
+# -- 1 | 9
+# -- 2 | 8
+
+# -- 该索引应已被联动移除；再次尝试删除应失败
+DROP INDEX idx_col ON alter_drop_1;
+# -- 期望：FAILURE
+
+
+
+# -- 用例 4：RENAME TO（表整体改名）
+# -- 验证：数据与索引随表更名迁移到新表名下
+
+DROP TABLE alter_table_1;
+DROP TABLE alter_table_2;
+
+CREATE TABLE alter_table_1 (a INT, b INT);
+# -- 期望：SUCCESS
+
+CREATE INDEX idx_a ON alter_table_1(a);
+# -- 期望：SUCCESS
+
+INSERT INTO alter_table_1 VALUES (1, 11),(2, 22);
+# -- 期望：SUCCESS
+
+ALTER TABLE alter_table_1 RENAME TO alter_table_2;
+# -- 期望：SUCCESS
+
+# -- 更名后从新表名查询，数据应存在
+SELECT * FROM alter_table_2 ORDER BY a;
+# -- 正确输出：
+# -- 1 | 11
+# -- 2 | 22
+
+# -- 索引随表更名迁移，仍可在新表上正常删除
+DROP INDEX idx_a ON alter_table_2;
+# -- 期望：SUCCESS

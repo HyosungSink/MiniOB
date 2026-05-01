@@ -1,0 +1,91 @@
+-- observer-args -t mvcc
+-- echo miniob2025 update mvcc setup
+create table mvcc_update_t(id int, value int, note char);
+create index idx_mvcc_update_id on mvcc_update_t(id);
+insert into mvcc_update_t values(1, 10, 'a');
+insert into mvcc_update_t values(2, 20, 'b');
+insert into mvcc_update_t values(3, 30, 'c');
+
+-- echo single connection update visibility
+begin;
+update mvcc_update_t set value=11 where id=1;
+select value from mvcc_update_t where id=1;
+commit;
+select value from mvcc_update_t where id=1;
+
+-- echo rollback update
+begin;
+update mvcc_update_t set value=99 where id=2;
+select value from mvcc_update_t where id=2;
+rollback;
+select value from mvcc_update_t where id=2;
+
+-- echo multi connection serial visibility
+-- connect c1
+-- connect c2
+-- connection c1
+begin;
+update mvcc_update_t set note='x' where id=3;
+select note from mvcc_update_t where id=3;
+-- connection c2
+select note from mvcc_update_t where id=3;
+-- connection c1
+commit;
+-- connection c2
+select note from mvcc_update_t where id=3;
+
+-- echo indexed column update under mvcc
+-- connection default
+begin;
+update mvcc_update_t set id=4 where value=20;
+commit;
+-- sort select * from mvcc_update_t;
+select * from mvcc_update_t where id=4;
+
+-- echo unique index non-key update under mvcc
+create table t_update_mvcc(id int, age int, name char(4));
+create unique index t_update_mvcc_id_index on t_update_mvcc(id);
+insert into t_update_mvcc values(1, 1, 'a');
+insert into t_update_mvcc values(2, 2, 'a');
+insert into t_update_mvcc values(3, 3, 'a');
+insert into t_update_mvcc values(4, 4, 'a');
+insert into t_update_mvcc values(5, 5, 'a');
+insert into t_update_mvcc values(6, 6, 'a');
+insert into t_update_mvcc values(7, 7, 'a');
+insert into t_update_mvcc values(8, 8, 'a');
+insert into t_update_mvcc values(9, 9, 'a');
+insert into t_update_mvcc values(10, 10, 'a');
+insert into t_update_mvcc values(11, 11, 'a');
+insert into t_update_mvcc values(12, 12, 'a');
+insert into t_update_mvcc values(13, 13, 'a');
+insert into t_update_mvcc values(14, 14, 'a');
+insert into t_update_mvcc values(15, 15, 'a');
+insert into t_update_mvcc values(16, 16, 'a');
+insert into t_update_mvcc values(17, 17, 'a');
+insert into t_update_mvcc values(18, 18, 'a');
+insert into t_update_mvcc values(19, 19, 'a');
+insert into t_update_mvcc values(20, 20, 'a');
+insert into t_update_mvcc values(21, 21, 'a');
+insert into t_update_mvcc values(22, 22, 'a');
+insert into t_update_mvcc values(23, 23, 'a');
+insert into t_update_mvcc values(24, 24, 'a');
+insert into t_update_mvcc values(25, 25, 'a');
+-- connect client1
+-- connect client2
+-- connection client1
+begin;
+update t_update_mvcc set age = 446 where id = 17;
+select age from t_update_mvcc where id = 17;
+commit;
+begin;
+update t_update_mvcc set age = 954 where id = 16;
+select age from t_update_mvcc where id = 16;
+commit;
+select age from t_update_mvcc where id = 16;
+begin;
+update t_update_mvcc set age = 390 where id = 25;
+commit;
+begin;
+update t_update_mvcc set age = 394 where id = 25;
+select age from t_update_mvcc where id = 25;
+commit;
