@@ -13,14 +13,72 @@ See the Mulan PSL v2 for more details. */
 //
 
 #include "sql/stmt/update_stmt.h"
+#include "common/log/log.h"
+#include "sql/stmt/filter_stmt.h"
+#include "storage/db/db.h"
+#include "storage/table/table.h"
+#include "storage/table/table_meta.h"
 
-UpdateStmt::UpdateStmt(Table *table, Value *values, int value_amount)
-    : table_(table), values_(values), value_amount_(value_amount)
+UpdateStmt::UpdateStmt(Table *table, const FieldMeta *field_meta, const Value &value, FilterStmt *filter_stmt)
+    : table_(table), field_meta_(field_meta), value_(value), filter_stmt_(filter_stmt)
 {}
 
-RC UpdateStmt::create(Db *db, const UpdateSqlNode &update, Stmt *&stmt)
+UpdateStmt::~UpdateStmt()
 {
-  // TODO
-  stmt = nullptr;
-  return RC::INTERNAL;
+  if (nullptr != filter_stmt_) {
+    delete filter_stmt_;
+    filter_stmt_ = nullptr;
+  }
+}
+
+RC UpdateStmt::create(Db *db, const UpdateSqlNode &update_sql, Stmt *&stmt)
+{
+  const char *table_name = update_sql.relation_name.c_str();
+  if (nullptr == db || nullptr == table_name) {
+    LOG_WARN("invalid argument. db=%p, table_name=%p", db, table_name);
+    return RC::INVALID_ARGUMENT;
+  }
+
+  // check whether the table exists
+  Table *table = db->find_table(table_name);
+  if (nullptr == table) {
+    LOG_WARN("no such table. db=%s, table_name=%s", db->name(), table_name);
+    return RC::SCHEMA_TABLE_NOT_EXIST;
+  }
+
+  // check the field exists
+  const TableMeta &table_meta = table->table_meta();
+  const FieldMeta *field_meta = table_meta.field(update_sql.attribute_name.c_str());
+  if (nullptr == field_meta) {
+    LOG_WARN("no such field. table=%s, field=%s", table_name, update_sql.attribute_name.c_str());
+    return RC::SCHEMA_FIELD_MISSING;
+  }
+
+  // check value type compatibility and cast if needed
+  Value value = update_sql.value;
+  if (field_meta->type() != value.attr_type()) {
+    Value real_value;
+    RC    rc = Value::cast_to(value, field_meta->type(), real_value);
+    if (OB_FAIL(rc)) {
+      LOG_WARN("failed to cast value. table=%s, field=%s, value=%s",
+          table_name, field_meta->name(), value.to_string().c_str());
+      return rc;
+    }
+    value = real_value;
+  }
+
+  // create filter statement
+  unordered_map<string, Table *> table_map;
+  table_map.insert(pair<string, Table *>(string(table_name), table));
+
+  FilterStmt *filter_stmt = nullptr;
+  RC          rc           = FilterStmt::create(
+      db, table, &table_map, update_sql.conditions.data(), static_cast<int>(update_sql.conditions.size()), filter_stmt);
+  if (rc != RC::SUCCESS) {
+    LOG_WARN("failed to create filter statement. rc=%d:%s", rc, strrc(rc));
+    return rc;
+  }
+
+  stmt = new UpdateStmt(table, field_meta, value, filter_stmt);
+  return RC::SUCCESS;
 }
