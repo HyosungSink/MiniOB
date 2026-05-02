@@ -96,6 +96,36 @@ RC SelectStmt::create(Db *db, SelectSqlNode &select_sql, Stmt *&stmt)
     default_table = tables[0];
   }
 
+  // Bind expression-based condition expressions
+  for (auto &cond : select_sql.conditions) {
+    if (cond.has_expressions && cond.left_expr != nullptr) {
+      unique_ptr<Expression> left_holder(cond.left_expr);
+      cond.left_expr = nullptr;
+      vector<unique_ptr<Expression>> bound_left;
+      RC rc = expression_binder.bind_expression(left_holder, bound_left);
+      if (OB_FAIL(rc)) {
+        LOG_INFO("bind left condition expression failed. rc=%s", strrc(rc));
+        return rc;
+      }
+      if (!bound_left.empty()) {
+        cond.left_expr = bound_left[0].release();
+      }
+    }
+    if (cond.has_expressions && cond.right_expr != nullptr) {
+      unique_ptr<Expression> right_holder(cond.right_expr);
+      cond.right_expr = nullptr;
+      vector<unique_ptr<Expression>> bound_right;
+      RC rc = expression_binder.bind_expression(right_holder, bound_right);
+      if (OB_FAIL(rc)) {
+        LOG_INFO("bind right condition expression failed. rc=%s", strrc(rc));
+        return rc;
+      }
+      if (!bound_right.empty()) {
+        cond.right_expr = bound_right[0].release();
+      }
+    }
+  }
+
   // create filter statement in `where` statement
   FilterStmt *filter_stmt = nullptr;
   RC          rc          = FilterStmt::create(db,

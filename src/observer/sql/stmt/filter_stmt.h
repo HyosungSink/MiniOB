@@ -27,19 +27,52 @@ class FieldMeta;
 struct FilterObj
 {
   bool  is_attr;
+  bool  is_expr = false;
   Field field;
   Value value;
+  unique_ptr<Expression> expression;
+
+  FilterObj() = default;
+  FilterObj(const FilterObj &other)
+      : is_attr(other.is_attr), is_expr(other.is_expr), field(other.field), value(other.value)
+  {
+    if (other.expression) {
+      expression = other.expression->copy();
+    }
+  }
+  FilterObj &operator=(const FilterObj &other)
+  {
+    if (this != &other) {
+      is_attr  = other.is_attr;
+      is_expr  = other.is_expr;
+      field    = other.field;
+      value    = other.value;
+      expression = other.expression ? other.expression->copy() : nullptr;
+    }
+    return *this;
+  }
+  FilterObj(FilterObj &&) = default;
+  FilterObj &operator=(FilterObj &&) = default;
 
   void init_attr(const Field &field)
   {
     is_attr     = true;
+    is_expr     = false;
     this->field = field;
   }
 
   void init_value(const Value &value)
   {
     is_attr     = false;
+    is_expr     = false;
     this->value = value;
+  }
+
+  void init_expression(unique_ptr<Expression> expr)
+  {
+    is_attr     = false;
+    is_expr     = true;
+    this->expression = std::move(expr);
   }
 };
 
@@ -55,6 +88,8 @@ public:
 
   void set_left(const FilterObj &obj) { left_ = obj; }
   void set_right(const FilterObj &obj) { right_ = obj; }
+  void set_left(FilterObj &&obj) { left_ = std::move(obj); }
+  void set_right(FilterObj &&obj) { right_ = std::move(obj); }
 
   const FilterObj &left() const { return left_; }
   const FilterObj &right() const { return right_; }

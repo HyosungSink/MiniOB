@@ -75,6 +75,11 @@ struct ConditionSqlNode
   RelAttrSqlNode right_attr;     ///< right-hand side attribute if right_is_attr = TRUE 右边的属性
   Value          right_value;    ///< right-hand side value if right_is_attr = FALSE
   bool           is_or = false;  ///< true if this condition is connected to the next via OR (default AND)
+
+  // Expression-based condition support (for arithmetic in WHERE)
+  Expression    *left_expr  = nullptr;
+  Expression    *right_expr = nullptr;
+  bool           has_expressions = false;
 };
 
 /**

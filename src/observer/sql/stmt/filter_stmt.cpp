@@ -16,6 +16,7 @@ See the Mulan PSL v2 for more details. */
 #include "common/lang/string.h"
 #include "common/log/log.h"
 #include "common/sys/rc.h"
+#include "sql/expr/expression.h"
 #include "storage/db/db.h"
 #include "storage/table/table.h"
 
@@ -91,43 +92,89 @@ RC FilterStmt::create_filter_unit(Db *db, Table *default_table, unordered_map<st
 
   filter_unit = new FilterUnit;
 
-  if (condition.left_is_attr) {
-    Table           *table = nullptr;
-    const FieldMeta *field = nullptr;
-    rc                     = get_table_and_field(db, default_table, tables, condition.left_attr, table, field);
-    if (rc != RC::SUCCESS) {
-      LOG_WARN("cannot find attr");
-      return rc;
-    }
-    FilterObj filter_obj;
-    filter_obj.init_attr(Field(table, field));
-    filter_unit->set_left(filter_obj);
-  } else {
-    FilterObj filter_obj;
-    filter_obj.init_value(condition.left_value);
-    filter_unit->set_left(filter_obj);
-  }
+  if (condition.has_expressions) {
+    // Expression-based condition (arithmetic in WHERE)
+    // Try to convert simple expressions to old format for backward compatibility
+    auto try_convert_simple = [&](Expression *expr, FilterObj &obj) -> RC {
+      if (expr == nullptr) {
+        obj.init_value(Value());
+        return RC::SUCCESS;
+      }
+      if (expr->type() == ExprType::UNBOUND_FIELD) {
+        auto *uf = static_cast<UnboundFieldExpr *>(expr);
+        RelAttrSqlNode attr;
+        attr.relation_name = uf->table_name() ? uf->table_name() : "";
+        attr.attribute_name = uf->field_name();
+        Table           *table = nullptr;
+        const FieldMeta *field = nullptr;
+        RC r = get_table_and_field(db, default_table, tables, attr, table, field);
+        if (r == RC::SUCCESS) {
+          obj.init_attr(Field(table, field));
+          delete expr;
+          return RC::SUCCESS;
+        }
+      } else if (expr->type() == ExprType::VALUE) {
+        auto *ve = static_cast<ValueExpr *>(expr);
+        Value val;
+        ve->try_get_value(val);
+        obj.init_value(val);
+        delete expr;
+        return RC::SUCCESS;
+      }
+      // Complex expression - keep as expression
+      obj.init_expression(unique_ptr<Expression>(expr));
+      return RC::SUCCESS;
+    };
 
-  if (condition.right_is_attr) {
-    Table           *table = nullptr;
-    const FieldMeta *field = nullptr;
-    rc                     = get_table_and_field(db, default_table, tables, condition.right_attr, table, field);
-    if (rc != RC::SUCCESS) {
-      LOG_WARN("cannot find attr");
-      return rc;
-    }
-    FilterObj filter_obj;
-    filter_obj.init_attr(Field(table, field));
-    filter_unit->set_right(filter_obj);
+    FilterObj left_obj;
+    rc = try_convert_simple(condition.left_expr, left_obj);
+    if (rc != RC::SUCCESS) return rc;
+    const_cast<ConditionSqlNode &>(condition).left_expr = nullptr;
+    filter_unit->set_left(left_obj);
+
+    FilterObj right_obj;
+    rc = try_convert_simple(condition.right_expr, right_obj);
+    if (rc != RC::SUCCESS) return rc;
+    const_cast<ConditionSqlNode &>(condition).right_expr = nullptr;
+    filter_unit->set_right(right_obj);
   } else {
-    FilterObj filter_obj;
-    filter_obj.init_value(condition.right_value);
-    filter_unit->set_right(filter_obj);
+    if (condition.left_is_attr) {
+      Table           *table = nullptr;
+      const FieldMeta *field = nullptr;
+      rc                     = get_table_and_field(db, default_table, tables, condition.left_attr, table, field);
+      if (rc != RC::SUCCESS) {
+        LOG_WARN("cannot find attr");
+        return rc;
+      }
+      FilterObj filter_obj;
+      filter_obj.init_attr(Field(table, field));
+      filter_unit->set_left(filter_obj);
+    } else {
+      FilterObj filter_obj;
+      filter_obj.init_value(condition.left_value);
+      filter_unit->set_left(filter_obj);
+    }
+
+    if (condition.right_is_attr) {
+      Table           *table = nullptr;
+      const FieldMeta *field = nullptr;
+      rc                     = get_table_and_field(db, default_table, tables, condition.right_attr, table, field);
+      if (rc != RC::SUCCESS) {
+        LOG_WARN("cannot find attr");
+        return rc;
+      }
+      FilterObj filter_obj;
+      filter_obj.init_attr(Field(table, field));
+      filter_unit->set_right(filter_obj);
+    } else {
+      FilterObj filter_obj;
+      filter_obj.init_value(condition.right_value);
+      filter_unit->set_right(filter_obj);
+    }
   }
 
   filter_unit->set_comp(comp);
   filter_unit->set_is_or(condition.is_or);
 
-  // 检查两个类型是否能够比较
   return rc;
 }

@@ -455,10 +455,31 @@ value_list:
       $$->emplace_back(*$1);
       delete $1;
     }
-    | value_list COMMA value { 
+    | '-' value
+    {
+      $$ = new vector<Value>;
+      if ($2->attr_type() == AttrType::FLOATS) {
+        $2->set_float(-$2->get_float());
+      } else {
+        $2->set_int(-$2->get_int());
+      }
+      $$->emplace_back(*$2);
+      delete $2;
+    }
+    | value_list COMMA value {
       $$ = $1;
       $$->emplace_back(*$3);
       delete $3;
+    }
+    | value_list COMMA '-' value {
+      $$ = $1;
+      if ($4->attr_type() == AttrType::FLOATS) {
+        $4->set_float(-$4->get_float());
+      } else {
+        $4->set_int(-$4->get_int());
+      }
+      $$->emplace_back(*$4);
+      delete $4;
     }
     ;
 value:
@@ -568,6 +589,12 @@ expression_list:
       $$ = new vector<unique_ptr<Expression>>;
       $$->emplace_back($1);
     }
+    | expression AS ID
+    {
+      $$ = new vector<unique_ptr<Expression>>;
+      $1->set_name($3);
+      $$->emplace_back($1);
+    }
     | expression COMMA expression_list
     {
       if ($3 != nullptr) {
@@ -575,6 +602,16 @@ expression_list:
       } else {
         $$ = new vector<unique_ptr<Expression>>;
       }
+      $$->emplace($$->begin(), $1);
+    }
+    | expression AS ID COMMA expression_list
+    {
+      if ($5 != nullptr) {
+        $$ = $5;
+      } else {
+        $$ = new vector<unique_ptr<Expression>>;
+      }
+      $1->set_name($3);
       $$->emplace($$->begin(), $1);
     }
     ;
@@ -729,53 +766,13 @@ condition_list:
     }
     ;
 condition:
-    rel_attr comp_op value
+    expression comp_op expression
     {
       $$ = new ConditionSqlNode;
-      $$->left_is_attr = 1;
-      $$->left_attr = *$1;
-      $$->right_is_attr = 0;
-      $$->right_value = *$3;
       $$->comp = $2;
-
-      delete $1;
-      delete $3;
-    }
-    | value comp_op value 
-    {
-      $$ = new ConditionSqlNode;
-      $$->left_is_attr = 0;
-      $$->left_value = *$1;
-      $$->right_is_attr = 0;
-      $$->right_value = *$3;
-      $$->comp = $2;
-
-      delete $1;
-      delete $3;
-    }
-    | rel_attr comp_op rel_attr
-    {
-      $$ = new ConditionSqlNode;
-      $$->left_is_attr = 1;
-      $$->left_attr = *$1;
-      $$->right_is_attr = 1;
-      $$->right_attr = *$3;
-      $$->comp = $2;
-
-      delete $1;
-      delete $3;
-    }
-    | value comp_op rel_attr
-    {
-      $$ = new ConditionSqlNode;
-      $$->left_is_attr = 0;
-      $$->left_value = *$1;
-      $$->right_is_attr = 1;
-      $$->right_attr = *$3;
-      $$->comp = $2;
-
-      delete $1;
-      delete $3;
+      $$->left_expr = $1;
+      $$->right_expr = $3;
+      $$->has_expressions = true;
     }
     ;
 
