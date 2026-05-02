@@ -131,6 +131,7 @@ ENCLOSED                                RETURN_TOKEN(ENCLOSED);
 INNER                                   RETURN_TOKEN(INNER);
 JOIN                                    RETURN_TOKEN(JOIN);
 AS                                      RETURN_TOKEN(AS);
+NULL                                    RETURN_TOKEN(NULL_VAL);
 {ID}                                    yylval->cstring=strdup(yytext); static_cast<std::vector<char*>*>(yyextra)->push_back(yylval->cstring); RETURN_TOKEN(ID);
 "("                                     RETURN_TOKEN(LBRACE);
 ")"                                     RETURN_TOKEN(RBRACE);

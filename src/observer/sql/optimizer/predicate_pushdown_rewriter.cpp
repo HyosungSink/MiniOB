@@ -244,6 +244,12 @@ bool PredicatePushdownRewriter::expr_refs_only_tables(Expression *expr, const un
       auto *cast_expr = static_cast<CastExpr *>(expr);
       children.push_back(cast_expr->child().get());
     } break;
+    case ExprType::FUNCTION: {
+      auto *func_expr = static_cast<FunctionExpr *>(expr);
+      for (auto &child : func_expr->children()) {
+        children.push_back(child.get());
+      }
+    } break;
     case ExprType::VALUE:
     case ExprType::STAR:
       // No field references, so it's fine

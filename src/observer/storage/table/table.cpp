@@ -228,6 +228,13 @@ RC Table::make_record(int value_num, const Value *values, Record &record)
   for (int i = 0; i < value_num && OB_SUCC(rc); i++) {
     const FieldMeta *field = table_meta_.field(i + normal_field_start_index);
     const Value &    value = values[i];
+    if (value.attr_type() == AttrType::NULLS) {
+      int normal_field_count = table_meta_.field_num() - table_meta_.sys_field_num();
+      int bitmap_bytes = (normal_field_count + 7) / 8;
+      int bitmap_offset = table_meta_.field(normal_field_start_index)->offset() + table_meta_.record_size() - bitmap_bytes;
+      record_data[bitmap_offset + i / 8] |= (1 << (i % 8));
+      continue;
+    }
     if (field->type() != value.attr_type()) {
       Value real_value;
       rc = Value::cast_to(value, field->type(), real_value);

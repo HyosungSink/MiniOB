@@ -94,7 +94,9 @@ RC TableMeta::init(int32_t table_id, const char *name, const vector<FieldMeta> *
   }
 
   primary_keys_ = primary_keys;
-  record_size_ = field_offset;
+  int normal_field_count = static_cast<int>(fields_.size()) - trx_field_num;
+  int bitmap_bytes = (normal_field_count + 7) / 8;
+  record_size_ = field_offset + bitmap_bytes;
 
   table_id_ = table_id;
   name_     = name;
@@ -171,6 +173,22 @@ const IndexMeta *TableMeta::index(int i) const { return &indexes_[i]; }
 int TableMeta::index_num() const { return indexes_.size(); }
 
 int TableMeta::record_size() const { return record_size_; }
+
+int TableMeta::null_bitmap_offset() const
+{
+  // NULL bitmap is at the end of the record, after all field data
+  int last = fields_.back().offset() + fields_.back().len() - fields_.begin()->offset();
+  return last;
+}
+
+int TableMeta::null_bitmap_size() const
+{
+  int normal_field_count = 0;
+  for (const FieldMeta &f : fields_) {
+    if (f.visible()) normal_field_count++;
+  }
+  return (normal_field_count + 7) / 8;
+}
 
 int TableMeta::serialize(ostream &ss) const
 {
@@ -287,7 +305,12 @@ int TableMeta::deserialize(istream &is)
   storage_engine_ = static_cast<StorageEngine>(storage_engine);
   name_.swap(table_name);
   fields_.swap(fields);
-  record_size_ = fields_.back().offset() + fields_.back().len() - fields_.begin()->offset();
+  int normal_field_count = 0;
+  for (const FieldMeta &f : fields_) {
+    if (f.visible()) normal_field_count++;
+  }
+  int bitmap_bytes = (normal_field_count + 7) / 8;
+  record_size_ = fields_.back().offset() + fields_.back().len() - fields_.begin()->offset() + bitmap_bytes;
 
   for (const FieldMeta &field_meta : fields_) {
     if (!field_meta.visible()) {

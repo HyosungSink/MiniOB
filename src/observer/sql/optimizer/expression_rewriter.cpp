@@ -139,6 +139,21 @@ RC ExpressionRewriter::rewrite_expression(unique_ptr<Expression> &expr, bool &ch
       }
     } break;
 
+    case ExprType::FUNCTION: {
+      auto *func_expr = static_cast<FunctionExpr *>(expr.get());
+      vector<unique_ptr<Expression>> &children = func_expr->children();
+      for (auto &child : children) {
+        bool sub_change = false;
+        rc = rewrite_expression(child, sub_change);
+        if (sub_change && !change_made) {
+          change_made = true;
+        }
+        if (rc != RC::SUCCESS) {
+          return rc;
+        }
+      }
+    } break;
+
     default: {
       // do nothing
     } break;

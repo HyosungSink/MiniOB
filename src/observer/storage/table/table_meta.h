@@ -64,6 +64,8 @@ public:
   const vector<string> &primary_keys() const { return primary_keys_; }
 
   int record_size() const;
+  int null_bitmap_offset() const;
+  int null_bitmap_size() const;
 
 public:
   int  serialize(ostream &os) const override;

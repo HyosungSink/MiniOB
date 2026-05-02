@@ -47,6 +47,8 @@ enum class ExprType
   CONJUNCTION,  ///< 多个表达式使用同一种关系(AND或OR)来联结
   ARITHMETIC,   ///< 算术运算
   AGGREGATION,  ///< 聚合运算
+  UNBOUND_FUNCTION,  ///< 未绑定的标量函数
+  FUNCTION,          ///< 绑定后的标量函数
 };
 
 /**
@@ -527,4 +529,59 @@ public:
 private:
   Type                   aggregate_type_;
   unique_ptr<Expression> child_;
+};
+
+class UnboundFunctionExpr : public Expression
+{
+public:
+  UnboundFunctionExpr(const char *func_name, vector<Expression *> children);
+  virtual ~UnboundFunctionExpr() = default;
+
+  ExprType type() const override { return ExprType::UNBOUND_FUNCTION; }
+  AttrType value_type() const override { return AttrType::UNDEFINED; }
+
+  unique_ptr<Expression> copy() const override;
+
+  RC get_value(const Tuple &tuple, Value &value) const override { return RC::INTERNAL; }
+
+  const char                        *func_name() const { return func_name_.c_str(); }
+  vector<unique_ptr<Expression>>    &children() { return children_; }
+
+private:
+  string                          func_name_;
+  vector<unique_ptr<Expression>>  children_;
+};
+
+class FunctionExpr : public Expression
+{
+public:
+  enum class Type
+  {
+    LENGTH,
+    ROUND,
+    DATE_FORMAT,
+  };
+
+public:
+  FunctionExpr(Type type, vector<unique_ptr<Expression>> children);
+  virtual ~FunctionExpr() = default;
+
+  ExprType type() const override { return ExprType::FUNCTION; }
+  AttrType value_type() const override;
+  int      value_length() const override;
+
+  unique_ptr<Expression> copy() const override;
+
+  RC get_value(const Tuple &tuple, Value &value) const override;
+  RC try_get_value(Value &value) const override;
+
+  Type                           func_type() const { return func_type_; }
+  vector<unique_ptr<Expression>> &children() { return children_; }
+
+  static RC type_from_string(const char *name, Type &type);
+  static void expected_arg_count(Type type, int &min_args, int &max_args);
+
+private:
+  Type                           func_type_;
+  vector<unique_ptr<Expression>> children_;
 };

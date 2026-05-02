@@ -55,6 +55,16 @@ UnboundAggregateExpr *create_aggregate_expression(const char *aggregate_name,
   return expr;
 }
 
+UnboundFunctionExpr *create_function_expression(const char *func_name,
+                                          vector<Expression *> children,
+                                          const char *sql_string,
+                                          YYLTYPE *llocp)
+{
+  UnboundFunctionExpr *expr = new UnboundFunctionExpr(func_name, children);
+  expr->set_name(token_name(sql_string, llocp));
+  return expr;
+}
+
 %}
 
 %define api.pure full
@@ -121,6 +131,7 @@ UnboundAggregateExpr *create_aggregate_expression(const char *aggregate_name,
         INNER
         JOIN
         AS
+        NULL_VAL
         EQ
         LT
         GT
@@ -188,7 +199,7 @@ UnboundAggregateExpr *create_aggregate_expression(const char *aggregate_name,
 %type <key_list>            attr_list
 %type <relation_list>       rel_list
 %type <expression>          expression
-%type <expression>          aggregate_expression
+%type <expression>          function_call
 %type <expression_list>     expression_list
 %type <expression_list>     group_by
 %type <cstring>             fields_terminated_by
@@ -496,6 +507,10 @@ value:
       $$ = new Value(tmp);
       free(tmp);
     }
+    | NULL_VAL {
+      $$ = new Value();
+      $$->set_type(AttrType::NULLS);
+    }
     ;
 storage_format:
     /* empty */
@@ -573,6 +588,14 @@ select_stmt:        /*  select 语句的语法解析树*/
         delete $6;
       }
     }
+    | SELECT expression_list
+    {
+      $$ = new ParsedSqlNode(SCF_CALC);
+      if ($2 != nullptr) {
+        $$->calc.expressions.swap(*$2);
+        delete $2;
+      }
+    }
     ;
 calc_stmt:
     CALC expression_list
@@ -595,6 +618,12 @@ expression_list:
       $1->set_name($3);
       $$->emplace_back($1);
     }
+    | expression ID
+    {
+      $$ = new vector<unique_ptr<Expression>>;
+      $1->set_name($2);
+      $$->emplace_back($1);
+    }
     | expression COMMA expression_list
     {
       if ($3 != nullptr) {
@@ -612,6 +641,16 @@ expression_list:
         $$ = new vector<unique_ptr<Expression>>;
       }
       $1->set_name($3);
+      $$->emplace($$->begin(), $1);
+    }
+    | expression ID COMMA expression_list
+    {
+      if ($4 != nullptr) {
+        $$ = $4;
+      } else {
+        $$ = new vector<unique_ptr<Expression>>;
+      }
+      $1->set_name($2);
       $$->emplace($$->begin(), $1);
     }
     ;
@@ -649,14 +688,26 @@ expression:
       $$->set_name(token_name(sql_string, &@$));
       delete $1;
     }
-    | aggregate_expression {
+    | function_call {
       $$ = $1;
     }
     ;
 
-aggregate_expression:
-    ID LBRACE expression RBRACE {
-      $$ = create_aggregate_expression($1, $3, sql_string, &@$);
+function_call:
+    ID LBRACE RBRACE {
+      vector<Expression *> children;
+      $$ = create_function_expression($1, children, sql_string, &@$);
+    }
+    | ID LBRACE expression RBRACE {
+      vector<Expression *> children;
+      children.push_back($3);
+      $$ = create_function_expression($1, children, sql_string, &@$);
+    }
+    | ID LBRACE expression COMMA expression RBRACE {
+      vector<Expression *> children;
+      children.push_back($3);
+      children.push_back($5);
+      $$ = create_function_expression($1, children, sql_string, &@$);
     }
     ;
 

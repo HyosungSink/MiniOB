@@ -21,15 +21,82 @@ RC SumAggregator::accumulate(const Value &value)
     value_ = value;
     return RC::SUCCESS;
   }
-  
-  ASSERT(value.attr_type() == value_.attr_type(), "type mismatch. value type: %s, value_.type: %s", 
+
+  ASSERT(value.attr_type() == value_.attr_type(), "type mismatch. value type: %s, value_.type: %s",
         attr_type_to_string(value.attr_type()), attr_type_to_string(value_.attr_type()));
-  
+
   Value::add(value, value_, value_);
   return RC::SUCCESS;
 }
 
 RC SumAggregator::evaluate(Value& result)
+{
+  result = value_;
+  return RC::SUCCESS;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+RC CountAggregator::accumulate(const Value &value)
+{
+  count_++;
+  return RC::SUCCESS;
+}
+
+RC CountAggregator::evaluate(Value &result)
+{
+  result.set_int(count_);
+  return RC::SUCCESS;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+RC AvgAggregator::accumulate(const Value &value)
+{
+  count_++;
+  sum_ += value.get_float();
+  return RC::SUCCESS;
+}
+
+RC AvgAggregator::evaluate(Value &result)
+{
+  if (count_ == 0) {
+    result.set_float(0.0f);
+  } else {
+    result.set_float(sum_ / count_);
+  }
+  return RC::SUCCESS;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+RC MaxAggregator::accumulate(const Value &value)
+{
+  if (!has_value_ || value.compare(value_) > 0) {
+    value_ = value;
+    has_value_ = true;
+  }
+  return RC::SUCCESS;
+}
+
+RC MaxAggregator::evaluate(Value &result)
+{
+  result = value_;
+  return RC::SUCCESS;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+RC MinAggregator::accumulate(const Value &value)
+{
+  if (!has_value_ || value.compare(value_) < 0) {
+    value_ = value;
+    has_value_ = true;
+  }
+  return RC::SUCCESS;
+}
+
+RC MinAggregator::evaluate(Value &result)
 {
   result = value_;
   return RC::SUCCESS;

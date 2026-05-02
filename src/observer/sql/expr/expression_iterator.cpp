@@ -53,7 +53,7 @@ RC ExpressionIterator::iterate_child_expr(Expression &expr, function<RC(unique_p
 
       auto &arithmetic_expr = static_cast<ArithmeticExpr &>(expr);
       rc = callback(arithmetic_expr.left());
-      if (OB_SUCC(rc)) {
+      if (OB_SUCC(rc) && arithmetic_expr.right()) {
         rc = callback(arithmetic_expr.right());
       }
     } break;
@@ -61,6 +61,26 @@ RC ExpressionIterator::iterate_child_expr(Expression &expr, function<RC(unique_p
     case ExprType::AGGREGATION: {
       auto &aggregate_expr = static_cast<AggregateExpr &>(expr);
       rc = callback(aggregate_expr.child());
+    } break;
+
+    case ExprType::FUNCTION: {
+      auto &func_expr = static_cast<FunctionExpr &>(expr);
+      for (auto &child : func_expr.children()) {
+        rc = callback(child);
+        if (OB_FAIL(rc)) {
+          break;
+        }
+      }
+    } break;
+
+    case ExprType::UNBOUND_FUNCTION: {
+      auto &func_expr = static_cast<UnboundFunctionExpr &>(expr);
+      for (auto &child : func_expr.children()) {
+        rc = callback(child);
+        if (OB_FAIL(rc)) {
+          break;
+        }
+      }
     } break;
 
     case ExprType::NONE:

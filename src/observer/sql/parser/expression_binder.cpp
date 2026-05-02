@@ -68,6 +68,10 @@ RC ExpressionBinder::bind_expression(unique_ptr<Expression> &expr, vector<unique
       return bind_aggregate_expression(expr, bound_expressions);
     } break;
 
+    case ExprType::UNBOUND_FUNCTION: {
+      return bind_function_expression(expr, bound_expressions);
+    } break;
+
     case ExprType::FIELD: {
       return bind_field_expression(expr, bound_expressions);
     } break;
@@ -355,20 +359,22 @@ RC ExpressionBinder::bind_arithmetic_expression(
     left_expr.reset(left.release());
   }
 
-  child_bound_expressions.clear();
-  rc = bind_expression(right_expr, child_bound_expressions);
-  if (OB_FAIL(rc)) {
-    return rc;
-  }
+  if (right_expr) {
+    child_bound_expressions.clear();
+    rc = bind_expression(right_expr, child_bound_expressions);
+    if (OB_FAIL(rc)) {
+      return rc;
+    }
 
-  if (child_bound_expressions.size() != 1) {
-    LOG_WARN("invalid right children number of comparison expression: %d", child_bound_expressions.size());
-    return RC::INVALID_ARGUMENT;
-  }
+    if (child_bound_expressions.size() != 1) {
+      LOG_WARN("invalid right children number of arithmetic expression: %d", child_bound_expressions.size());
+      return RC::INVALID_ARGUMENT;
+    }
 
-  unique_ptr<Expression> &right = child_bound_expressions[0];
-  if (right.get() != right_expr.get()) {
-    right_expr.reset(right.release());
+    unique_ptr<Expression> &right = child_bound_expressions[0];
+    if (right.get() != right_expr.get()) {
+      right_expr.reset(right.release());
+    }
   }
 
   bound_expressions.emplace_back(std::move(expr));
@@ -466,5 +472,91 @@ RC ExpressionBinder::bind_aggregate_expression(
   }
 
   bound_expressions.emplace_back(std::move(aggregate_expr));
+  return RC::SUCCESS;
+}
+
+RC ExpressionBinder::bind_function_expression(
+    unique_ptr<Expression> &expr, vector<unique_ptr<Expression>> &bound_expressions)
+{
+  if (nullptr == expr) {
+    return RC::SUCCESS;
+  }
+
+  auto unbound_func_expr = static_cast<UnboundFunctionExpr *>(expr.get());
+  const char *func_name = unbound_func_expr->func_name();
+
+  // First, check if it's an aggregate function (count, sum, avg, max, min)
+  AggregateExpr::Type aggregate_type;
+  RC rc = AggregateExpr::type_from_string(func_name, aggregate_type);
+  if (rc == RC::SUCCESS) {
+    // Route to aggregate binding
+    vector<unique_ptr<Expression>> &children = unbound_func_expr->children();
+    if (children.size() != 1) {
+      LOG_WARN("aggregate function %s requires exactly 1 argument", func_name);
+      return RC::INVALID_ARGUMENT;
+    }
+    unique_ptr<Expression> child_expr = std::move(children[0]);
+
+    if (child_expr->type() == ExprType::STAR && aggregate_type == AggregateExpr::Type::COUNT) {
+      child_expr.reset(new ValueExpr(Value(1)));
+    } else {
+      vector<unique_ptr<Expression>> child_bound;
+      rc = bind_expression(child_expr, child_bound);
+      if (OB_FAIL(rc)) {
+        return rc;
+      }
+      if (child_bound.size() != 1) {
+        LOG_WARN("invalid children number of aggregate expression: %d", child_bound.size());
+        return RC::INVALID_ARGUMENT;
+      }
+      if (child_bound[0].get() != child_expr.get()) {
+        child_expr.reset(child_bound[0].release());
+      }
+    }
+
+    auto agg_expr = make_unique<AggregateExpr>(aggregate_type, std::move(child_expr));
+    agg_expr->set_name(unbound_func_expr->name());
+    rc = check_aggregate_expression(*agg_expr);
+    if (OB_FAIL(rc)) {
+      return rc;
+    }
+    bound_expressions.emplace_back(std::move(agg_expr));
+    return RC::SUCCESS;
+  }
+
+  // Try scalar function
+  FunctionExpr::Type func_type;
+  rc = FunctionExpr::type_from_string(func_name, func_type);
+  if (rc != RC::SUCCESS) {
+    LOG_WARN("unknown function: %s", func_name);
+    return RC::INVALID_ARGUMENT;
+  }
+
+  vector<unique_ptr<Expression>> &children = unbound_func_expr->children();
+  int min_args = 0, max_args = 0;
+  FunctionExpr::expected_arg_count(func_type, min_args, max_args);
+  if (static_cast<int>(children.size()) < min_args || static_cast<int>(children.size()) > max_args) {
+    LOG_WARN("function %s expects %d-%d arguments, got %d", func_name, min_args, max_args, (int)children.size());
+    return RC::INVALID_ARGUMENT;
+  }
+
+  // Bind each child
+  vector<unique_ptr<Expression>> bound_children;
+  for (auto &child : children) {
+    vector<unique_ptr<Expression>> child_bound;
+    rc = bind_expression(child, child_bound);
+    if (OB_FAIL(rc)) {
+      return rc;
+    }
+    if (child_bound.size() != 1) {
+      LOG_WARN("invalid children number of function expression: %d", child_bound.size());
+      return RC::INVALID_ARGUMENT;
+    }
+    bound_children.push_back(std::move(child_bound[0]));
+  }
+
+  auto func_expr = make_unique<FunctionExpr>(func_type, std::move(bound_children));
+  func_expr->set_name(unbound_func_expr->name());
+  bound_expressions.emplace_back(std::move(func_expr));
   return RC::SUCCESS;
 }

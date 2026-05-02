@@ -15,6 +15,9 @@ See the Mulan PSL v2 for more details. */
 #include "sql/expr/expression.h"
 #include "sql/expr/tuple.h"
 #include "sql/expr/arithmetic_operator.hpp"
+#include "common/type/date_type.h"
+#include <cmath>
+#include <cctype>
 
 using namespace std;
 
@@ -471,10 +474,12 @@ RC ArithmeticExpr::get_value(const Tuple &tuple, Value &value) const
     LOG_WARN("failed to get value of left expression. rc=%s", strrc(rc));
     return rc;
   }
-  rc = right_->get_value(tuple, right_value);
-  if (rc != RC::SUCCESS) {
-    LOG_WARN("failed to get value of right expression. rc=%s", strrc(rc));
-    return rc;
+  if (right_) {
+    rc = right_->get_value(tuple, right_value);
+    if (rc != RC::SUCCESS) {
+      LOG_WARN("failed to get value of right expression. rc=%s", strrc(rc));
+      return rc;
+    }
   }
   return calc_value(left_value, right_value, value);
 }
@@ -494,10 +499,12 @@ RC ArithmeticExpr::get_column(Chunk &chunk, Column &column)
     LOG_WARN("failed to get column of left expression. rc=%s", strrc(rc));
     return rc;
   }
-  rc = right_->get_column(chunk, right_column);
-  if (rc != RC::SUCCESS) {
-    LOG_WARN("failed to get column of right expression. rc=%s", strrc(rc));
-    return rc;
+  if (right_) {
+    rc = right_->get_column(chunk, right_column);
+    if (rc != RC::SUCCESS) {
+      LOG_WARN("failed to get column of right expression. rc=%s", strrc(rc));
+      return rc;
+    }
   }
   return calc_column(left_column, right_column, column);
 }
@@ -593,8 +600,24 @@ unique_ptr<Aggregator> AggregateExpr::create_aggregator() const
 {
   unique_ptr<Aggregator> aggregator;
   switch (aggregate_type_) {
+    case Type::COUNT: {
+      aggregator = make_unique<CountAggregator>();
+      break;
+    }
     case Type::SUM: {
       aggregator = make_unique<SumAggregator>();
+      break;
+    }
+    case Type::AVG: {
+      aggregator = make_unique<AvgAggregator>();
+      break;
+    }
+    case Type::MAX: {
+      aggregator = make_unique<MaxAggregator>();
+      break;
+    }
+    case Type::MIN: {
+      aggregator = make_unique<MinAggregator>();
       break;
     }
     default: {
@@ -627,4 +650,325 @@ RC AggregateExpr::type_from_string(const char *type_str, AggregateExpr::Type &ty
     rc = RC::INVALID_ARGUMENT;
   }
   return rc;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+UnboundFunctionExpr::UnboundFunctionExpr(const char *func_name, vector<Expression *> children)
+    : func_name_(func_name)
+{
+  for (auto *child : children) {
+    children_.emplace_back(child);
+  }
+}
+
+unique_ptr<Expression> UnboundFunctionExpr::copy() const
+{
+  vector<Expression *> child_copies;
+  for (auto &child : children_) {
+    child_copies.push_back(child->copy().release());
+  }
+  return unique_ptr<Expression>(new UnboundFunctionExpr(func_name_.c_str(), child_copies));
+}
+
+////////////////////////////////////////////////////////////////////////////////
+FunctionExpr::FunctionExpr(Type type, vector<unique_ptr<Expression>> children)
+    : func_type_(type), children_(std::move(children))
+{}
+
+AttrType FunctionExpr::value_type() const
+{
+  switch (func_type_) {
+    case Type::LENGTH: return AttrType::INTS;
+    case Type::ROUND:  return AttrType::FLOATS;
+    case Type::DATE_FORMAT: return AttrType::CHARS;
+    default: return AttrType::UNDEFINED;
+  }
+}
+
+int FunctionExpr::value_length() const
+{
+  switch (func_type_) {
+    case Type::LENGTH: return sizeof(int);
+    case Type::ROUND:  return sizeof(float);
+    case Type::DATE_FORMAT: return 64;
+    default: return -1;
+  }
+}
+
+unique_ptr<Expression> FunctionExpr::copy() const
+{
+  vector<unique_ptr<Expression>> child_copies;
+  for (auto &child : children_) {
+    child_copies.push_back(child->copy());
+  }
+  return make_unique<FunctionExpr>(func_type_, std::move(child_copies));
+}
+
+RC FunctionExpr::type_from_string(const char *name, FunctionExpr::Type &type)
+{
+  if (0 == strcasecmp(name, "length")) {
+    type = Type::LENGTH;
+  } else if (0 == strcasecmp(name, "round")) {
+    type = Type::ROUND;
+  } else if (0 == strcasecmp(name, "date_format")) {
+    type = Type::DATE_FORMAT;
+  } else {
+    return RC::INVALID_ARGUMENT;
+  }
+  return RC::SUCCESS;
+}
+
+void FunctionExpr::expected_arg_count(Type type, int &min_args, int &max_args)
+{
+  switch (type) {
+    case Type::LENGTH:      min_args = 1; max_args = 1; break;
+    case Type::ROUND:       min_args = 1; max_args = 2; break;
+    case Type::DATE_FORMAT: min_args = 2; max_args = 2; break;
+    default:                min_args = 0; max_args = 0; break;
+  }
+}
+
+static string ordinal_suffix(int day)
+{
+  if (day >= 11 && day <= 13) return "th";
+  switch (day % 10) {
+    case 1: return "st";
+    case 2: return "nd";
+    case 3: return "rd";
+    default: return "th";
+  }
+}
+
+static string month_name(int month)
+{
+  static const char *names[] = {
+    "", "January", "February", "March", "April", "May", "June",
+    "July", "August", "September", "October", "November", "December"
+  };
+  if (month >= 1 && month <= 12) return names[month];
+  return "";
+}
+
+RC FunctionExpr::get_value(const Tuple &tuple, Value &value) const
+{
+  // Evaluate all children; propagate NULL
+  vector<Value> args(children_.size());
+  for (size_t i = 0; i < children_.size(); i++) {
+    RC rc = children_[i]->get_value(tuple, args[i]);
+    if (rc != RC::SUCCESS) {
+      return rc;
+    }
+    if (args[i].attr_type() == AttrType::NULLS) {
+      value.set_type(AttrType::NULLS);
+      return RC::SUCCESS;
+    }
+  }
+
+  switch (func_type_) {
+    case Type::LENGTH: {
+      string s = args[0].get_string();
+      value.set_int(static_cast<int>(s.length()));
+    } break;
+
+    case Type::ROUND: {
+      float val = args[0].get_float();
+      int   decimals = 0;
+      if (args.size() >= 2) {
+        decimals = args[1].get_int();
+      }
+      auto banker_round = [](float v) -> float {
+        float r = roundf(v);
+        // If exactly at .5 midpoint, round to even
+        if (fabsf(v - r) == 0.5f && fmodf(r, 2.0f) != 0.0f) {
+          r += (v < 0.0f) ? 1.0f : -1.0f;
+        }
+        return r;
+      };
+      if (decimals == 0) {
+        value.set_float(banker_round(val));
+      } else {
+        float factor = powf(10.0f, static_cast<float>(decimals));
+        value.set_float(banker_round(val * factor) / factor);
+      }
+    } break;
+
+    case Type::DATE_FORMAT: {
+      int32_t days = 0;
+      if (args[0].attr_type() == AttrType::CHARS) {
+        string date_str = args[0].get_string();
+        if (!DateType::parse_date(date_str.c_str(), days)) {
+          value.set_type(AttrType::NULLS);
+          return RC::SUCCESS;
+        }
+      } else {
+        days = args[0].get_int();
+      }
+      string  fmt  = args[1].get_string();
+
+      int year = 0, month = 0, day = 0;
+      DateType::days_to_date(days, year, month, day);
+
+      string result;
+      for (size_t i = 0; i < fmt.size(); i++) {
+        if (fmt[i] == '%' && i + 1 < fmt.size()) {
+          char spec = fmt[i + 1];
+          i++;
+          switch (spec) {
+            case 'Y': {
+              char buf[8];
+              snprintf(buf, sizeof(buf), "%04d", year);
+              result += buf;
+            } break;
+            case 'y': {
+              char buf[8];
+              snprintf(buf, sizeof(buf), "%02d", year % 100);
+              result += buf;
+            } break;
+            case 'm': {
+              char buf[8];
+              snprintf(buf, sizeof(buf), "%02d", month);
+              result += buf;
+            } break;
+            case 'd': {
+              char buf[8];
+              snprintf(buf, sizeof(buf), "%02d", day);
+              result += buf;
+            } break;
+            case 'D': {
+              result += to_string(day) + ordinal_suffix(day);
+            } break;
+            case 'M': {
+              result += month_name(month);
+            } break;
+            default: {
+              // Unknown specifier: output lowercase of the character
+              result += tolower(spec);
+            } break;
+          }
+        } else {
+          result += fmt[i];
+        }
+      }
+      value.set_string(result.c_str());
+    } break;
+
+    default: {
+      LOG_WARN("unsupported function type: %d", static_cast<int>(func_type_));
+      return RC::UNIMPLEMENTED;
+    }
+  }
+
+  return RC::SUCCESS;
+}
+
+RC FunctionExpr::try_get_value(Value &value) const
+{
+  // Evaluate all children using try_get_value; propagate NULL
+  vector<Value> args(children_.size());
+  for (size_t i = 0; i < children_.size(); i++) {
+    RC rc = children_[i]->try_get_value(args[i]);
+    if (rc != RC::SUCCESS) {
+      return rc;
+    }
+    if (args[i].attr_type() == AttrType::NULLS) {
+      value.set_type(AttrType::NULLS);
+      return RC::SUCCESS;
+    }
+  }
+
+  // Reuse the same logic as get_value by creating a fake tuple call
+  // Actually, just duplicate the computation inline
+  switch (func_type_) {
+    case Type::LENGTH: {
+      string s = args[0].get_string();
+      value.set_int(static_cast<int>(s.length()));
+    } break;
+
+    case Type::ROUND: {
+      float val = args[0].get_float();
+      int   decimals = 0;
+      if (args.size() >= 2) {
+        decimals = args[1].get_int();
+      }
+      auto banker_round = [](float v) -> float {
+        float r = roundf(v);
+        // If exactly at .5 midpoint, round to even
+        if (fabsf(v - r) == 0.5f && fmodf(r, 2.0f) != 0.0f) {
+          r += (v < 0.0f) ? 1.0f : -1.0f;
+        }
+        return r;
+      };
+      if (decimals == 0) {
+        value.set_float(banker_round(val));
+      } else {
+        float factor = powf(10.0f, static_cast<float>(decimals));
+        value.set_float(banker_round(val * factor) / factor);
+      }
+    } break;
+
+    case Type::DATE_FORMAT: {
+      int32_t days = 0;
+      if (args[0].attr_type() == AttrType::CHARS) {
+        string date_str = args[0].get_string();
+        if (!DateType::parse_date(date_str.c_str(), days)) {
+          value.set_type(AttrType::NULLS);
+          return RC::SUCCESS;
+        }
+      } else {
+        days = args[0].get_int();
+      }
+      string  fmt  = args[1].get_string();
+
+      int year = 0, month = 0, day = 0;
+      DateType::days_to_date(days, year, month, day);
+
+      string result;
+      for (size_t i = 0; i < fmt.size(); i++) {
+        if (fmt[i] == '%' && i + 1 < fmt.size()) {
+          char spec = fmt[i + 1];
+          i++;
+          switch (spec) {
+            case 'Y': {
+              char buf[8];
+              snprintf(buf, sizeof(buf), "%04d", year);
+              result += buf;
+            } break;
+            case 'y': {
+              char buf[8];
+              snprintf(buf, sizeof(buf), "%02d", year % 100);
+              result += buf;
+            } break;
+            case 'm': {
+              char buf[8];
+              snprintf(buf, sizeof(buf), "%02d", month);
+              result += buf;
+            } break;
+            case 'd': {
+              char buf[8];
+              snprintf(buf, sizeof(buf), "%02d", day);
+              result += buf;
+            } break;
+            case 'D': {
+              result += to_string(day) + ordinal_suffix(day);
+            } break;
+            case 'M': {
+              result += month_name(month);
+            } break;
+            default: {
+              result += tolower(spec);
+            } break;
+          }
+        } else {
+          result += fmt[i];
+        }
+      }
+      value.set_string(result.c_str());
+    } break;
+
+    default: {
+      return RC::UNIMPLEMENTED;
+    }
+  }
+
+  return RC::SUCCESS;
 }

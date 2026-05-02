@@ -195,6 +195,19 @@ public:
 
     FieldExpr       *field_expr = speces_[index];
     const FieldMeta *field_meta = field_expr->field().meta();
+
+    const TableMeta &tm = table_->table_meta();
+    int normal_field_count = tm.field_num() - tm.sys_field_num();
+    int bitmap_bytes = (normal_field_count + 7) / 8;
+    int bitmap_offset = tm.field(tm.sys_field_num())->offset() + tm.record_size() - bitmap_bytes;
+    int bit_index = index;
+    const char *bitmap = this->record_->data() + bitmap_offset;
+    if (bitmap[bit_index / 8] & (1 << (bit_index % 8))) {
+      cell.reset();
+      cell.set_type(AttrType::NULLS);
+      return RC::SUCCESS;
+    }
+
     cell.reset();
     cell.set_type(field_meta->type());
     cell.set_data(this->record_->data() + field_meta->offset(), field_meta->len());

@@ -17,6 +17,7 @@ See the Mulan PSL v2 for more details. */
 #include "common/sys/rc.h"
 #include "sql/expr/expression.h"
 #include "sql/stmt/stmt.h"
+#include "sql/parser/expression_binder.h"
 
 class Db;
 class Table;
@@ -36,8 +37,19 @@ public:
 public:
   static RC create(CalcSqlNode &calc_sql, Stmt *&stmt)
   {
-    CalcStmt *calc_stmt     = new CalcStmt();
-    calc_stmt->expressions_ = std::move(calc_sql.expressions);
+    CalcStmt *calc_stmt = new CalcStmt();
+
+    BinderContext binder_context;
+    ExpressionBinder expression_binder(binder_context);
+    vector<unique_ptr<Expression>> bound_expressions;
+    for (auto &expression : calc_sql.expressions) {
+      RC rc = expression_binder.bind_expression(expression, bound_expressions);
+      if (rc != RC::SUCCESS) {
+        delete calc_stmt;
+        return rc;
+      }
+    }
+    calc_stmt->expressions_ = std::move(bound_expressions);
     stmt                    = calc_stmt;
     return RC::SUCCESS;
   }
