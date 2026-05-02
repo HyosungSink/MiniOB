@@ -27,7 +27,8 @@ public:
       : CascadeTask(task->context_, CascadeTaskType::OPTIMIZE_INPUTS),
         group_expr_(task->group_expr_),
         cur_total_cost_(task->cur_total_cost_),
-        cur_child_idx_(task->cur_child_idx_)
+        cur_child_idx_(task->cur_child_idx_),
+        prev_child_idx_(task->prev_child_idx_)
   {}
 
   void perform() override;

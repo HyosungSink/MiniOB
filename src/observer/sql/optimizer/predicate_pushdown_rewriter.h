@@ -15,6 +15,8 @@ See the Mulan PSL v2 for more details. */
 #pragma once
 
 #include "common/lang/vector.h"
+#include "common/lang/string.h"
+#include "common/lang/unordered_set.h"
 #include "sql/optimizer/rewrite_rule.h"
 
 /**
@@ -33,4 +35,14 @@ public:
 private:
   RC   get_exprs_can_pushdown(unique_ptr<Expression> &expr, vector<unique_ptr<Expression>> &pushdown_exprs);
   bool is_empty_predicate(unique_ptr<Expression> &expr);
+
+  void collect_tables(LogicalOperator *oper, unordered_set<string> &tables);
+  bool expr_refs_only_tables(Expression *expr, const unordered_set<string> &tables);
+  void split_exprs_by_table_side(
+      vector<unique_ptr<Expression>> &exprs,
+      const unordered_set<string> &left_tables,
+      const unordered_set<string> &right_tables,
+      vector<unique_ptr<Expression>> &left_exprs,
+      vector<unique_ptr<Expression>> &right_exprs,
+      vector<unique_ptr<Expression>> &remaining);
 };

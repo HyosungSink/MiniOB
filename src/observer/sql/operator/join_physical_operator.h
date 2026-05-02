@@ -16,6 +16,7 @@ See the Mulan PSL v2 for more details. */
 
 #include "sql/operator/physical_operator.h"
 #include "sql/parser/parse.h"
+#include "sql/expr/expression.h"
 
 /**
  * @brief 最简单的两表（称为左表、右表）join算子
@@ -30,10 +31,28 @@ public:
 
   PhysicalOperatorType type() const override { return PhysicalOperatorType::NESTED_LOOP_JOIN; }
 
+  OpType get_op_type() const override { return OpType::INNERNLJOIN; }
+
+  virtual double calculate_cost(
+      LogicalProperty *prop, const vector<LogicalProperty *> &child_log_props, CostModel *cm) override
+  {
+    if (child_log_props.size() >= 2) {
+      double left_card  = child_log_props[0]->get_card();
+      double right_card = child_log_props[1]->get_card();
+      return left_card * right_card;
+    }
+    return 0.0;
+  }
+
   RC     open(Trx *trx) override;
   RC     next() override;
   RC     close() override;
   Tuple *current_tuple() override;
+
+  void set_join_predicates(vector<unique_ptr<Expression>> &&predicates)
+  {
+    join_predicates_ = std::move(predicates);
+  }
 
 private:
   RC left_next();   //! 左表遍历下一条数据
@@ -50,4 +69,6 @@ private:
   JoinedTuple       joined_tuple_;         //! 当前关联的左右两个tuple
   bool              round_done_   = true;  //! 右表遍历的一轮是否结束
   bool              right_closed_ = true;  //! 右表算子是否已经关闭
+
+  vector<unique_ptr<Expression>> join_predicates_;  // join ON conditions for filtering
 };

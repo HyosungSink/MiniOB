@@ -30,4 +30,12 @@ public:
   LogicalOperatorType type() const override { return LogicalOperatorType::PREDICATE; }
 
   OpType get_op_type() const override { return OpType::LOGICALFILTER; }
+
+  unique_ptr<LogicalProperty> find_log_prop(const vector<LogicalProperty *> &log_props) override
+  {
+    if (!log_props.empty() && log_props[0] != nullptr) {
+      return make_unique<LogicalProperty>(log_props[0]->get_card());
+    }
+    return make_unique<LogicalProperty>(0);
+  }
 };

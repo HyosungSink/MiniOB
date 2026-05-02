@@ -61,6 +61,15 @@ RC SelectStmt::create(Db *db, SelectSqlNode &select_sql, Stmt *&stmt)
     table_map.insert({table_name, table});
   }
 
+  // Register table aliases from JOIN syntax
+  for (auto &[real_name, alias] : select_sql.table_aliases) {
+    auto it = table_map.find(real_name);
+    if (it != table_map.end()) {
+      binder_context.add_alias(alias.c_str(), it->second);
+      table_map.insert({alias, it->second});
+    }
+  }
+
   // collect query fields in `select` statement
   vector<unique_ptr<Expression>> bound_expressions;
   ExpressionBinder expression_binder(binder_context);

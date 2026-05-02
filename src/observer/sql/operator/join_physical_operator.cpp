@@ -36,31 +36,53 @@ RC NestedLoopJoinPhysicalOperator::open(Trx *trx)
 
 RC NestedLoopJoinPhysicalOperator::next()
 {
-  bool left_need_step = (left_tuple_ == nullptr);
   RC   rc             = RC::SUCCESS;
-  if (round_done_) {
-    left_need_step = true;
-  } else {
+  while (RC::SUCCESS == rc) {
+    bool left_need_step = (left_tuple_ == nullptr);
+    if (round_done_) {
+      left_need_step = true;
+    }
+
+    if (left_need_step) {
+      rc = left_next();
+      if (rc != RC::SUCCESS) {
+        return rc;
+      }
+    }
+
     rc = right_next();
     if (rc != RC::SUCCESS) {
       if (rc == RC::RECORD_EOF) {
-        left_need_step = true;
+        rc = RC::SUCCESS;
+        round_done_ = true;
+        continue;
       } else {
         return rc;
       }
-    } else {
-      return rc;  // got one tuple from right
     }
-  }
 
-  if (left_need_step) {
-    rc = left_next();
-    if (rc != RC::SUCCESS) {
-      return rc;
+    // Evaluate join predicates (ON conditions) on the joined tuple
+    if (!join_predicates_.empty()) {
+      bool pass = true;
+      for (auto &pred : join_predicates_) {
+        Value value;
+        rc = pred->get_value(joined_tuple_, value);
+        if (rc != RC::SUCCESS) {
+          pass = false;
+          break;
+        }
+        if (value.get_boolean() != true) {
+          pass = false;
+          break;
+        }
+      }
+      if (!pass) {
+        continue;  // skip this pair, try next right tuple
+      }
     }
-  }
 
-  rc = right_next();
+    return RC::SUCCESS;
+  }
   return rc;
 }
 

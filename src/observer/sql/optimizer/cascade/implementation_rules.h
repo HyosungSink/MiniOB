@@ -101,6 +101,30 @@ public:
 };
 
 /**
+ * Rule transforms Logical Inner Join -> Physical Nested Loop Join
+ */
+class LogicalInnerJoinToNLJ : public Rule
+{
+public:
+  LogicalInnerJoinToNLJ();
+
+  void transform(OperatorNode *input, std::vector<std::unique_ptr<OperatorNode>> *transformed,
+      OptimizerContext *context) const override;
+};
+
+/**
+ * Rule transforms Logical Inner Join -> Physical Hash Join
+ */
+class LogicalInnerJoinToHashJoin : public Rule
+{
+public:
+  LogicalInnerJoinToHashJoin();
+
+  void transform(OperatorNode *input, std::vector<std::unique_ptr<OperatorNode>> *transformed,
+      OptimizerContext *context) const override;
+};
+
+/**
  * Rule transforms Logical predicate -> Physical predicate
  * TODO: In practice, this rule may not be used and can be removed
  */

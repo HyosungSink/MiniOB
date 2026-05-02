@@ -204,6 +204,53 @@ RC PhysicalPlanGenerator::create_plan(PredicateLogicalOperator &pred_oper, uniqu
 
   LogicalOperator &child_oper = *children_opers.front();
 
+  // Extract cross-table equality predicates from this PREDICATE into the JOIN's
+  // join_predicates_ so that NLJ/hash join can evaluate them directly.
+  if (child_oper.type() == LogicalOperatorType::JOIN) {
+    auto *join_oper = static_cast<JoinLogicalOperator *>(&child_oper);
+    vector<unique_ptr<Expression>> &expressions = pred_oper.expressions();
+    if (expressions.size() == 1) {
+      unique_ptr<Expression> &expr = expressions[0];
+      vector<unique_ptr<Expression>> remaining;
+
+      if (expr->type() == ExprType::CONJUNCTION) {
+        auto *conj = static_cast<ConjunctionExpr *>(expr.get());
+        if (conj->conjunction_type() == ConjunctionExpr::Type::AND) {
+          for (auto &child : conj->children()) {
+            if (child && child->type() == ExprType::COMPARISON) {
+              auto *cmp = static_cast<ComparisonExpr *>(child.get());
+              if (cmp->comp() == EQUAL_TO &&
+                  cmp->left()->type() == ExprType::FIELD &&
+                  cmp->right()->type() == ExprType::FIELD) {
+                auto *lf = static_cast<FieldExpr *>(cmp->left().get());
+                auto *rf = static_cast<FieldExpr *>(cmp->right().get());
+                if (strcasecmp(lf->table_name(), rf->table_name()) != 0) {
+                  join_oper->add_join_predicate(std::move(child));
+                  continue;
+                }
+              }
+            }
+            if (child) remaining.push_back(std::move(child));
+          }
+          conj->children() = std::move(remaining);
+        }
+      } else if (expr->type() == ExprType::COMPARISON) {
+        auto *cmp = static_cast<ComparisonExpr *>(expr.get());
+        if (cmp->comp() == EQUAL_TO &&
+            cmp->left()->type() == ExprType::FIELD &&
+            cmp->right()->type() == ExprType::FIELD) {
+          auto *lf = static_cast<FieldExpr *>(cmp->left().get());
+          auto *rf = static_cast<FieldExpr *>(cmp->right().get());
+          if (strcasecmp(lf->table_name(), rf->table_name()) != 0) {
+            join_oper->add_join_predicate(std::move(expr));
+            Value value((bool)true);
+            expr = unique_ptr<Expression>(new ValueExpr(value));
+          }
+        }
+      }
+    }
+  }
+
   unique_ptr<PhysicalOperator> child_phy_oper;
   RC                           rc = create(child_oper, child_phy_oper, session);
   if (rc != RC::SUCCESS) {
@@ -340,9 +387,41 @@ RC PhysicalPlanGenerator::create_plan(JoinLogicalOperator &join_oper, unique_ptr
     return RC::INTERNAL;
   }
   if (session->hash_join_on() && can_use_hash_join(join_oper)) {
-    // your code here
+    auto hash_join_oper = make_unique<HashJoinPhysicalOperator>();
+
+    // Get the first equality join predicate as the hash join condition
+    for (auto &pred : join_oper.get_join_predicates()) {
+      if (pred && pred->type() == ExprType::COMPARISON) {
+        auto *cmp = static_cast<ComparisonExpr *>(pred.get());
+        if (cmp->comp() == EQUAL_TO) {
+          hash_join_oper->set_join_condition(std::move(pred));
+          break;
+        }
+      }
+    }
+
+    for (auto &child_oper : child_opers) {
+      unique_ptr<PhysicalOperator> child_physical_oper;
+      rc = create(*child_oper, child_physical_oper, session);
+      if (rc != RC::SUCCESS) {
+        LOG_WARN("failed to create physical child oper. rc=%s", strrc(rc));
+        return rc;
+      }
+      hash_join_oper->add_child(std::move(child_physical_oper));
+    }
+
+    oper = std::move(hash_join_oper);
   } else {
-    unique_ptr<PhysicalOperator> join_physical_oper(new NestedLoopJoinPhysicalOperator());
+    auto nlj_oper = make_unique<NestedLoopJoinPhysicalOperator>();
+    if (!join_oper.get_join_predicates().empty()) {
+      vector<unique_ptr<Expression>> preds;
+      for (auto &p : join_oper.get_join_predicates()) {
+        if (p) {
+          preds.push_back(p->copy());
+        }
+      }
+      nlj_oper->set_join_predicates(std::move(preds));
+    }
     for (auto &child_oper : child_opers) {
       unique_ptr<PhysicalOperator> child_physical_oper;
       rc = create(*child_oper, child_physical_oper, session);
@@ -351,17 +430,28 @@ RC PhysicalPlanGenerator::create_plan(JoinLogicalOperator &join_oper, unique_ptr
         return rc;
       }
 
-      join_physical_oper->add_child(std::move(child_physical_oper));
+      nlj_oper->add_child(std::move(child_physical_oper));
     }
 
-    oper = std::move(join_physical_oper);
+    oper = std::move(nlj_oper);
   }
   return rc;
 }
 
 bool PhysicalPlanGenerator::can_use_hash_join(JoinLogicalOperator &join_oper)
 {
-  // your code here
+  for (auto &pred : join_oper.get_join_predicates()) {
+    if (pred->type() == ExprType::COMPARISON) {
+      auto *cmp = static_cast<ComparisonExpr *>(pred.get());
+      if (cmp->comp() == EQUAL_TO) {
+        Expression *left  = cmp->left().get();
+        Expression *right = cmp->right().get();
+        if (left->type() == ExprType::FIELD && right->type() == ExprType::FIELD) {
+          return true;
+        }
+      }
+    }
+  }
   return false;
 }
 

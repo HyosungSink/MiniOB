@@ -60,6 +60,28 @@ RC NestedLoopJoinPhysicalOperator::next()
         return rc;
       }
     }
+
+    // Evaluate join predicates (ON conditions) on the joined tuple
+    if (!join_predicates_.empty()) {
+      bool pass = true;
+      for (auto &pred : join_predicates_) {
+        Value value;
+        rc = pred->get_value(joined_tuple_, value);
+        if (rc != RC::SUCCESS) {
+          pass = false;
+          break;
+        }
+        if (value.get_boolean() != true) {
+          pass = false;
+          break;
+        }
+      }
+      if (!pass) {
+        continue;  // skip this pair, try next right tuple
+      }
+    }
+
+    return RC::SUCCESS;
   }
   return rc;
 }

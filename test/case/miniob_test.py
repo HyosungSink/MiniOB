@@ -180,7 +180,8 @@ class MiniObServer:
       observer_command.append('-p')
       observer_command.append(str(self.__server_port))
 
-    process = subprocess.Popen(observer_command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, cwd=self.__data_dir)
+    self.__stderr_file = open(os.path.join(self.__data_dir, 'observer_stderr.log'), 'w')
+    process = subprocess.Popen(observer_command, stdout=subprocess.DEVNULL, stderr=self.__stderr_file, cwd=self.__data_dir)
     return_code = process.poll()
     if return_code != None:
       _logger.error("Failed to start observer, exit with code %d", return_code)

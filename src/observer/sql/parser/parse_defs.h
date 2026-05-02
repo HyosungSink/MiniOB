@@ -19,6 +19,7 @@ See the Mulan PSL v2 for more details. */
 #include "common/lang/memory.h"
 #include "common/value.h"
 #include "common/lang/utility.h"
+#include "common/lang/unordered_map.h"
 
 class Expression;
 
@@ -93,6 +94,7 @@ struct SelectSqlNode
   vector<string>                 relations;    ///< 查询的表
   vector<ConditionSqlNode>       conditions;   ///< 查询条件，使用AND串联起来多个条件
   vector<unique_ptr<Expression>> group_by;     ///< group by clause
+  unordered_map<string, string>  table_aliases; ///< table_name -> alias mapping
 };
 
 /**

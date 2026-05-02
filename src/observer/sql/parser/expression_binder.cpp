@@ -22,6 +22,12 @@ using namespace common;
 
 Table *BinderContext::find_table(const char *table_name) const
 {
+  // Check aliases first
+  auto alias_iter = alias_map_.find(table_name);
+  if (alias_iter != alias_map_.end()) {
+    return alias_iter->second;
+  }
+
   auto pred = [table_name](Table *table) { return 0 == strcasecmp(table_name, table->name()); };
   auto iter = ranges::find_if(query_tables_, pred);
   if (iter == query_tables_.end()) {
@@ -144,12 +150,27 @@ RC ExpressionBinder::bind_unbound_field_expression(
 
   Table *table = nullptr;
   if (is_blank(table_name)) {
-    if (context_.query_tables().size() != 1) {
-      LOG_INFO("cannot determine table for field: %s", field_name);
-      return RC::SCHEMA_TABLE_NOT_EXIST;
+    if (context_.query_tables().size() == 1) {
+      table = context_.query_tables()[0];
+    } else {
+      // Search all tables for an unambiguous match
+      Table *found = nullptr;
+      for (Table *t : context_.query_tables()) {
+        const FieldMeta *fm = t->table_meta().field(field_name);
+        if (fm != nullptr) {
+          if (found != nullptr) {
+            LOG_INFO("ambiguous field: %s exists in multiple tables", field_name);
+            return RC::SCHEMA_FIELD_MISSING;
+          }
+          found = t;
+        }
+      }
+      if (found == nullptr) {
+        LOG_INFO("cannot determine table for field: %s", field_name);
+        return RC::SCHEMA_TABLE_NOT_EXIST;
+      }
+      table = found;
     }
-
-    table = context_.query_tables()[0];
   } else {
     table = context_.find_table(table_name);
     if (nullptr == table) {

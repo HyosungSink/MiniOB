@@ -14,6 +14,11 @@
 
 using namespace std;
 
+// Temporary storage for ON conditions from JOIN clauses.
+// The parser processes one statement at a time, so this is safe.
+static vector<ConditionSqlNode> g_on_conditions;
+static unordered_map<string, string> g_table_aliases;
+
 string token_name(const char *sql_string, YYLTYPE *llocp)
 {
   return string(sql_string + llocp->first_column, llocp->last_column - llocp->first_column + 1);
@@ -113,6 +118,9 @@ UnboundAggregateExpr *create_aggregate_expression(const char *aggregate_name,
         FIELDS
         TERMINATED
         ENCLOSED
+        INNER
+        JOIN
+        AS
         EQ
         LT
         GT
@@ -517,6 +525,23 @@ select_stmt:        /*  select 语句的语法解析树*/
         delete $4;
       }
 
+      // Merge ON conditions from JOIN clauses into WHERE conditions
+      if (!g_on_conditions.empty()) {
+        if ($5 == nullptr) {
+          $5 = new vector<ConditionSqlNode>;
+        }
+        for (auto &cond : g_on_conditions) {
+          $5->push_back(std::move(cond));
+        }
+        g_on_conditions.clear();
+      }
+
+      // Merge table aliases
+      if (!g_table_aliases.empty()) {
+        $$->selection.table_aliases = std::move(g_table_aliases);
+        g_table_aliases.clear();
+      }
+
       if ($5 != nullptr) {
         $$->selection.conditions.swap(*$5);
         delete $5;
@@ -614,6 +639,16 @@ relation:
     ID {
       $$ = $1;
     }
+    | ID AS ID {
+      // table AS alias: return real table name, store alias mapping
+      $$ = $1;
+      g_table_aliases[$1] = $3;
+    }
+    | ID ID {
+      // table alias (without AS): return real table name, store alias mapping
+      $$ = $1;
+      g_table_aliases[$1] = $2;
+    }
     ;
 rel_list:
     relation {
@@ -628,6 +663,36 @@ rel_list:
       }
 
       $$->insert($$->begin(), $1);
+    }
+    | relation INNER JOIN relation ON condition_list {
+      $$ = new vector<string>();
+      $$->push_back($1);
+      $$->push_back($4);
+      if ($6 != nullptr) {
+        for (auto &cond : *$6) {
+          g_on_conditions.push_back(std::move(cond));
+        }
+        delete $6;
+      }
+    }
+    | rel_list INNER JOIN relation ON condition_list {
+      $$ = $1;
+      $$->push_back($4);
+      if ($6 != nullptr) {
+        for (auto &cond : *$6) {
+          g_on_conditions.push_back(std::move(cond));
+        }
+        delete $6;
+      }
+    }
+    | rel_list COMMA rel_list {
+      $$ = $1;
+      if ($3 != nullptr) {
+        for (auto &t : *$3) {
+          $$->push_back(std::move(t));
+        }
+        delete $3;
+      }
     }
     ;
 
