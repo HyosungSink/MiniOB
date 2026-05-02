@@ -120,6 +120,11 @@ RC FilterStmt::create_filter_unit(Db *db, Table *default_table, unordered_map<st
         obj.init_value(val);
         delete expr;
         return RC::SUCCESS;
+      } else if (expr->type() == ExprType::FIELD) {
+        auto *fe = static_cast<FieldExpr *>(expr);
+        obj.init_attr(fe->field());
+        delete expr;
+        return RC::SUCCESS;
       }
       // Complex expression - keep as expression
       obj.init_expression(unique_ptr<Expression>(expr));

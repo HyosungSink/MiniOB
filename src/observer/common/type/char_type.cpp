@@ -40,6 +40,20 @@ RC CharType::cast_to(const Value &val, AttrType type, Value &result) const
       result.set_type(AttrType::DATES);
       return RC::SUCCESS;
     }
+    case AttrType::INTS: {
+      string str = val.get_string();
+      char *end = nullptr;
+      long int_value = strtol(str.c_str(), &end, 10);
+      result.set_int(static_cast<int>(int_value));
+      return RC::SUCCESS;
+    }
+    case AttrType::FLOATS: {
+      string str = val.get_string();
+      char *end = nullptr;
+      float float_value = strtof(str.c_str(), &end);
+      result.set_float(float_value);
+      return RC::SUCCESS;
+    }
     default: return RC::UNIMPLEMENTED;
   }
   return RC::SUCCESS;
@@ -52,6 +66,12 @@ int CharType::cast_cost(AttrType type)
   }
   if (type == AttrType::DATES) {
     return 1;
+  }
+  if (type == AttrType::INTS) {
+    return 2;
+  }
+  if (type == AttrType::FLOATS) {
+    return 2;
   }
   return INT32_MAX;
 }

@@ -240,6 +240,10 @@ bool PredicatePushdownRewriter::expr_refs_only_tables(Expression *expr, const un
       children.push_back(arith->left().get());
       children.push_back(arith->right().get());
     } break;
+    case ExprType::CAST: {
+      auto *cast_expr = static_cast<CastExpr *>(expr);
+      children.push_back(cast_expr->child().get());
+    } break;
     case ExprType::VALUE:
     case ExprType::STAR:
       // No field references, so it's fine
