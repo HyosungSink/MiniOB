@@ -16,6 +16,7 @@ See the Mulan PSL v2 for more details. */
 #include "common/log/log.h"
 #include "storage/table/table.h"
 #include "storage/db/db.h"
+#include <cstring>
 
 BplusTreeIndex::~BplusTreeIndex() noexcept { close(); }
 
@@ -69,6 +70,85 @@ RC BplusTreeIndex::open(Table *table, const char *file_name, const IndexMeta &in
   return RC::SUCCESS;
 }
 
+RC BplusTreeIndex::create(Table *table, const char *file_name, const IndexMeta &index_meta,
+    const vector<const FieldMeta *> &field_metas)
+{
+  if (inited_) {
+    LOG_WARN("Failed to create index due to the index has been created before. file_name:%s, index:%s",
+        file_name, index_meta.name());
+    return RC::RECORD_OPENNED;
+  }
+
+  Index::init(index_meta, field_metas);
+
+  int total_len = 0;
+  for (const FieldMeta *fm : field_metas) {
+    total_len += fm->len();
+  }
+  composite_key_len_ = total_len;
+
+  vector<FieldDesc> fields;
+  for (const FieldMeta *fm : field_metas) {
+    fields.push_back({fm->type(), fm->len()});
+  }
+
+  BufferPoolManager &bpm = table->db()->buffer_pool_manager();
+  RC rc = index_handler_.create(table->db()->log_handler(), bpm, file_name,
+      field_metas[0]->type(), total_len);
+  if (RC::SUCCESS != rc) {
+    LOG_WARN("Failed to create index_handler, file_name:%s, index:%s, rc:%s",
+        file_name, index_meta.name(), strrc(rc));
+    return rc;
+  }
+
+  index_handler_.init_composite_comparator(fields);
+
+  inited_ = true;
+  table_  = table;
+  LOG_INFO("Successfully create composite index, file_name:%s, index:%s",
+    file_name, index_meta.name());
+  return RC::SUCCESS;
+}
+
+RC BplusTreeIndex::open(Table *table, const char *file_name, const IndexMeta &index_meta,
+    const vector<const FieldMeta *> &field_metas)
+{
+  if (inited_) {
+    LOG_WARN("Failed to open index due to the index has been initedd before. file_name:%s, index:%s",
+        file_name, index_meta.name());
+    return RC::RECORD_OPENNED;
+  }
+
+  Index::init(index_meta, field_metas);
+
+  int total_len = 0;
+  for (const FieldMeta *fm : field_metas) {
+    total_len += fm->len();
+  }
+  composite_key_len_ = total_len;
+
+  vector<FieldDesc> fields;
+  for (const FieldMeta *fm : field_metas) {
+    fields.push_back({fm->type(), fm->len()});
+  }
+
+  BufferPoolManager &bpm = table->db()->buffer_pool_manager();
+  RC rc = index_handler_.open(table->db()->log_handler(), bpm, file_name);
+  if (RC::SUCCESS != rc) {
+    LOG_WARN("Failed to open index_handler, file_name:%s, index:%s, rc:%s",
+        file_name, index_meta.name(), strrc(rc));
+    return rc;
+  }
+
+  index_handler_.init_composite_comparator(fields);
+
+  inited_ = true;
+  table_  = table;
+  LOG_INFO("Successfully open composite index, file_name:%s, index:%s",
+    file_name, index_meta.name());
+  return RC::SUCCESS;
+}
+
 RC BplusTreeIndex::close()
 {
   if (inited_) {
@@ -82,12 +162,32 @@ RC BplusTreeIndex::close()
 
 RC BplusTreeIndex::insert_entry(const char *record, const RID *rid)
 {
-  return index_handler_.insert_entry(record + field_meta_.offset(), rid);
+  if (field_metas_.size() <= 1) {
+    return index_handler_.insert_entry(record + field_meta_.offset(), rid);
+  }
+  // Composite key: concatenate field bytes
+  vector<char> composite_key(composite_key_len_);
+  int offset = 0;
+  for (const FieldMeta &fm : field_metas_) {
+    memcpy(composite_key.data() + offset, record + fm.offset(), fm.len());
+    offset += fm.len();
+  }
+  return index_handler_.insert_entry(composite_key.data(), rid);
 }
 
 RC BplusTreeIndex::delete_entry(const char *record, const RID *rid)
 {
-  return index_handler_.delete_entry(record + field_meta_.offset(), rid);
+  if (field_metas_.size() <= 1) {
+    return index_handler_.delete_entry(record + field_meta_.offset(), rid);
+  }
+  // Composite key: concatenate field bytes
+  vector<char> composite_key(composite_key_len_);
+  int offset = 0;
+  for (const FieldMeta &fm : field_metas_) {
+    memcpy(composite_key.data() + offset, record + fm.offset(), fm.len());
+    offset += fm.len();
+  }
+  return index_handler_.delete_entry(composite_key.data(), rid);
 }
 
 IndexScanner *BplusTreeIndex::create_scanner(

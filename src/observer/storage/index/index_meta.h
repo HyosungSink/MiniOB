@@ -16,6 +16,7 @@ See the Mulan PSL v2 for more details. */
 
 #include "common/sys/rc.h"
 #include "common/lang/string.h"
+#include "common/lang/vector.h"
 
 class TableMeta;
 class FieldMeta;
@@ -36,10 +37,13 @@ public:
   IndexMeta() = default;
 
   RC init(const char *name, const FieldMeta &field);
+  RC init(const char *name, const vector<const FieldMeta *> &field_metas);
 
 public:
   const char *name() const;
   const char *field() const;
+  const vector<string> &fields() const { return fields_; }
+  bool is_composite() const { return fields_.size() > 1; }
 
   void desc(ostream &os) const;
 
@@ -48,6 +52,7 @@ public:
   static RC from_json(const TableMeta &table, const Json::Value &json_value, IndexMeta &index);
 
 protected:
-  string name_;   // index's name
-  string field_;  // field's name
+  string          name_;    // index's name
+  string          field_;   // first field's name (for backward compat)
+  vector<string>  fields_;  // all field names for composite index
 };

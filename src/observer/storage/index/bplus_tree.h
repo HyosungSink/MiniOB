@@ -23,6 +23,7 @@ See the Mulan PSL v2 for more details. */
 #include "common/lang/memory.h"
 #include "common/lang/sstream.h"
 #include "common/lang/functional.h"
+#include "common/lang/vector.h"
 #include "common/log/log.h"
 #include "sql/parser/parse_defs.h"
 #include "storage/buffer/disk_buffer_pool.h"
@@ -50,6 +51,16 @@ enum class BplusTreeOperationType
 };
 
 /**
+ * @brief Field descriptor for composite index keys
+ * @ingroup BPlusTree
+ */
+struct FieldDesc
+{
+  AttrType type;
+  int      length;
+};
+
+/**
  * @brief 属性比较(BplusTree)
  * @ingroup BPlusTree
  */
@@ -60,25 +71,52 @@ public:
   {
     attr_type_   = type;
     attr_length_ = length;
+    fields_.clear();
+    fields_.push_back({type, length});
+  }
+
+  void init(const vector<FieldDesc> &fields)
+  {
+    fields_      = fields;
+    attr_type_   = fields.empty() ? AttrType::UNDEFINED : fields[0].type;
+    attr_length_ = 0;
+    for (auto &f : fields) {
+      attr_length_ += f.length;
+    }
   }
 
   int attr_length() const { return attr_length_; }
 
   int operator()(const char *v1, const char *v2) const
   {
-    // TODO: optimized the comparison
-    Value left;
-    left.set_type(attr_type_);
-    left.set_data(v1, attr_length_);
-    Value right;
-    right.set_type(attr_type_);
-    right.set_data(v2, attr_length_);
-    return DataType::type_instance(attr_type_)->compare(left, right);
+    if (fields_.size() <= 1) {
+      Value left;
+      left.set_type(attr_type_);
+      left.set_data(v1, attr_length_);
+      Value right;
+      right.set_type(attr_type_);
+      right.set_data(v2, attr_length_);
+      return DataType::type_instance(attr_type_)->compare(left, right);
+    }
+    int offset = 0;
+    for (auto &f : fields_) {
+      Value left;
+      left.set_type(f.type);
+      left.set_data(v1 + offset, f.length);
+      Value right;
+      right.set_type(f.type);
+      right.set_data(v2 + offset, f.length);
+      int result = DataType::type_instance(f.type)->compare(left, right);
+      if (result != 0) return result;
+      offset += f.length;
+    }
+    return 0;
   }
 
 private:
-  AttrType attr_type_;
-  int      attr_length_;
+  AttrType          attr_type_;
+  int               attr_length_;
+  vector<FieldDesc> fields_;
 };
 
 /**
@@ -90,6 +128,8 @@ class KeyComparator
 {
 public:
   void init(AttrType type, int length) { attr_comparator_.init(type, length); }
+
+  void init(const vector<FieldDesc> &fields) { attr_comparator_.init(fields); }
 
   const AttrComparator &attr_comparator() const { return attr_comparator_; }
 
@@ -120,19 +160,43 @@ public:
   {
     attr_type_   = type;
     attr_length_ = length;
+    fields_.clear();
+    fields_.push_back({type, length});
+  }
+
+  void init(const vector<FieldDesc> &fields)
+  {
+    fields_      = fields;
+    attr_type_   = fields.empty() ? AttrType::UNDEFINED : fields[0].type;
+    attr_length_ = 0;
+    for (auto &f : fields) {
+      attr_length_ += f.length;
+    }
   }
 
   int attr_length() const { return attr_length_; }
 
   string operator()(const char *v) const
   {
-    Value value(attr_type_, const_cast<char *>(v), attr_length_);
-    return value.to_string();
+    if (fields_.size() <= 1) {
+      Value value(attr_type_, const_cast<char *>(v), attr_length_);
+      return value.to_string();
+    }
+    stringstream ss;
+    int offset = 0;
+    for (size_t i = 0; i < fields_.size(); i++) {
+      if (i > 0) ss << ",";
+      Value value(fields_[i].type, const_cast<char *>(v + offset), fields_[i].length);
+      ss << value.to_string();
+      offset += fields_[i].length;
+    }
+    return ss.str();
   }
 
 private:
-  AttrType attr_type_;
-  int      attr_length_;
+  AttrType          attr_type_;
+  int               attr_length_;
+  vector<FieldDesc> fields_;
 };
 
 /**
@@ -143,6 +207,8 @@ class KeyPrinter
 {
 public:
   void init(AttrType type, int length) { attr_printer_.init(type, length); }
+
+  void init(const vector<FieldDesc> &fields) { attr_printer_.init(fields); }
 
   const AttrPrinter &attr_printer() const { return attr_printer_; }
 
@@ -477,6 +543,16 @@ public:
    * 关闭句柄indexHandle对应的索引文件
    */
   RC close();
+
+  /**
+   * @brief 重新初始化比较器以支持复合索引
+   * @param fields 复合索引的字段描述列表
+   */
+  void init_composite_comparator(const vector<FieldDesc> &fields)
+  {
+    key_comparator_.init(fields);
+    key_printer_.init(fields);
+  }
 
   /**
    * @brief 此函数向IndexHandle对应的索引中插入一个索引项。

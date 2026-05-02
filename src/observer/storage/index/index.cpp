@@ -20,3 +20,16 @@ RC Index::init(const IndexMeta &index_meta, const FieldMeta &field_meta)
   field_meta_ = field_meta;
   return RC::SUCCESS;
 }
+
+RC Index::init(const IndexMeta &index_meta, const vector<const FieldMeta *> &field_metas)
+{
+  index_meta_ = index_meta;
+  field_metas_.clear();
+  for (const FieldMeta *fm : field_metas) {
+    field_metas_.push_back(*fm);
+  }
+  if (!field_metas.empty()) {
+    field_meta_ = *field_metas[0];
+  }
+  return RC::SUCCESS;
+}
