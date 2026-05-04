@@ -15,6 +15,17 @@ See the Mulan PSL v2 for more details. */
 #include "common/types.h"
 #include "storage/persist/persist.h"
 
+static constexpr int TEXT_MAX_LENGTH = 65535;
+
+struct LobReference
+{
+  int64_t offset   = 0;
+  int32_t length   = 0;
+  int32_t reserved = 0;
+};
+
+static constexpr int LOB_REFERENCE_SIZE = sizeof(LobReference);
+
 /**
  * @brief 管理LOB文件中的 LOB 对象
  * @ingroup RecordManager

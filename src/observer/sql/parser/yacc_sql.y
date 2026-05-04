@@ -466,9 +466,9 @@ attr_def:
     | ID TEXT_T attr_nullability
     {
       $$ = new AttrInfoSqlNode;
-      $$->type = AttrType::CHARS;
+      $$->type = AttrType::TEXTS;
       $$->name = $1;
-      $$->length = 4096;
+      $$->length = 0;
       $$->nullable = ($3 == 0);
     }
     ;

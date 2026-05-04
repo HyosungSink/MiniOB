@@ -32,6 +32,7 @@ static string mysql_desc_type(const FieldMeta &field_meta)
     case AttrType::FLOATS: return "FLOAT";
     case AttrType::DATES: return "DATE";
     case AttrType::CHARS: return string("CHAR(") + to_string(field_meta.len()) + ")";
+    case AttrType::TEXTS: return "TEXT";
     case AttrType::VECTORS: return "VECTOR";
     case AttrType::BOOLEANS: return "BOOLEAN";
     default: return attr_type_to_string(field_meta.type());
