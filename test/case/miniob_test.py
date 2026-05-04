@@ -351,12 +351,28 @@ class MiniObClient:
         _logger.info("receive from server error. result len=%d", len(data))
         raise Exception("receive return error. the connection may be closed")
           
+  def __send_request(self, data: bytes):
+    buffer = data + b'\0'
+    total_sent = 0
+    while total_sent < len(buffer):
+      try:
+        sent = self.__socket.send(buffer[total_sent:])
+      except BlockingIOError:
+        _, writable, exceptional = select.select([], [self.__socket], [self.__socket], self.__time_limit)
+        if len(exceptional) > 0:
+          raise Exception("Failed to send to server. socket has exceptional condition")
+        if len(writable) == 0:
+          raise Exception('Poll timeout after %d second(s)' % self.__time_limit)
+        continue
+
+      if sent == 0:
+        raise Exception("send return error. the connection may be closed")
+      total_sent += sent
 
   def run_sql(self, sql: str) -> Tuple[bool, str]:
     try:
       data = str.encode(sql, GlobalConfig.default_encoding)
-      self.__socket.sendall(data)
-      self.__socket.sendall(b'\0')
+      self.__send_request(data)
       _logger.debug("send command to server(size=%d) '%s'", len(data) + 1, sql)
       result = self.__recv_response()
       _logger.debug("receive result from server '%s'", result)
