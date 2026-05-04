@@ -42,7 +42,8 @@ Value::Value(const Value &other)
   this->own_data_  = other.own_data_;
   this->float_precision_ = other.float_precision_;
   switch (this->attr_type_) {
-    case AttrType::CHARS: {
+    case AttrType::CHARS:
+    case AttrType::TEXTS: {
       set_string_from_other(other);
     } break;
     case AttrType::VECTORS: {
@@ -77,7 +78,8 @@ Value &Value::operator=(const Value &other)
   this->own_data_  = other.own_data_;
   this->float_precision_ = other.float_precision_;
   switch (this->attr_type_) {
-    case AttrType::CHARS: {
+    case AttrType::CHARS:
+    case AttrType::TEXTS: {
       set_string_from_other(other);
     } break;
     case AttrType::VECTORS: {
@@ -111,6 +113,7 @@ void Value::reset()
 {
   switch (attr_type_) {
     case AttrType::CHARS:
+    case AttrType::TEXTS:
     case AttrType::VECTORS:
       if (own_data_ && value_.pointer_value_ != nullptr) {
         delete[] value_.pointer_value_;
@@ -136,6 +139,7 @@ void Value::set_null_data(char *data, int length, AttrType type)
 {
   switch (type) {
     case AttrType::CHARS:
+    case AttrType::TEXTS:
     case AttrType::VECTORS: {
       memset(data, 0xff, length);
     } break;
@@ -158,6 +162,7 @@ bool Value::is_null_data(const char *data, int length, AttrType type)
 {
   switch (type) {
     case AttrType::CHARS:
+    case AttrType::TEXTS:
     case AttrType::VECTORS: {
       for (int i = 0; i < length; i++) {
         if (static_cast<unsigned char>(data[i]) != 0xff) {
@@ -187,7 +192,8 @@ bool Value::is_null_data(const char *data, int length, AttrType type)
 void Value::set_data(char *data, int length)
 {
   switch (attr_type_) {
-    case AttrType::CHARS: {
+    case AttrType::CHARS:
+    case AttrType::TEXTS: {
       set_string(data, length);
     } break;
     case AttrType::INTS: {
@@ -309,7 +315,8 @@ void Value::set_value(const Value &value)
     case AttrType::DATES: {
       set_date(value.get_date());
     } break;
-    case AttrType::CHARS: {
+    case AttrType::CHARS:
+    case AttrType::TEXTS: {
       set_string(value.get_string().c_str());
     } break;
     case AttrType::VECTORS: {
@@ -326,7 +333,7 @@ void Value::set_value(const Value &value)
 
 void Value::set_string_from_other(const Value &other)
 {
-  ASSERT(attr_type_ == AttrType::CHARS, "attr type is not CHARS");
+  ASSERT(is_string_type(attr_type_), "attr type is not a string");
   value_.pointer_value_ = nullptr;
   if (other.value_.pointer_value_ == nullptr) {
     return;
@@ -362,7 +369,8 @@ void Value::set_vector_from_other(const Value &other)
 char *Value::data() const
 {
   switch (attr_type_) {
-    case AttrType::CHARS: {
+    case AttrType::CHARS:
+    case AttrType::TEXTS: {
       return value_.pointer_value_;
     } break;
     case AttrType::VECTORS: {
@@ -404,7 +412,8 @@ int Value::compare(const Value &other) const
 int Value::get_int() const
 {
   switch (attr_type_) {
-    case AttrType::CHARS: {
+    case AttrType::CHARS:
+    case AttrType::TEXTS: {
       try {
         return (int)(stol(value_.pointer_value_));
       } catch (exception const &ex) {
@@ -435,7 +444,8 @@ int Value::get_int() const
 float Value::get_float() const
 {
   switch (attr_type_) {
-    case AttrType::CHARS: {
+    case AttrType::CHARS:
+    case AttrType::TEXTS: {
       try {
         return stof(value_.pointer_value_);
       } catch (exception const &ex) {
@@ -473,7 +483,7 @@ string Value::get_string() const { return this->to_string(); }
 
 string_t Value::get_string_t() const
 {
-  ASSERT(attr_type_ == AttrType::CHARS, "attr type is not CHARS");
+  ASSERT(is_string_type(attr_type_), "attr type is not a string");
   return string_t(value_.pointer_value_, length_);
 }
 
@@ -492,7 +502,8 @@ int Value::get_vector_dimension() const
 bool Value::get_boolean() const
 {
   switch (attr_type_) {
-    case AttrType::CHARS: {
+    case AttrType::CHARS:
+    case AttrType::TEXTS: {
       try {
         float val = stof(value_.pointer_value_);
         if (val >= EPSILON || val <= -EPSILON) {
