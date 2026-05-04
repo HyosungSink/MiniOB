@@ -164,6 +164,17 @@ RC UpdatePhysicalOperator::make_updated_record(const Record &old_record, Record 
     if (field_meta->type() == AttrType::CHARS && value_to_store->length() > field_meta->len()) {
       return RC::SCHEMA_FIELD_TYPE_MISMATCH;
     }
+    if (field_meta->type() == AttrType::TEXTS && value_to_store->length() > TEXT_MAX_LENGTH) {
+      return RC::SCHEMA_FIELD_TYPE_MISMATCH;
+    }
+
+    if (field_meta->type() == AttrType::TEXTS) {
+      rc = table->set_value_to_record(new_record.data(), *value_to_store, field_meta);
+      if (OB_FAIL(rc)) {
+        return rc;
+      }
+      continue;
+    }
 
     int copy_len = value_to_store->length();
     if (field_meta->type() == AttrType::CHARS) {

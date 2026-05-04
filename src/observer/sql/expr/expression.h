@@ -21,6 +21,7 @@ See the Mulan PSL v2 for more details. */
 #include "storage/field/field.h"
 #include "sql/expr/aggregator.h"
 #include "storage/common/chunk.h"
+#include "storage/record/lob_handler.h"
 
 class Tuple;
 class Table;
@@ -216,8 +217,8 @@ public:
   unique_ptr<Expression> copy() const override { return make_unique<FieldExpr>(field_); }
 
   ExprType type() const override { return ExprType::FIELD; }
-  AttrType value_type() const override { return field_.attr_type(); }
-  int      value_length() const override { return field_.meta()->len(); }
+  AttrType value_type() const override { return field_.attr_type() == AttrType::TEXTS ? AttrType::CHARS : field_.attr_type(); }
+  int      value_length() const override { return field_.attr_type() == AttrType::TEXTS ? TEXT_MAX_LENGTH : field_.meta()->len(); }
 
   Field &field() { return field_; }
 
