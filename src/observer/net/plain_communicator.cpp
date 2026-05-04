@@ -35,15 +35,17 @@ RC PlainCommunicator::read_event(SessionEvent *&event)
 
   event = nullptr;
 
-  int data_len = 0;
   int read_len = 0;
 
-  const int    max_packet_size = 8192;
-  vector<char> buf(max_packet_size);
+  const int    read_chunk_size = 8192;
+  const int    max_packet_size = 1024 * 1024;
+  vector<char> buf;
+  buf.reserve(read_chunk_size);
+  vector<char> read_buf(read_chunk_size);
 
   // 持续接收消息，直到遇到'\0'。将'\0'遇到的后续数据直接丢弃没有处理，因为目前仅支持一收一发的模式
   while (true) {
-    read_len = ::read(fd_, buf.data() + data_len, max_packet_size - data_len);
+    read_len = ::read(fd_, read_buf.data(), read_chunk_size);
     if (read_len < 0) {
       if (errno == EAGAIN) {
         continue;
@@ -54,31 +56,29 @@ RC PlainCommunicator::read_event(SessionEvent *&event)
       break;
     }
 
-    if (read_len + data_len > max_packet_size) {
-      data_len += read_len;
-      break;
-    }
-
     bool msg_end = false;
     for (int i = 0; i < read_len; i++) {
-      if (buf[data_len + i] == 0) {
-        data_len += i + 1;
+      if (read_buf[i] == 0) {
+        buf.insert(buf.end(), read_buf.data(), read_buf.data() + i);
         msg_end = true;
         break;
       }
     }
 
+    if (!msg_end) {
+      buf.insert(buf.end(), read_buf.data(), read_buf.data() + read_len);
+    }
+
+    if (static_cast<int>(buf.size()) > max_packet_size) {
+      LOG_WARN("The length of sql exceeds the limitation %d", max_packet_size);
+      return RC::IOERR_TOO_LONG;
+    }
+
     if (msg_end) {
       break;
     }
-
-    data_len += read_len;
   }
 
-  if (data_len > max_packet_size) {
-    LOG_WARN("The length of sql exceeds the limitation %d", max_packet_size);
-    return RC::IOERR_TOO_LONG;
-  }
   if (read_len == 0) {
     LOG_INFO("The peer has been closed %s", addr());
     return RC::IOERR_CLOSE;
@@ -87,7 +87,8 @@ RC PlainCommunicator::read_event(SessionEvent *&event)
     return RC::IOERR_READ;
   }
 
-  LOG_INFO("receive command(size=%d): %s", data_len, buf.data());
+  buf.push_back('\0');
+  LOG_INFO("receive command(size=%d): %s", static_cast<int>(buf.size()), buf.data());
   event = new SessionEvent(this);
   event->set_query(string(buf.data()));
   return rc;
