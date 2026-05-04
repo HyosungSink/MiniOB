@@ -51,6 +51,7 @@ struct ViewDefinition
   vector<ViewColumnMapping> columns;
   vector<ViewPredicate>     predicates;
   bool                      updatable = false;
+  bool                      materialized_insertable = false;
   bool                      mirrors_base_table = false;
 
   const string *base_column_for(const string &view_column) const;
