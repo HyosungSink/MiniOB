@@ -99,10 +99,18 @@ RC Table::create(Db *db, int32_t table_id, const char *path, const char *name, c
   db_       = db;
 
   string             data_file = table_data_file(base_dir, name);
+  string             lob_file  = table_lob_file(base_dir, name);
   BufferPoolManager &bpm       = db->buffer_pool_manager();
   rc                           = bpm.create_file(data_file.c_str());
   if (rc != RC::SUCCESS) {
     LOG_ERROR("Failed to create disk buffer pool of data file. file name=%s", data_file.c_str());
+    return rc;
+  }
+
+  lob_handler_ = new LobFileHandler();
+  rc = lob_handler_->create_file(lob_file.c_str());
+  if (rc != RC::SUCCESS) {
+    LOG_ERROR("Failed to create lob file. file name=%s", lob_file.c_str());
     return rc;
   }
 
@@ -152,6 +160,16 @@ RC Table::open(Db *db, const char *meta_file, const char *base_dir)
   //   return rc;
   // }
   RC rc = RC::SUCCESS;
+  string lob_file = table_lob_file(base_dir, table_meta_.name());
+  lob_handler_ = new LobFileHandler();
+  rc = lob_handler_->open_file(lob_file.c_str());
+  if (rc == RC::FILE_NOT_EXIST) {
+    rc = lob_handler_->create_file(lob_file.c_str());
+  }
+  if (rc != RC::SUCCESS) {
+    LOG_ERROR("Failed to open lob file. file name=%s", lob_file.c_str());
+    return rc;
+  }
 
   if (table_meta_.storage_engine() == StorageEngine::HEAP) {
     engine_ = make_unique<HeapTableEngine>(&table_meta_, db_, this);
@@ -249,14 +267,16 @@ RC Table::make_record(int value_num, const Value *values, Record &record)
         break;
       }
       if ((field->type() == AttrType::VECTORS && real_value.length() != field->len()) ||
-          (field->type() == AttrType::CHARS && real_value.length() > field->len())) {
+          (field->type() == AttrType::CHARS && real_value.length() > field->len()) ||
+          (field->type() == AttrType::TEXTS && real_value.length() > TEXT_MAX_LENGTH)) {
         rc = RC::SCHEMA_FIELD_TYPE_MISMATCH;
         break;
       }
       rc = set_value_to_record(record_data, real_value, field);
     } else {
       if ((field->type() == AttrType::VECTORS && value.length() != field->len()) ||
-          (field->type() == AttrType::CHARS && value.length() > field->len())) {
+          (field->type() == AttrType::CHARS && value.length() > field->len()) ||
+          (field->type() == AttrType::TEXTS && value.length() > TEXT_MAX_LENGTH)) {
         rc = RC::SCHEMA_FIELD_TYPE_MISMATCH;
         break;
       }
@@ -280,6 +300,21 @@ RC Table::set_value_to_record(char *record_data, const Value &value, const Field
     return RC::SUCCESS;
   }
 
+  if (field->type() == AttrType::TEXTS) {
+    if (value.length() > TEXT_MAX_LENGTH || lob_handler_ == nullptr) {
+      return RC::SCHEMA_FIELD_TYPE_MISMATCH;
+    }
+
+    LobReference ref;
+    ref.length = value.length();
+    RC rc = lob_handler_->insert_data(ref.offset, ref.length, value.data());
+    if (OB_FAIL(rc)) {
+      return rc;
+    }
+    memcpy(record_data + field->offset(), &ref, sizeof(ref));
+    return RC::SUCCESS;
+  }
+
   size_t       copy_len = field->len();
   const size_t data_len = value.length();
   if (field->type() == AttrType::CHARS) {
@@ -288,6 +323,35 @@ RC Table::set_value_to_record(char *record_data, const Value &value, const Field
     }
   }
   memcpy(record_data + field->offset(), value.data(), copy_len);
+  return RC::SUCCESS;
+}
+
+RC Table::get_text_value(const char *record_data, const FieldMeta *field, Value &value) const
+{
+  if (field->type() != AttrType::TEXTS || field->len() != LOB_REFERENCE_SIZE || lob_handler_ == nullptr) {
+    return RC::INVALID_ARGUMENT;
+  }
+
+  const char *field_data = record_data + field->offset();
+  if (Value::is_null_data(field_data, field->len(), field->type())) {
+    value.set_null();
+    return RC::SUCCESS;
+  }
+
+  LobReference ref;
+  memcpy(&ref, field_data, sizeof(ref));
+  if (ref.length < 0 || ref.length > TEXT_MAX_LENGTH) {
+    return RC::INTERNAL;
+  }
+
+  string text;
+  text.resize(ref.length);
+  RC rc = lob_handler_->get_data(ref.offset, ref.length, text.data());
+  if (OB_FAIL(rc)) {
+    return rc;
+  }
+
+  value.set_string(text.data(), static_cast<int>(text.size()));
   return RC::SUCCESS;
 }
 
