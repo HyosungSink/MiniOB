@@ -1,0 +1,8 @@
+-- echo miniob2025 fulltext rootservice bm25 regression
+CREATE TABLE texts (id INT, content TEXT);
+INSERT INTO texts VALUES (0, '执行RESET_GLOBAL_PREF_DEFAULTS后，预期的输出结果是什么？');
+INSERT INTO texts VALUES (1, '设置rootservice_async_task_queue_size参数时，是否需要重启OBServer节点才能生效？');
+INSERT INTO texts VALUES (2, '与DBA_CONSTRAINTS相关的视图有哪些？');
+INSERT INTO texts VALUES (3, '在使用JSON_INSERT函数时，如果路径参数包含通配符会发生什么情况？');
+ALTER TABLE texts ADD FULLTEXT INDEX idx_texts_jieba (content) WITH PARSER jieba;
+SELECT id, content, MATCH(content) AGAINST('rootservice_async_task_queue_size') AS score FROM texts WHERE MATCH(content) AGAINST('rootservice_async_task_queue_size') > 0 ORDER BY MATCH(content) AGAINST('rootservice_async_task_queue_size') DESC, id ASC;
