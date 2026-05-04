@@ -1602,6 +1602,16 @@ static RC tokenize_text(const string &text, vector<string> &tokens)
   return global_jieba_tokenizer().cut(mutable_text, tokens);
 }
 
+static string normalize_match_token(const string &token)
+{
+  string normalized;
+  normalized.reserve(token.size());
+  for (unsigned char ch : token) {
+    normalized.push_back(static_cast<char>(std::tolower(ch)));
+  }
+  return normalized;
+}
+
 static RC read_text_field(const FieldMeta &field, const Record &record, string &text)
 {
   const char *data = record.data() + field.offset();
@@ -1670,6 +1680,43 @@ RC FunctionExpr::bm25_score(const string &text, const string &query, float &scor
     return RC::SUCCESS;
   }
 
+  unordered_map<string, int> doc_freq;
+  for (const vector<string> &doc : docs) {
+    unordered_set<string> doc_terms;
+    for (const string &token : doc) {
+      string normalized = normalize_match_token(token);
+      if (!normalized.empty()) {
+        doc_terms.insert(std::move(normalized));
+      }
+    }
+    for (const string &term : doc_terms) {
+      doc_freq[term]++;
+    }
+  }
+  if (doc_freq.empty()) {
+    return RC::SUCCESS;
+  }
+
+  const double corpus_size = static_cast<double>(docs.size());
+  unordered_map<string, double> idfs;
+  double idf_sum = 0;
+  vector<string> negative_idf_terms;
+  for (const auto &item : doc_freq) {
+    const double df  = static_cast<double>(item.second);
+    const double idf = log(corpus_size - df + 0.5) - log(df + 0.5);
+    idfs.emplace(item.first, idf);
+    idf_sum += idf;
+    if (idf < 0) {
+      negative_idf_terms.push_back(item.first);
+    }
+  }
+
+  const double average_idf = idf_sum / static_cast<double>(idfs.size());
+  const double eps_idf     = 0.25 * average_idf;
+  for (const string &term : negative_idf_terms) {
+    idfs[term] = eps_idf;
+  }
+
   const double avgdl = total_len / static_cast<double>(docs.size());
   if (avgdl <= 0) {
     return RC::SUCCESS;
@@ -1682,46 +1729,34 @@ RC FunctionExpr::bm25_score(const string &text, const string &query, float &scor
   }
   unordered_map<string, int> text_tf;
   for (const string &token : text_tokens) {
-    text_tf[token]++;
+    string normalized = normalize_match_token(token);
+    if (!normalized.empty()) {
+      text_tf[normalized]++;
+    }
   }
 
   constexpr double k1 = 1.5;
   constexpr double b  = 0.75;
   const double doc_len = static_cast<double>(text_tokens.size());
-  unordered_set<string> scored_tokens;
+  double total_score = 0;
   for (const string &query_token : query_tokens) {
-    if (!scored_tokens.insert(query_token).second) {
+    string normalized_query_token = normalize_match_token(query_token);
+    if (normalized_query_token.empty()) {
       continue;
     }
 
-    int df = 0;
-    for (const vector<string> &doc : docs) {
-      bool found = false;
-      for (const string &token : doc) {
-        if (0 == strcasecmp(token.c_str(), query_token.c_str())) {
-          found = true;
-          break;
-        }
-      }
-      if (found) {
-        df++;
-      }
-    }
-
-    int tf = 0;
-    for (const auto &item : text_tf) {
-      if (0 == strcasecmp(item.first.c_str(), query_token.c_str())) {
-        tf += item.second;
-      }
-    }
-    if (df == 0 || tf == 0) {
+    auto idf_iter = idfs.find(normalized_query_token);
+    auto tf_iter  = text_tf.find(normalized_query_token);
+    if (idf_iter == idfs.end() || tf_iter == text_tf.end() || tf_iter->second == 0) {
       continue;
     }
 
-    const double idf = log((static_cast<double>(docs.size()) - df + 0.5) / (df + 0.5) + 1.0);
+    const double tf   = static_cast<double>(tf_iter->second);
+    const double idf  = idf_iter->second;
     const double norm = tf + k1 * (1.0 - b + b * doc_len / avgdl);
-    score += static_cast<float>(idf * (tf * (k1 + 1.0)) / norm);
+    total_score += idf * (tf * (k1 + 1.0)) / norm;
   }
+  score = static_cast<float>(total_score);
   if (score < 0) {
     score = 0;
   }
