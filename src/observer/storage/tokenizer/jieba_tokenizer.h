@@ -16,7 +16,7 @@ See the Mulan PSL v2 for more details. */
 class JiebaTokenizer : public Tokenizer
 {
 public:
-  JiebaTokenizer()           = default;
+  JiebaTokenizer();
   ~JiebaTokenizer() override = default;
   RC cut(std::string &text, std::vector<std::string> &tokens) override;
 
