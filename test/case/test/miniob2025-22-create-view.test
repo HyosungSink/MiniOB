@@ -51,8 +51,11 @@ select count(name) from create_view_v4;
 insert into create_view_v4 values(114, 114, 'DYQY03');
 insert into create_view_v4 values(135, 135, '7WBA');
 insert into create_view_v4(id, age) values(34, 34);
+insert into create_view_v4 values(156, 156, 'A');
+insert into create_view_v4(id, age) values(43, 43);
 update create_view_v4 set age=59 where id=120;
 update create_view_v4 set age=37, name='HFZFH2J4' where id=126;
+update create_view_v4 set age=165 where id=101;
 delete from create_view_v4 where id=167;
 
 -- echo view stress count and sum
