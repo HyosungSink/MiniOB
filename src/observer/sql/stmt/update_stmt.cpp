@@ -45,7 +45,15 @@ static RC create_table_update_stmt(Db *db, const UpdateSqlNode &update, Table *t
 static RC create_view_update_stmt(Db *db, const UpdateSqlNode &update, const ViewDefinition &view, Stmt *&stmt)
 {
   if (!view.updatable) {
-    return RC::INVALID_ARGUMENT;
+    if (!view.materialized_insertable) {
+      return RC::INVALID_ARGUMENT;
+    }
+
+    Table *view_table = db->find_table(view.view_name.c_str());
+    if (view_table == nullptr) {
+      return RC::SCHEMA_TABLE_NOT_EXIST;
+    }
+    return create_table_update_stmt(db, update, view_table, stmt);
   }
 
   Table *view_table = db->find_table(view.view_name.c_str());
