@@ -66,7 +66,7 @@ RC CreateIndexStmt::create(Db *db, const CreateIndexSqlNode &create_index, Stmt 
   }
 
   if (create_index.fulltext) {
-    if (attribute_names.size() != 1 || field_meta->type() != AttrType::CHARS ||
+    if (attribute_names.size() != 1 || !is_string_type(field_meta->type()) ||
         0 != strcasecmp(create_index.parser_name.c_str(), "jieba")) {
       return RC::INVALID_ARGUMENT;
     }

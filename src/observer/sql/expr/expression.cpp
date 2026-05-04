@@ -1612,11 +1612,20 @@ static string normalize_match_token(const string &token)
   return normalized;
 }
 
-static RC read_text_field(const FieldMeta &field, const Record &record, string &text)
+static RC read_text_field(const Table &table, const FieldMeta &field, const Record &record, string &text)
 {
   const char *data = record.data() + field.offset();
   if (Value::is_null_data(data, field.len(), field.type())) {
     text.clear();
+    return RC::SUCCESS;
+  }
+  if (field.type() == AttrType::TEXTS) {
+    Value value;
+    RC rc = table.get_text_value(record.data(), &field, value);
+    if (OB_FAIL(rc)) {
+      return rc;
+    }
+    text = value.is_null() ? "" : value.get_string();
     return RC::SUCCESS;
   }
 
@@ -1654,7 +1663,7 @@ RC FunctionExpr::bm25_score(const string &text, const string &query, float &scor
   double total_len = 0;
   while (OB_SUCC(rc = scanner->next(record))) {
     string doc_text;
-    RC read_rc = read_text_field(*match_field_, record, doc_text);
+    RC read_rc = read_text_field(*match_table_, *match_field_, record, doc_text);
     if (OB_FAIL(read_rc)) {
       scanner->close_scan();
       delete scanner;
