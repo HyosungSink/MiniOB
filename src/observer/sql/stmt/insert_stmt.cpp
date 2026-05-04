@@ -124,18 +124,20 @@ static RC create_view_insert_stmt(Db *db, const InsertSqlNode &inserts, const Vi
 
     const TableMeta &view_table_meta = view_table->table_meta();
     const int        view_field_num  = view_table_meta.field_num() - view_table_meta.sys_field_num();
+    vector<string>   insert_columns = inserts.attribute_names;
+    if (insert_columns.empty()) {
+      if (view_field_num != static_cast<int>(view.columns.size())) {
+        return RC::SCHEMA_FIELD_MISSING;
+      }
+      for (const ViewColumnMapping &column : view.columns) {
+        insert_columns.push_back(column.view_column);
+      }
+    }
+
     vector<vector<Value>> view_rows;
     view_rows.reserve(value_rows->size());
     for (const vector<Value> &row : *value_rows) {
-      if (inserts.attribute_names.empty()) {
-        if (view_field_num != static_cast<int>(row.size())) {
-          return RC::SCHEMA_FIELD_MISSING;
-        }
-        view_rows.emplace_back(row);
-        continue;
-      }
-
-      if (inserts.attribute_names.size() != row.size()) {
+      if (insert_columns.size() != row.size()) {
         return RC::SCHEMA_FIELD_MISSING;
       }
 
@@ -144,8 +146,12 @@ static RC create_view_insert_stmt(Db *db, const InsertSqlNode &inserts, const Vi
         value.set_null();
       }
       for (size_t i = 0; i < row.size(); i++) {
+        if (view.base_column_for(insert_columns[i]) == nullptr) {
+          return RC::SCHEMA_FIELD_NOT_EXIST;
+        }
+
         int view_index = -1;
-        RC rc = field_index(view_table_meta, inserts.attribute_names[i].c_str(), view_index);
+        RC rc = field_index(view_table_meta, insert_columns[i].c_str(), view_index);
         if (OB_FAIL(rc)) {
           return rc;
         }
