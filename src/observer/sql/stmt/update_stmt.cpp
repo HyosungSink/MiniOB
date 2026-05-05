@@ -21,23 +21,52 @@ See the Mulan PSL v2 for more details. */
 #include "storage/db/db.h"
 #include "storage/table/table.h"
 
-static unique_ptr<Expression> copy_rewrite_view_expr(const Expression &expr, const ViewDefinition &view)
+static RC rewrite_view_expr_fields(unique_ptr<Expression> &expr, const ViewDefinition &view, bool require_mapped_fields)
 {
-  if (expr.type() == ExprType::UNBOUND_FIELD) {
-    const UnboundFieldExpr &field_expr = static_cast<const UnboundFieldExpr &>(expr);
-    const bool              from_view  = common::is_blank(field_expr.table_name()) ||
-                            0 == strcasecmp(field_expr.table_name(), view.view_name.c_str());
-    if (from_view) {
-      const string *base_column = view.base_column_for(field_expr.field_name());
-      if (base_column != nullptr) {
-        auto rewritten = make_unique<UnboundFieldExpr>("", *base_column);
-        rewritten->set_name(*base_column);
-        return rewritten;
-      }
-    }
+  if (expr == nullptr) {
+    return RC::SUCCESS;
   }
 
-  return expr.copy();
+  if (expr->type() == ExprType::UNBOUND_FIELD) {
+    const UnboundFieldExpr &field_expr = static_cast<const UnboundFieldExpr &>(*expr);
+    const bool              from_view  = common::is_blank(field_expr.table_name()) ||
+                            0 == strcasecmp(field_expr.table_name(), view.view_name.c_str());
+    if (!from_view) {
+      return require_mapped_fields ? RC::SCHEMA_FIELD_NOT_EXIST : RC::SUCCESS;
+    }
+
+    const string *base_column = view.base_column_for(field_expr.field_name());
+    if (base_column == nullptr) {
+      return require_mapped_fields ? RC::SCHEMA_FIELD_NOT_EXIST : RC::SUCCESS;
+    }
+
+    auto rewritten = make_unique<UnboundFieldExpr>("", *base_column);
+    rewritten->set_name(*base_column);
+    expr = std::move(rewritten);
+    return RC::SUCCESS;
+  }
+
+  function<RC(unique_ptr<Expression> &)> rewrite_child = [&](unique_ptr<Expression> &child) -> RC {
+    return rewrite_view_expr_fields(child, view, require_mapped_fields);
+  };
+  return ExpressionIterator::iterate_child_expr(*expr, rewrite_child);
+}
+
+static RC copy_rewrite_view_expr(
+    const Expression &expr, const ViewDefinition &view, bool require_mapped_fields, unique_ptr<Expression> &rewritten)
+{
+  rewritten = expr.copy();
+  return rewrite_view_expr_fields(rewritten, view, require_mapped_fields);
+}
+
+static unique_ptr<Expression> copy_rewrite_view_expr(const Expression &expr, const ViewDefinition &view)
+{
+  unique_ptr<Expression> rewritten;
+  RC rc = copy_rewrite_view_expr(expr, view, false, rewritten);
+  if (OB_FAIL(rc)) {
+    return expr.copy();
+  }
+  return rewritten;
 }
 
 static RC create_table_update_stmt(Db *db, const UpdateSqlNode &update, Table *table, Stmt *&stmt);
@@ -53,12 +82,73 @@ static RC create_view_update_stmt(Db *db, const UpdateSqlNode &update, const Vie
     if (view_table == nullptr) {
       return RC::SCHEMA_TABLE_NOT_EXIST;
     }
+    Table *base_table = db->find_table(view.base_table_name.c_str());
+    if (base_table == nullptr) {
+      return RC::SCHEMA_TABLE_NOT_EXIST;
+    }
+
+    UpdateSqlNode base_update;
+    base_update.relation_name = view.base_table_name;
     for (const UpdateAssignmentSqlNode &assignment : update.assignments) {
-      if (view.base_column_for(assignment.attribute_name) == nullptr) {
+      const string *base_column = view.base_column_for(assignment.attribute_name);
+      if (base_column == nullptr) {
         return RC::SCHEMA_FIELD_NOT_EXIST;
       }
+
+      UpdateAssignmentSqlNode base_assignment;
+      base_assignment.attribute_name = *base_column;
+      base_assignment.value          = assignment.value;
+      if (assignment.expression != nullptr) {
+        RC rc = copy_rewrite_view_expr(*assignment.expression, view, true, base_assignment.expression);
+        if (OB_FAIL(rc)) {
+          return rc;
+        }
+      }
+      base_update.assignments.emplace_back(std::move(base_assignment));
     }
-    return create_table_update_stmt(db, update, view_table, stmt);
+
+    for (const ConditionSqlNode &condition : update.conditions) {
+      ConditionSqlNode base_condition;
+      base_condition.conjunction = condition.conjunction;
+      base_condition.comp        = condition.comp;
+      if (condition.left_expr != nullptr) {
+        RC rc = copy_rewrite_view_expr(*condition.left_expr, view, true, base_condition.left_expr);
+        if (OB_FAIL(rc)) {
+          return rc;
+        }
+      }
+      if (condition.right_expr != nullptr) {
+        RC rc = copy_rewrite_view_expr(*condition.right_expr, view, true, base_condition.right_expr);
+        if (OB_FAIL(rc)) {
+          return rc;
+        }
+      }
+      base_update.conditions.emplace_back(std::move(base_condition));
+    }
+
+    Stmt *base_stmt = nullptr;
+    RC rc = create_table_update_stmt(db, base_update, base_table, base_stmt);
+    if (OB_FAIL(rc)) {
+      return rc;
+    }
+
+    Stmt *mirror_stmt = nullptr;
+    rc = create_table_update_stmt(db, update, view_table, mirror_stmt);
+    if (OB_FAIL(rc)) {
+      delete base_stmt;
+      return rc;
+    }
+
+    auto *base_update_stmt   = static_cast<UpdateStmt *>(base_stmt);
+    auto *mirror_update_stmt = static_cast<UpdateStmt *>(mirror_stmt);
+    base_update_stmt->set_mirror_update(mirror_update_stmt->table(),
+        mirror_update_stmt->take_field_metas(),
+        mirror_update_stmt->take_expressions(),
+        mirror_update_stmt->release_filter_stmt());
+    delete mirror_update_stmt;
+
+    stmt = base_update_stmt;
+    return RC::SUCCESS;
   }
 
   Table *view_table = db->find_table(view.view_name.c_str());
