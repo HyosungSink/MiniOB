@@ -39,8 +39,9 @@ private:
   {
     vector<Value> cells;
     vector<Value> keys;
-    size_t        packed_offset = 0;
-    bool          packed        = false;
+    size_t        packed_block        = 0;
+    size_t        packed_block_offset = 0;
+    bool          packed              = false;
   };
 
   struct SortKeyRef
@@ -49,11 +50,13 @@ private:
     int key_index  = -1;
   };
 
+  class PackedCellStorage;
+
   class MaterializedTuple : public Tuple
   {
   public:
     void set_context(const OrderedTuple *row, const vector<TupleCellSpec> *specs, const vector<CellInfo> *cell_infos,
-        const vector<char> *packed_cells);
+        const PackedCellStorage *packed_cells);
 
     int cell_num() const override;
     RC  cell_at(int index, Value &cell) const override;
@@ -64,7 +67,22 @@ private:
     const OrderedTuple          *row_        = nullptr;
     const vector<TupleCellSpec> *specs_      = nullptr;
     const vector<CellInfo>      *cell_infos_ = nullptr;
-    const vector<char>          *packed_cells_ = nullptr;
+    const PackedCellStorage     *packed_cells_ = nullptr;
+  };
+
+  class PackedCellStorage
+  {
+  public:
+    void clear();
+    char *append_row(size_t length, size_t &block_index, size_t &block_offset);
+    const char *data(size_t block_index, size_t block_offset) const;
+
+  private:
+    static constexpr size_t BLOCK_SIZE = 1024 * 1024;
+
+  private:
+    vector<vector<char>> blocks_;
+    size_t               write_offset_ = 0;
   };
 
   RC init_output_specs(const Tuple &tuple);
@@ -83,7 +101,7 @@ private:
   vector<TupleCellSpec>           output_specs_;
   vector<CellInfo>                cell_infos_;
   vector<SortKeyRef>              sort_key_refs_;
-  vector<char>                     packed_cells_;
+  PackedCellStorage                packed_cells_;
   MaterializedTuple               current_tuple_;
   size_t                         position_ = 0;
   int                            packed_cell_size_ = 0;

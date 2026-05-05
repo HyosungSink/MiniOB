@@ -284,9 +284,12 @@ RC OrderByPhysicalOperator::materialize_tuple_cells(const Tuple &tuple, OrderedT
   const int cell_num = tuple.cell_num();
 
   if (!cell_infos_.empty()) {
-    ordered_tuple.packed        = true;
-    ordered_tuple.packed_offset = packed_cells_.size();
-    packed_cells_.resize(ordered_tuple.packed_offset + packed_cell_size_);
+    ordered_tuple.packed = true;
+    char *row_data       = packed_cells_.append_row(
+        packed_cell_size_, ordered_tuple.packed_block, ordered_tuple.packed_block_offset);
+    if (row_data == nullptr) {
+      return RC::NOMEM;
+    }
     for (int i = 0; i < cell_num; i++) {
       Value cell;
       RC rc = tuple.cell_at(i, cell);
@@ -295,7 +298,7 @@ RC OrderByPhysicalOperator::materialize_tuple_cells(const Tuple &tuple, OrderedT
       }
 
       const CellInfo &info = cell_infos_[i];
-      char *cell_data = packed_cells_.data() + ordered_tuple.packed_offset + info.offset;
+      char *cell_data = row_data + info.offset;
       if (cell.is_null()) {
         Value::set_null_data(cell_data, info.length, info.type);
       } else {
@@ -322,7 +325,7 @@ void OrderByPhysicalOperator::read_cell_value(const OrderedTuple &row, int cell_
 {
   if (row.packed) {
     const CellInfo &info = cell_infos_[cell_index];
-    const char     *data = packed_cells_.data() + row.packed_offset + info.offset;
+    const char     *data = packed_cells_.data(row.packed_block, row.packed_block_offset + info.offset);
     if (Value::is_null_data(data, info.length, info.type)) {
       cell.set_null();
       return;
@@ -363,9 +366,42 @@ int OrderByPhysicalOperator::compare_evaluated_key(
   return left_keys[key_index].compare(right_value);
 }
 
+void OrderByPhysicalOperator::PackedCellStorage::clear()
+{
+  blocks_.clear();
+  write_offset_ = 0;
+}
+
+char *OrderByPhysicalOperator::PackedCellStorage::append_row(
+    size_t length, size_t &block_index, size_t &block_offset)
+{
+  if (length == 0) {
+    block_index  = 0;
+    block_offset = 0;
+    return nullptr;
+  }
+
+  const size_t block_size = max(BLOCK_SIZE, length);
+  if (blocks_.empty() || write_offset_ + length > blocks_.back().size()) {
+    blocks_.emplace_back(block_size);
+    write_offset_ = 0;
+  }
+
+  block_index  = blocks_.size() - 1;
+  block_offset = write_offset_;
+  char *data   = blocks_.back().data() + write_offset_;
+  write_offset_ += length;
+  return data;
+}
+
+const char *OrderByPhysicalOperator::PackedCellStorage::data(size_t block_index, size_t block_offset) const
+{
+  return blocks_[block_index].data() + block_offset;
+}
+
 void OrderByPhysicalOperator::MaterializedTuple::set_context(
     const OrderedTuple *row, const vector<TupleCellSpec> *specs, const vector<CellInfo> *cell_infos,
-    const vector<char> *packed_cells)
+    const PackedCellStorage *packed_cells)
 {
   row_          = row;
   specs_        = specs;
@@ -389,7 +425,7 @@ RC OrderByPhysicalOperator::MaterializedTuple::cell_at(int index, Value &cell) c
 
   if (row_->packed) {
     const CellInfo &info = (*cell_infos_)[index];
-    const char     *data = packed_cells_->data() + row_->packed_offset + info.offset;
+    const char     *data = packed_cells_->data(row_->packed_block, row_->packed_block_offset + info.offset);
     if (Value::is_null_data(data, info.length, info.type)) {
       cell.set_null();
     } else {
