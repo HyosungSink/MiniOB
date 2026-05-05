@@ -10,13 +10,15 @@ See the Mulan PSL v2 for more details. */
 
 #pragma once
 
+#include <cstdio>
+
 #include "sql/operator/physical_operator.h"
 
 class OrderByPhysicalOperator : public PhysicalOperator
 {
 public:
   OrderByPhysicalOperator(vector<unique_ptr<Expression>> &&expressions, vector<bool> &&asc, int limit);
-  ~OrderByPhysicalOperator() override = default;
+  ~OrderByPhysicalOperator() override;
 
   PhysicalOperatorType type() const override { return PhysicalOperatorType::ORDER_BY; }
 
@@ -41,7 +43,13 @@ private:
     vector<Value> keys;
     size_t        packed_block        = 0;
     size_t        packed_block_offset = 0;
+    size_t        packed_key_block        = 0;
+    size_t        packed_key_block_offset = 0;
+    long          packed_file_offset  = 0;
     bool          packed              = false;
+    bool          packed_keys         = false;
+    bool          keys_full           = false;
+    bool          spilled             = false;
   };
 
   struct SortKeyRef
@@ -56,7 +64,7 @@ private:
   {
   public:
     void set_context(const OrderedTuple *row, const vector<TupleCellSpec> *specs, const vector<CellInfo> *cell_infos,
-        const PackedCellStorage *packed_cells);
+        const PackedCellStorage *packed_cells, FILE *spill_file, int packed_cell_size);
 
     int cell_num() const override;
     RC  cell_at(int index, Value &cell) const override;
@@ -64,10 +72,17 @@ private:
     RC  find_cell(const TupleCellSpec &spec, Value &cell) const override;
 
   private:
+    RC load_spilled_row() const;
+
+  private:
     const OrderedTuple          *row_        = nullptr;
     const vector<TupleCellSpec> *specs_      = nullptr;
     const vector<CellInfo>      *cell_infos_ = nullptr;
     const PackedCellStorage     *packed_cells_ = nullptr;
+    FILE                        *spill_file_ = nullptr;
+    int                          packed_cell_size_ = 0;
+    mutable const OrderedTuple  *cached_spilled_row_ = nullptr;
+    mutable vector<char>         spilled_row_buffer_;
   };
 
   class PackedCellStorage
@@ -88,8 +103,13 @@ private:
   RC init_output_specs(const Tuple &tuple);
   RC init_sort_key_refs();
   RC init_cell_infos(const Tuple &tuple);
+  RC init_key_infos(const vector<Value> &keys);
   RC materialize_tuple_cells(const Tuple &tuple, OrderedTuple &ordered_tuple);
+  RC materialize_sort_keys(vector<Value> &evaluated_keys, OrderedTuple &ordered_tuple);
+  RC ensure_spill_file();
+  void close_spill_file();
   void read_cell_value(const OrderedTuple &row, int cell_index, Value &cell) const;
+  void read_key_value(const OrderedTuple &row, size_t key_index, Value &cell) const;
   int  compare_sort_key(const OrderedTuple &left, const OrderedTuple &right, size_t key_index) const;
   int  compare_evaluated_key(const vector<Value> &left_keys, const OrderedTuple &right, size_t key_index) const;
 
@@ -100,9 +120,15 @@ private:
   vector<OrderedTuple>           rows_;
   vector<TupleCellSpec>           output_specs_;
   vector<CellInfo>                cell_infos_;
+  vector<CellInfo>                key_infos_;
   vector<SortKeyRef>              sort_key_refs_;
   PackedCellStorage                packed_cells_;
+  PackedCellStorage                packed_keys_;
   MaterializedTuple               current_tuple_;
   size_t                         position_ = 0;
   int                            packed_cell_size_ = 0;
+  int                            packed_key_size_ = 0;
+  bool                           spill_packed_rows_ = false;
+  FILE                          *spill_file_ = nullptr;
+  vector<char>                   row_write_buffer_;
 };

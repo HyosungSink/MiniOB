@@ -11,6 +11,8 @@ See the Mulan PSL v2 for more details. */
 #include "sql/operator/order_by_physical_operator.h"
 
 #include <algorithm>
+#include <cstdio>
+#include <cstring>
 #include <functional>
 
 #include "common/log/log.h"
@@ -21,6 +23,11 @@ OrderByPhysicalOperator::OrderByPhysicalOperator(vector<unique_ptr<Expression>> 
     : expressions_(std::move(expressions)), asc_(std::move(asc)), limit_(limit)
 {}
 
+OrderByPhysicalOperator::~OrderByPhysicalOperator()
+{
+  close_spill_file();
+}
+
 RC OrderByPhysicalOperator::open(Trx *trx)
 {
   if (children_.size() != 1) {
@@ -30,10 +37,16 @@ RC OrderByPhysicalOperator::open(Trx *trx)
   rows_.clear();
   output_specs_.clear();
   cell_infos_.clear();
+  key_infos_.clear();
   sort_key_refs_.clear();
   packed_cells_.clear();
+  packed_keys_.clear();
+  close_spill_file();
+  row_write_buffer_.clear();
   position_ = 0;
   packed_cell_size_ = 0;
+  packed_key_size_ = 0;
+  spill_packed_rows_ = false;
 
   PhysicalOperator *child = children_[0].get();
   RC rc = child->open(trx);
@@ -90,6 +103,9 @@ RC OrderByPhysicalOperator::open(Trx *trx)
       child->close();
       return rc;
     }
+    if (!cell_infos_.empty() && limit_ < 0) {
+      spill_packed_rows_ = true;
+    }
 
     vector<Value> evaluated_keys;
     evaluated_keys.reserve(expressions_.size());
@@ -119,11 +135,11 @@ RC OrderByPhysicalOperator::open(Trx *trx)
       child->close();
       return rc;
     }
-    ordered_tuple.keys.reserve(expressions_.size());
-    for (size_t i = 0; i < expressions_.size(); i++) {
-      if (sort_key_refs_[i].cell_index < 0) {
-        ordered_tuple.keys.emplace_back(std::move(evaluated_keys[i]));
-      }
+    rc = materialize_sort_keys(evaluated_keys, ordered_tuple);
+    if (OB_FAIL(rc)) {
+      LOG_WARN("failed to materialize order by keys. rc=%s", strrc(rc));
+      child->close();
+      return rc;
     }
 
     if (use_topn && rows_.size() >= static_cast<size_t>(limit_)) {
@@ -141,6 +157,11 @@ RC OrderByPhysicalOperator::open(Trx *trx)
   if (rc != RC::RECORD_EOF) {
     child->close();
     return rc;
+  }
+
+  if (spill_file_ != nullptr && fflush(spill_file_) != 0) {
+    child->close();
+    return RC::IOERR_WRITE;
   }
 
   if (!expressions_.empty()) {
@@ -199,10 +220,16 @@ RC OrderByPhysicalOperator::close()
   rows_.clear();
   output_specs_.clear();
   cell_infos_.clear();
+  key_infos_.clear();
   sort_key_refs_.clear();
   packed_cells_.clear();
+  packed_keys_.clear();
+  close_spill_file();
+  row_write_buffer_.clear();
   position_ = 0;
   packed_cell_size_ = 0;
+  packed_key_size_ = 0;
+  spill_packed_rows_ = false;
   return RC::SUCCESS;
 }
 
@@ -212,7 +239,8 @@ Tuple *OrderByPhysicalOperator::current_tuple()
     return nullptr;
   }
 
-  current_tuple_.set_context(&rows_[position_ - 1], &output_specs_, &cell_infos_, &packed_cells_);
+  current_tuple_.set_context(
+      &rows_[position_ - 1], &output_specs_, &cell_infos_, &packed_cells_, spill_file_, packed_cell_size_);
   return &current_tuple_;
 }
 
@@ -279,17 +307,52 @@ RC OrderByPhysicalOperator::init_cell_infos(const Tuple &tuple)
   return RC::SUCCESS;
 }
 
+RC OrderByPhysicalOperator::init_key_infos(const vector<Value> &keys)
+{
+  if (!key_infos_.empty() || keys.empty()) {
+    return RC::SUCCESS;
+  }
+
+  int offset = 0;
+  key_infos_.reserve(keys.size());
+  for (const Value &key : keys) {
+    if (key.attr_type() != AttrType::INTS && key.attr_type() != AttrType::FLOATS &&
+        key.attr_type() != AttrType::DATES) {
+      key_infos_.clear();
+      packed_key_size_ = 0;
+      return RC::SUCCESS;
+    }
+
+    CellInfo info;
+    info.type   = key.attr_type();
+    info.offset = offset;
+    info.length = key.length();
+    offset += info.length;
+    key_infos_.push_back(info);
+  }
+
+  packed_key_size_ = offset;
+  return RC::SUCCESS;
+}
+
 RC OrderByPhysicalOperator::materialize_tuple_cells(const Tuple &tuple, OrderedTuple &ordered_tuple)
 {
   const int cell_num = tuple.cell_num();
 
   if (!cell_infos_.empty()) {
     ordered_tuple.packed = true;
-    char *row_data       = packed_cells_.append_row(
-        packed_cell_size_, ordered_tuple.packed_block, ordered_tuple.packed_block_offset);
-    if (row_data == nullptr) {
-      return RC::NOMEM;
+    char *row_data = nullptr;
+    if (spill_packed_rows_) {
+      row_write_buffer_.resize(packed_cell_size_);
+      row_data = row_write_buffer_.data();
+    } else {
+      row_data = packed_cells_.append_row(
+          packed_cell_size_, ordered_tuple.packed_block, ordered_tuple.packed_block_offset);
+      if (row_data == nullptr) {
+        return RC::NOMEM;
+      }
     }
+
     for (int i = 0; i < cell_num; i++) {
       Value cell;
       RC rc = tuple.cell_at(i, cell);
@@ -304,6 +367,22 @@ RC OrderByPhysicalOperator::materialize_tuple_cells(const Tuple &tuple, OrderedT
       } else {
         memcpy(cell_data, cell.data(), info.length);
       }
+    }
+
+    if (spill_packed_rows_) {
+      RC rc = ensure_spill_file();
+      if (OB_FAIL(rc)) {
+        return rc;
+      }
+      const long offset = ftell(spill_file_);
+      if (offset < 0) {
+        return RC::IOERR_SEEK;
+      }
+      if (fwrite(row_data, 1, packed_cell_size_, spill_file_) != static_cast<size_t>(packed_cell_size_)) {
+        return RC::IOERR_WRITE;
+      }
+      ordered_tuple.spilled            = true;
+      ordered_tuple.packed_file_offset = offset;
     }
     return RC::SUCCESS;
   }
@@ -321,11 +400,89 @@ RC OrderByPhysicalOperator::materialize_tuple_cells(const Tuple &tuple, OrderedT
   return RC::SUCCESS;
 }
 
+RC OrderByPhysicalOperator::materialize_sort_keys(vector<Value> &evaluated_keys, OrderedTuple &ordered_tuple)
+{
+  if (!spill_packed_rows_) {
+    ordered_tuple.keys.reserve(expressions_.size());
+    for (size_t i = 0; i < expressions_.size(); i++) {
+      if (sort_key_refs_[i].cell_index < 0) {
+        ordered_tuple.keys.emplace_back(std::move(evaluated_keys[i]));
+      }
+    }
+    return RC::SUCCESS;
+  }
+
+  RC rc = init_key_infos(evaluated_keys);
+  if (OB_FAIL(rc)) {
+    return rc;
+  }
+
+  if (!key_infos_.empty()) {
+    ordered_tuple.packed_keys = true;
+    char *key_data = packed_keys_.append_row(
+        packed_key_size_, ordered_tuple.packed_key_block, ordered_tuple.packed_key_block_offset);
+    if (key_data == nullptr) {
+      return RC::NOMEM;
+    }
+
+    for (size_t i = 0; i < evaluated_keys.size(); i++) {
+      const Value    &key  = evaluated_keys[i];
+      const CellInfo &info = key_infos_[i];
+      char           *data = key_data + info.offset;
+      if (key.is_null()) {
+        Value::set_null_data(data, info.length, info.type);
+      } else {
+        memcpy(data, key.data(), info.length);
+      }
+    }
+    return RC::SUCCESS;
+  }
+
+  ordered_tuple.keys_full = true;
+  ordered_tuple.keys.reserve(evaluated_keys.size());
+  for (Value &key : evaluated_keys) {
+    ordered_tuple.keys.emplace_back(std::move(key));
+  }
+  return RC::SUCCESS;
+}
+
+RC OrderByPhysicalOperator::ensure_spill_file()
+{
+  if (spill_file_ != nullptr) {
+    return RC::SUCCESS;
+  }
+
+  spill_file_ = tmpfile();
+  return spill_file_ == nullptr ? RC::IOERR_OPEN : RC::SUCCESS;
+}
+
+void OrderByPhysicalOperator::close_spill_file()
+{
+  if (spill_file_ != nullptr) {
+    fclose(spill_file_);
+    spill_file_ = nullptr;
+  }
+}
+
 void OrderByPhysicalOperator::read_cell_value(const OrderedTuple &row, int cell_index, Value &cell) const
 {
   if (row.packed) {
     const CellInfo &info = cell_infos_[cell_index];
-    const char     *data = packed_cells_.data(row.packed_block, row.packed_block_offset + info.offset);
+    char stack_data[sizeof(double)] = {};
+    const char *data = nullptr;
+    if (row.spilled) {
+      if (fseek(spill_file_, row.packed_file_offset + info.offset, SEEK_SET) != 0) {
+        cell.set_null();
+        return;
+      }
+      if (fread(stack_data, 1, info.length, spill_file_) != static_cast<size_t>(info.length)) {
+        cell.set_null();
+        return;
+      }
+      data = stack_data;
+    } else {
+      data = packed_cells_.data(row.packed_block, row.packed_block_offset + info.offset);
+    }
     if (Value::is_null_data(data, info.length, info.type)) {
       cell.set_null();
       return;
@@ -338,31 +495,48 @@ void OrderByPhysicalOperator::read_cell_value(const OrderedTuple &row, int cell_
   cell = row.cells[cell_index];
 }
 
+void OrderByPhysicalOperator::read_key_value(const OrderedTuple &row, size_t key_index, Value &cell) const
+{
+  if (row.packed_keys) {
+    const CellInfo &info = key_infos_[key_index];
+    const char     *data = packed_keys_.data(row.packed_key_block, row.packed_key_block_offset + info.offset);
+    if (Value::is_null_data(data, info.length, info.type)) {
+      cell.set_null();
+      return;
+    }
+    cell.set_type(info.type);
+    cell.set_data(data, info.length);
+    return;
+  }
+
+  if (row.keys_full) {
+    cell = row.keys[key_index];
+    return;
+  }
+
+  const SortKeyRef &key_ref = sort_key_refs_[key_index];
+  if (key_ref.cell_index < 0) {
+    cell = row.keys[key_ref.key_index];
+  } else {
+    read_cell_value(row, key_ref.cell_index, cell);
+  }
+}
+
 int OrderByPhysicalOperator::compare_sort_key(
     const OrderedTuple &left, const OrderedTuple &right, size_t key_index) const
 {
-  const SortKeyRef &key_ref = sort_key_refs_[key_index];
-  if (key_ref.cell_index < 0) {
-    return left.keys[key_ref.key_index].compare(right.keys[key_ref.key_index]);
-  }
-
   Value left_value;
   Value right_value;
-  read_cell_value(left, key_ref.cell_index, left_value);
-  read_cell_value(right, key_ref.cell_index, right_value);
+  read_key_value(left, key_index, left_value);
+  read_key_value(right, key_index, right_value);
   return left_value.compare(right_value);
 }
 
 int OrderByPhysicalOperator::compare_evaluated_key(
     const vector<Value> &left_keys, const OrderedTuple &right, size_t key_index) const
 {
-  const SortKeyRef &key_ref = sort_key_refs_[key_index];
-  if (key_ref.cell_index < 0) {
-    return left_keys[key_index].compare(right.keys[key_ref.key_index]);
-  }
-
   Value right_value;
-  read_cell_value(right, key_ref.cell_index, right_value);
+  read_key_value(right, key_index, right_value);
   return left_keys[key_index].compare(right_value);
 }
 
@@ -401,12 +575,17 @@ const char *OrderByPhysicalOperator::PackedCellStorage::data(size_t block_index,
 
 void OrderByPhysicalOperator::MaterializedTuple::set_context(
     const OrderedTuple *row, const vector<TupleCellSpec> *specs, const vector<CellInfo> *cell_infos,
-    const PackedCellStorage *packed_cells)
+    const PackedCellStorage *packed_cells, FILE *spill_file, int packed_cell_size)
 {
   row_          = row;
   specs_        = specs;
   cell_infos_   = cell_infos;
   packed_cells_ = packed_cells;
+  spill_file_   = spill_file;
+  packed_cell_size_ = packed_cell_size;
+  if (cached_spilled_row_ != row_) {
+    cached_spilled_row_ = nullptr;
+  }
 }
 
 int OrderByPhysicalOperator::MaterializedTuple::cell_num() const
@@ -425,7 +604,16 @@ RC OrderByPhysicalOperator::MaterializedTuple::cell_at(int index, Value &cell) c
 
   if (row_->packed) {
     const CellInfo &info = (*cell_infos_)[index];
-    const char     *data = packed_cells_->data(row_->packed_block, row_->packed_block_offset + info.offset);
+    const char *data = nullptr;
+    if (row_->spilled) {
+      RC rc = load_spilled_row();
+      if (OB_FAIL(rc)) {
+        return rc;
+      }
+      data = spilled_row_buffer_.data() + info.offset;
+    } else {
+      data = packed_cells_->data(row_->packed_block, row_->packed_block_offset + info.offset);
+    }
     if (Value::is_null_data(data, info.length, info.type)) {
       cell.set_null();
     } else {
@@ -435,6 +623,27 @@ RC OrderByPhysicalOperator::MaterializedTuple::cell_at(int index, Value &cell) c
   } else {
     cell = row_->cells[index];
   }
+  return RC::SUCCESS;
+}
+
+RC OrderByPhysicalOperator::MaterializedTuple::load_spilled_row() const
+{
+  if (cached_spilled_row_ == row_) {
+    return RC::SUCCESS;
+  }
+  if (spill_file_ == nullptr || row_ == nullptr || !row_->spilled) {
+    return RC::INTERNAL;
+  }
+
+  spilled_row_buffer_.resize(packed_cell_size_);
+  if (fseek(spill_file_, row_->packed_file_offset, SEEK_SET) != 0) {
+    return RC::IOERR_SEEK;
+  }
+  if (fread(spilled_row_buffer_.data(), 1, packed_cell_size_, spill_file_) !=
+      static_cast<size_t>(packed_cell_size_)) {
+    return RC::IOERR_READ;
+  }
+  cached_spilled_row_ = row_;
   return RC::SUCCESS;
 }
 
