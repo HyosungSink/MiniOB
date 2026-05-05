@@ -1,0 +1,13 @@
+-- echo miniob2025 create view join update sync
+create table create_view_t1(id int, age int, name char(10));
+create table create_view_t2(id int, age int, name char(10));
+insert into create_view_t1 values(71, 71, 'T071');
+insert into create_view_t1 values(1, 1, 'T001');
+insert into create_view_t2 values(71, 710, 'U071');
+create view create_view_v4 as select t1.id as id, t1.age as age, t2.name as name from create_view_t1 t1, create_view_t2 t2 where t1.id=t2.id;
+update create_view_v4 set age=142 where id=71;
+create view create_view_v5 as select id, age, id+age as data from create_view_t1;
+select count(*) from create_view_v5;
+select count(id) from create_view_v5;
+select sum(age) from create_view_v5;
+select sum(data) from create_view_v5;
