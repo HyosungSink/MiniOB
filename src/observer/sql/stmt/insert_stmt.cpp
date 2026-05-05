@@ -192,6 +192,7 @@ static RC create_view_insert_stmt(Db *db, const InsertSqlNode &inserts, const Vi
         value.set_null();
       }
       vector<const FieldMeta *> mapped_view_fields;
+      vector<const FieldMeta *> mapped_base_fields;
       vector<Value>             mapped_values;
       for (size_t i = 0; i < row.size(); i++) {
         const string *base_column = view.base_column_for(insert_columns[i]);
@@ -218,7 +219,9 @@ static RC create_view_insert_stmt(Db *db, const InsertSqlNode &inserts, const Vi
         base_row[base_index] = row[i];
 
         const FieldMeta *view_field = view_table_meta.field(view_index + view_table_meta.sys_field_num());
+        const FieldMeta *base_field = base_table_meta.field(base_index + base_table_meta.sys_field_num());
         mapped_view_fields.emplace_back(view_field);
+        mapped_base_fields.emplace_back(base_field);
         mapped_values.emplace_back(row[i]);
       }
       if (mapped_values.empty()) {
@@ -226,7 +229,15 @@ static RC create_view_insert_stmt(Db *db, const InsertSqlNode &inserts, const Vi
       }
       if (implicit_full_view_row) {
         bool matched = false;
-        RC rc = view_has_mapped_row(view_table, mapped_view_fields, mapped_values, matched);
+        RC rc = view_has_mapped_row(base_table, mapped_base_fields, mapped_values, matched);
+        if (OB_FAIL(rc)) {
+          return rc;
+        }
+        if (matched) {
+          return RC::INVALID_ARGUMENT;
+        }
+
+        rc = view_has_mapped_row(view_table, mapped_view_fields, mapped_values, matched);
         if (OB_FAIL(rc)) {
           return rc;
         }
