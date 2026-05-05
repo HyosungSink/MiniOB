@@ -1059,10 +1059,19 @@ rel_attr:
       $$ = new RelAttrSqlNode;
       $$->attribute_name = $1;
     }
+    | DATA {
+      $$ = new RelAttrSqlNode;
+      $$->attribute_name = strdup("data");
+    }
     | ID DOT ID {
       $$ = new RelAttrSqlNode;
       $$->relation_name  = $1;
       $$->attribute_name = $3;
+    }
+    | ID DOT DATA {
+      $$ = new RelAttrSqlNode;
+      $$->relation_name  = $1;
+      $$->attribute_name = strdup("data");
     }
     ;
 
