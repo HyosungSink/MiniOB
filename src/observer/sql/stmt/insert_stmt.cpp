@@ -16,7 +16,6 @@ See the Mulan PSL v2 for more details. */
 #include "common/log/log.h"
 #include "sql/expr/tuple.h"
 #include "storage/db/db.h"
-#include "storage/record/record_scanner.h"
 #include "storage/table/table.h"
 
 static RC field_index(const TableMeta &table_meta, const char *field_name, int &index)
@@ -104,103 +103,6 @@ static RC project_base_row_to_view(
   return RC::SUCCESS;
 }
 
-static bool materialized_insert_has_derived_column(const vector<string> &insert_columns, const ViewDefinition &view)
-{
-  for (const string &column : insert_columns) {
-    if (view.base_column_for(column) == nullptr) {
-      return true;
-    }
-  }
-  return false;
-}
-
-static RC read_record_value(Table *table, const Record &record, const FieldMeta *field, Value &value)
-{
-  const char *field_data = record.data() + field->offset();
-  if (field->type() == AttrType::TEXTS) {
-    return table->get_text_value(record.data(), field, value);
-  }
-  if (Value::is_null_data(field_data, field->len(), field->type())) {
-    value.set_null();
-  } else {
-    value.set_type(field->type());
-    value.set_data(field_data, field->len());
-  }
-  return RC::SUCCESS;
-}
-
-static bool values_equal(const Value &left, const Value &right)
-{
-  if (left.is_null() || right.is_null()) {
-    return left.is_null() && right.is_null();
-  }
-  return left.compare(right) == 0;
-}
-
-static RC materialized_view_has_mapped_row(
-    Table *view_table, const ViewDefinition &view, const vector<Value> &view_row, bool &exists)
-{
-  exists = false;
-
-  const TableMeta &view_meta = view_table->table_meta();
-  vector<int>      view_indices;
-  view_indices.reserve(view.columns.size());
-  for (const ViewColumnMapping &column : view.columns) {
-    int index = -1;
-    RC rc = field_index(view_meta, column.view_column.c_str(), index);
-    if (OB_FAIL(rc)) {
-      return rc;
-    }
-    if (index < 0 || index >= static_cast<int>(view_row.size())) {
-      return RC::SCHEMA_FIELD_MISSING;
-    }
-    view_indices.push_back(index);
-  }
-
-  RecordScanner *scanner = nullptr;
-  RC rc = view_table->get_record_scanner(scanner, nullptr, ReadWriteMode::READ_ONLY);
-  if (OB_FAIL(rc)) {
-    return rc;
-  }
-
-  rc = scanner->open_scan();
-  if (OB_FAIL(rc)) {
-    scanner->close_scan();
-    delete scanner;
-    return rc;
-  }
-
-  Record record;
-  while ((rc = scanner->next(record)) == RC::SUCCESS) {
-    bool same = true;
-    for (int index : view_indices) {
-      const FieldMeta *field = view_meta.field(index + view_meta.sys_field_num());
-      Value current;
-      rc = read_record_value(view_table, record, field, current);
-      if (OB_FAIL(rc)) {
-        scanner->close_scan();
-        delete scanner;
-        return rc;
-      }
-      if (!values_equal(view_row[index], current)) {
-        same = false;
-        break;
-      }
-    }
-    if (same) {
-      exists = true;
-      break;
-    }
-  }
-
-  RC close_rc = scanner->close_scan();
-  delete scanner;
-  if (rc == RC::RECORD_EOF) {
-    rc = RC::SUCCESS;
-  }
-  return OB_FAIL(rc) ? rc : close_rc;
-}
-
 static RC create_view_insert_stmt(Db *db, const InsertSqlNode &inserts, const ViewDefinition &view, Stmt *&stmt)
 {
   if (!view.updatable) {
@@ -219,16 +121,13 @@ static RC create_view_insert_stmt(Db *db, const InsertSqlNode &inserts, const Vi
       single_row.emplace_back(inserts.values);
       value_rows = &single_row;
     }
+    if (inserts.attribute_names.empty()) {
+      return RC::INVALID_ARGUMENT;
+    }
 
     const TableMeta &view_table_meta = view_table->table_meta();
     const int        view_field_num  = view_table_meta.field_num() - view_table_meta.sys_field_num();
     vector<string>   insert_columns = inserts.attribute_names;
-    if (insert_columns.empty()) {
-      for (int i = view_table_meta.sys_field_num(); i < view_table_meta.field_num(); i++) {
-        insert_columns.push_back(view_table_meta.field(i)->name());
-      }
-    }
-    const bool checks_derived_columns = materialized_insert_has_derived_column(insert_columns, view);
     vector<vector<Value>> view_rows;
     view_rows.reserve(value_rows->size());
     for (const vector<Value> &row : *value_rows) {
@@ -241,22 +140,16 @@ static RC create_view_insert_stmt(Db *db, const InsertSqlNode &inserts, const Vi
         value.set_null();
       }
       for (size_t i = 0; i < row.size(); i++) {
+        if (view.base_column_for(insert_columns[i]) == nullptr) {
+          return RC::SCHEMA_FIELD_NOT_EXIST;
+        }
+
         int view_index = -1;
         RC rc = field_index(view_table_meta, insert_columns[i].c_str(), view_index);
         if (OB_FAIL(rc)) {
           return rc;
         }
         view_row[view_index] = row[i];
-      }
-      if (checks_derived_columns) {
-        bool mapped_row_exists = false;
-        RC rc = materialized_view_has_mapped_row(view_table, view, view_row, mapped_row_exists);
-        if (OB_FAIL(rc)) {
-          return rc;
-        }
-        if (mapped_row_exists) {
-          return RC::RECORD_DUPLICATE_KEY;
-        }
       }
       view_rows.emplace_back(std::move(view_row));
     }

@@ -53,6 +53,11 @@ static RC create_view_update_stmt(Db *db, const UpdateSqlNode &update, const Vie
     if (view_table == nullptr) {
       return RC::SCHEMA_TABLE_NOT_EXIST;
     }
+    for (const UpdateAssignmentSqlNode &assignment : update.assignments) {
+      if (view.base_column_for(assignment.attribute_name) == nullptr) {
+        return RC::SCHEMA_FIELD_NOT_EXIST;
+      }
+    }
     return create_table_update_stmt(db, update, view_table, stmt);
   }
 
