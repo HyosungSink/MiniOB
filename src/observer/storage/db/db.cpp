@@ -34,7 +34,7 @@ using namespace common;
 const string *ViewDefinition::base_column_for(const string &view_column) const
 {
   for (const ViewColumnMapping &column : columns) {
-    if (column.view_column == view_column) {
+    if (0 == strcasecmp(column.view_column.c_str(), view_column.c_str())) {
       return &column.base_column;
     }
   }

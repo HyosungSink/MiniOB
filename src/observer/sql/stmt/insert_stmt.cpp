@@ -16,6 +16,7 @@ See the Mulan PSL v2 for more details. */
 #include "common/log/log.h"
 #include "sql/expr/tuple.h"
 #include "storage/db/db.h"
+#include "storage/record/record_scanner.h"
 #include "storage/table/table.h"
 
 static RC field_index(const TableMeta &table_meta, const char *field_name, int &index)
@@ -103,6 +104,43 @@ static RC project_base_row_to_view(
   return RC::SUCCESS;
 }
 
+static RC view_has_mapped_row(Table *view_table, const vector<const FieldMeta *> &fields, const vector<Value> &values, bool &matched)
+{
+  matched = false;
+
+  RecordScanner *scanner = nullptr;
+  RC rc = view_table->get_record_scanner(scanner, nullptr, ReadWriteMode::READ_ONLY);
+  if (OB_FAIL(rc)) {
+    return rc;
+  }
+
+  Record record;
+  while (OB_SUCC(rc = scanner->next(record))) {
+    bool row_matches = true;
+    for (size_t i = 0; i < fields.size(); i++) {
+      const FieldMeta *field = fields[i];
+      Value existing;
+      existing.set_type(field->type());
+      existing.set_data(record.data() + field->offset(), field->len());
+      if (existing.compare(values[i]) != 0) {
+        row_matches = false;
+        break;
+      }
+    }
+    if (row_matches) {
+      matched = true;
+      break;
+    }
+  }
+
+  RC close_rc = scanner->close_scan();
+  delete scanner;
+  if (rc == RC::RECORD_EOF || matched) {
+    rc = close_rc;
+  }
+  return rc;
+}
+
 static RC create_view_insert_stmt(Db *db, const InsertSqlNode &inserts, const ViewDefinition &view, Stmt *&stmt)
 {
   if (!view.updatable) {
@@ -125,15 +163,17 @@ static RC create_view_insert_stmt(Db *db, const InsertSqlNode &inserts, const Vi
       single_row.emplace_back(inserts.values);
       value_rows = &single_row;
     }
-    if (inserts.attribute_names.empty()) {
-      return RC::INVALID_ARGUMENT;
-    }
-
     const TableMeta &base_table_meta = base_table->table_meta();
     const int        base_field_num  = base_table_meta.field_num() - base_table_meta.sys_field_num();
     const TableMeta &view_table_meta = view_table->table_meta();
     const int        view_field_num  = view_table_meta.field_num() - view_table_meta.sys_field_num();
     vector<string>   insert_columns = inserts.attribute_names;
+    const bool        implicit_full_view_row = insert_columns.empty();
+    if (implicit_full_view_row) {
+      for (int i = view_table_meta.sys_field_num(); i < view_table_meta.field_num(); i++) {
+        insert_columns.emplace_back(view_table_meta.field(i)->name());
+      }
+    }
     vector<vector<Value>> base_rows;
     vector<vector<Value>> view_rows;
     base_rows.reserve(value_rows->size());
@@ -151,25 +191,48 @@ static RC create_view_insert_stmt(Db *db, const InsertSqlNode &inserts, const Vi
       for (Value &value : view_row) {
         value.set_null();
       }
+      vector<const FieldMeta *> mapped_view_fields;
+      vector<Value>             mapped_values;
       for (size_t i = 0; i < row.size(); i++) {
         const string *base_column = view.base_column_for(insert_columns[i]);
-        if (base_column == nullptr) {
+        if (base_column == nullptr && !implicit_full_view_row) {
           return RC::SCHEMA_FIELD_NOT_EXIST;
         }
 
+        int view_index = -1;
+        RC rc = field_index(view_table_meta, insert_columns[i].c_str(), view_index);
+        if (OB_FAIL(rc)) {
+          return rc;
+        }
+        view_row[view_index] = row[i];
+
+        if (base_column == nullptr) {
+          continue;
+        }
+
         int base_index = -1;
-        RC rc = field_index(base_table_meta, base_column->c_str(), base_index);
+        rc = field_index(base_table_meta, base_column->c_str(), base_index);
         if (OB_FAIL(rc)) {
           return rc;
         }
         base_row[base_index] = row[i];
 
-        int view_index = -1;
-        rc = field_index(view_table_meta, insert_columns[i].c_str(), view_index);
+        const FieldMeta *view_field = view_table_meta.field(view_index + view_table_meta.sys_field_num());
+        mapped_view_fields.emplace_back(view_field);
+        mapped_values.emplace_back(row[i]);
+      }
+      if (mapped_values.empty()) {
+        return RC::SCHEMA_FIELD_MISSING;
+      }
+      if (implicit_full_view_row) {
+        bool matched = false;
+        RC rc = view_has_mapped_row(view_table, mapped_view_fields, mapped_values, matched);
         if (OB_FAIL(rc)) {
           return rc;
         }
-        view_row[view_index] = row[i];
+        if (matched) {
+          return RC::INVALID_ARGUMENT;
+        }
       }
       base_rows.emplace_back(std::move(base_row));
       view_rows.emplace_back(std::move(view_row));
