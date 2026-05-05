@@ -1092,9 +1092,17 @@ opt_alias:
     {
       $$ = $2;
     }
+    | AS DATA
+    {
+      $$ = strdup("data");
+    }
     | ID
     {
       $$ = $1;
+    }
+    | DATA
+    {
+      $$ = strdup("data");
     }
     ;
 where:
