@@ -48,7 +48,7 @@ select count(*) from create_view_v4;
 select count(id) from create_view_v4;
 select sum(age) from create_view_v4;
 select count(name) from create_view_v4;
-insert into create_view_v4 values(114, 114, 'DYQY03');
+insert into create_view_v4 values(114, 114, 'FN5MR');
 insert into create_view_v4 values(135, 135, '7WBA');
 insert into create_view_v4(id, age) values(34, 34);
 insert into create_view_v4 values(156, 156, 'A');
