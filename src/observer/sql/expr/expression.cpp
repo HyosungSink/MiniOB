@@ -1748,9 +1748,13 @@ RC FunctionExpr::bm25_score(const string &text, const string &query, float &scor
   constexpr double b  = 0.75;
   const double doc_len = static_cast<double>(text_tokens.size());
   double total_score = 0;
+  unordered_set<string> scored_query_terms;
   for (const string &query_token : query_tokens) {
     string normalized_query_token = normalize_match_token(query_token);
     if (normalized_query_token.empty()) {
+      continue;
+    }
+    if (!scored_query_terms.insert(normalized_query_token).second) {
       continue;
     }
 
