@@ -1856,7 +1856,7 @@ RC FunctionExpr::eval_arguments(const vector<Value> &arguments, Value &value) co
       float bm25 = 0;
       RC rc = bm25_score(text, query, bm25);
       if (rc == RC::SUCCESS) {
-        value.set_float(bm25);
+        value.set_float(bm25, -2);
         break;
       }
 
@@ -1879,7 +1879,7 @@ RC FunctionExpr::eval_arguments(const vector<Value> &arguments, Value &value) co
           }
         }
       }
-      value.set_float(score);
+      value.set_float(score, -2);
     } break;
     case Type::CONCAT: {
       string result;
