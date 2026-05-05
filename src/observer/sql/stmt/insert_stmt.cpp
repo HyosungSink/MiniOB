@@ -114,6 +114,10 @@ static RC create_view_insert_stmt(Db *db, const InsertSqlNode &inserts, const Vi
     if (view_table == nullptr) {
       return RC::SCHEMA_TABLE_NOT_EXIST;
     }
+    Table *base_table = db->find_table(view.base_table_name.c_str());
+    if (base_table == nullptr) {
+      return RC::SCHEMA_TABLE_NOT_EXIST;
+    }
 
     vector<vector<Value>> single_row;
     const vector<vector<Value>> *value_rows = &inserts.value_rows;
@@ -125,36 +129,55 @@ static RC create_view_insert_stmt(Db *db, const InsertSqlNode &inserts, const Vi
       return RC::INVALID_ARGUMENT;
     }
 
+    const TableMeta &base_table_meta = base_table->table_meta();
+    const int        base_field_num  = base_table_meta.field_num() - base_table_meta.sys_field_num();
     const TableMeta &view_table_meta = view_table->table_meta();
     const int        view_field_num  = view_table_meta.field_num() - view_table_meta.sys_field_num();
     vector<string>   insert_columns = inserts.attribute_names;
+    vector<vector<Value>> base_rows;
     vector<vector<Value>> view_rows;
+    base_rows.reserve(value_rows->size());
     view_rows.reserve(value_rows->size());
     for (const vector<Value> &row : *value_rows) {
       if (insert_columns.size() != row.size()) {
         return RC::SCHEMA_FIELD_MISSING;
       }
 
+      vector<Value> base_row(base_field_num);
+      for (Value &value : base_row) {
+        value.set_null();
+      }
       vector<Value> view_row(view_field_num);
       for (Value &value : view_row) {
         value.set_null();
       }
       for (size_t i = 0; i < row.size(); i++) {
-        if (view.base_column_for(insert_columns[i]) == nullptr) {
+        const string *base_column = view.base_column_for(insert_columns[i]);
+        if (base_column == nullptr) {
           return RC::SCHEMA_FIELD_NOT_EXIST;
         }
 
+        int base_index = -1;
+        RC rc = field_index(base_table_meta, base_column->c_str(), base_index);
+        if (OB_FAIL(rc)) {
+          return rc;
+        }
+        base_row[base_index] = row[i];
+
         int view_index = -1;
-        RC rc = field_index(view_table_meta, insert_columns[i].c_str(), view_index);
+        rc = field_index(view_table_meta, insert_columns[i].c_str(), view_index);
         if (OB_FAIL(rc)) {
           return rc;
         }
         view_row[view_index] = row[i];
       }
+      base_rows.emplace_back(std::move(base_row));
       view_rows.emplace_back(std::move(view_row));
     }
 
-    stmt = new InsertStmt(view_table, view_rows);
+    auto insert_stmt = new InsertStmt(base_table, base_rows);
+    insert_stmt->set_mirror_insert(view_table, std::move(view_rows));
+    stmt = insert_stmt;
     return RC::SUCCESS;
   }
 
