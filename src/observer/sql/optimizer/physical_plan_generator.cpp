@@ -396,7 +396,9 @@ RC PhysicalPlanGenerator::create_plan(UpdateLogicalOperator &update_oper, unique
         std::move(update_oper.expressions()),
         update_oper.mirror_table(),
         update_oper.mirror_field_metas(),
-        std::move(update_oper.mirror_expressions())));
+        std::move(update_oper.mirror_expressions()),
+        update_oper.base_match_field_metas(),
+        update_oper.mirror_match_field_metas()));
   } else {
     oper = unique_ptr<PhysicalOperator>(
         new UpdatePhysicalOperator(update_oper.table(), update_oper.field_metas(), std::move(update_oper.expressions())));

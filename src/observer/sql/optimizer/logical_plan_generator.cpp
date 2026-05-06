@@ -364,6 +364,8 @@ RC LogicalPlanGenerator::create_plan(UpdateStmt *update_stmt, unique_ptr<Logical
     update_logical_oper->set_mirror_update(update_stmt->mirror_table(),
         vector<const FieldMeta *>(update_stmt->mirror_field_metas()),
         std::move(update_stmt->mirror_expressions()));
+    update_logical_oper->set_base_update_match_fields(vector<const FieldMeta *>(update_stmt->base_match_field_metas()),
+        vector<const FieldMeta *>(update_stmt->mirror_match_field_metas()));
   }
 
   if (predicate_oper) {

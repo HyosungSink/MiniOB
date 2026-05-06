@@ -26,13 +26,17 @@ UpdatePhysicalOperator::UpdatePhysicalOperator(Table *table,
     vector<unique_ptr<Expression>> &&expressions,
     Table *mirror_table,
     const vector<const FieldMeta *> &mirror_field_metas,
-    vector<unique_ptr<Expression>> &&mirror_expressions)
+    vector<unique_ptr<Expression>> &&mirror_expressions,
+    const vector<const FieldMeta *> &base_match_field_metas,
+    const vector<const FieldMeta *> &mirror_match_field_metas)
     : table_(table),
       field_metas_(field_metas),
       expressions_(std::move(expressions)),
       mirror_table_(mirror_table),
       mirror_field_metas_(mirror_field_metas),
-      mirror_expressions_(std::move(mirror_expressions))
+      mirror_expressions_(std::move(mirror_expressions)),
+      base_match_field_metas_(base_match_field_metas),
+      mirror_match_field_metas_(mirror_match_field_metas)
 {}
 
 RC UpdatePhysicalOperator::open(Trx *trx)
@@ -50,7 +54,27 @@ RC UpdatePhysicalOperator::open(Trx *trx)
   }
 
   unique_ptr<PhysicalOperator> &child = children_[0];
-  RC rc = update_records(table_, field_metas_, expressions_, *child, trx);
+  RC rc = RC::SUCCESS;
+  vector<vector<Value>> allowed_keys;
+  const bool restrict_base_by_mirror = mirror_table_ != nullptr && !base_match_field_metas_.empty();
+  if (restrict_base_by_mirror) {
+    if (children_.size() < 2 || base_match_field_metas_.size() != mirror_match_field_metas_.size()) {
+      LOG_WARN("invalid mirror-driven update match fields");
+      return RC::INTERNAL;
+    }
+    rc = collect_match_keys(mirror_table_, mirror_match_field_metas_, *children_[1], trx, allowed_keys);
+    if (OB_FAIL(rc)) {
+      return rc;
+    }
+  }
+
+  rc = update_records(table_,
+      field_metas_,
+      expressions_,
+      *child,
+      trx,
+      restrict_base_by_mirror ? &allowed_keys : nullptr,
+      restrict_base_by_mirror ? &base_match_field_metas_ : nullptr);
   if (OB_FAIL(rc)) {
     return rc;
   }
@@ -77,11 +101,105 @@ RC UpdatePhysicalOperator::open(Trx *trx)
   return RC::SUCCESS;
 }
 
+static RC read_record_field(Table *table, const Record &record, const FieldMeta *field_meta, Value &value)
+{
+  const char *field_data = record.data() + field_meta->offset();
+  value.reset();
+  if (field_meta->type() == AttrType::TEXTS) {
+    return table->get_text_value(record.data(), field_meta, value);
+  }
+  if (Value::is_null_data(field_data, field_meta->len(), field_meta->type())) {
+    value.set_null();
+    return RC::SUCCESS;
+  }
+  value.set_type(field_meta->type());
+  value.set_data(field_data, field_meta->len());
+  return RC::SUCCESS;
+}
+
+static RC make_match_key(Table *table, const Record &record, const vector<const FieldMeta *> &field_metas, vector<Value> &key)
+{
+  key.clear();
+  key.reserve(field_metas.size());
+  for (const FieldMeta *field_meta : field_metas) {
+    Value value;
+    RC rc = read_record_field(table, record, field_meta, value);
+    if (OB_FAIL(rc)) {
+      return rc;
+    }
+    key.emplace_back(std::move(value));
+  }
+  return RC::SUCCESS;
+}
+
+static bool match_key_equals(const vector<Value> &left, const vector<Value> &right)
+{
+  if (left.size() != right.size()) {
+    return false;
+  }
+  for (size_t i = 0; i < left.size(); i++) {
+    if (left[i].compare(right[i]) != 0) {
+      return false;
+    }
+  }
+  return true;
+}
+
+static bool match_key_exists(const vector<Value> &key, const vector<vector<Value>> &allowed_keys)
+{
+  for (const vector<Value> &allowed_key : allowed_keys) {
+    if (match_key_equals(key, allowed_key)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+RC UpdatePhysicalOperator::collect_match_keys(Table *table,
+    const vector<const FieldMeta *> &field_metas,
+    PhysicalOperator &child,
+    Trx *trx,
+    vector<vector<Value>> &keys) const
+{
+  RC rc = child.open(trx);
+  if (OB_FAIL(rc)) {
+    LOG_WARN("failed to open mirror child operator. rc=%s", strrc(rc));
+    return rc;
+  }
+
+  while (OB_SUCC(rc = child.next())) {
+    Tuple *tuple = child.current_tuple();
+    if (tuple == nullptr) {
+      child.close();
+      return RC::INTERNAL;
+    }
+
+    RowTuple *row_tuple = static_cast<RowTuple *>(tuple);
+    vector<Value> key;
+    rc = make_match_key(table, row_tuple->record(), field_metas, key);
+    if (OB_FAIL(rc)) {
+      child.close();
+      return rc;
+    }
+    if (!match_key_exists(key, keys)) {
+      keys.emplace_back(std::move(key));
+    }
+  }
+
+  RC close_rc = child.close();
+  if (rc == RC::RECORD_EOF) {
+    rc = close_rc;
+  }
+  return rc;
+}
+
 RC UpdatePhysicalOperator::update_records(Table *table,
     const vector<const FieldMeta *> &field_metas,
     const vector<unique_ptr<Expression>> &expressions,
     PhysicalOperator &child,
-    Trx *trx) const
+    Trx *trx,
+    const vector<vector<Value>> *allowed_keys,
+    const vector<const FieldMeta *> *match_field_metas) const
 {
   vector<Record> records;
 
@@ -101,6 +219,17 @@ RC UpdatePhysicalOperator::update_records(Table *table,
 
     RowTuple *row_tuple  = static_cast<RowTuple *>(tuple);
     Record   &old_record = row_tuple->record();
+    if (allowed_keys != nullptr && match_field_metas != nullptr) {
+      vector<Value> key;
+      rc = make_match_key(table, old_record, *match_field_metas, key);
+      if (OB_FAIL(rc)) {
+        child.close();
+        return rc;
+      }
+      if (!match_key_exists(key, *allowed_keys)) {
+        continue;
+      }
+    }
 
     Record copied_record;
     copied_record.set_rid(old_record.rid());

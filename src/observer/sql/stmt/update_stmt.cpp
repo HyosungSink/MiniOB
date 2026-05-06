@@ -107,25 +107,6 @@ static RC create_view_update_stmt(Db *db, const UpdateSqlNode &update, const Vie
       base_update.assignments.emplace_back(std::move(base_assignment));
     }
 
-    for (const ConditionSqlNode &condition : update.conditions) {
-      ConditionSqlNode base_condition;
-      base_condition.conjunction = condition.conjunction;
-      base_condition.comp        = condition.comp;
-      if (condition.left_expr != nullptr) {
-        RC rc = copy_rewrite_view_expr(*condition.left_expr, view, true, base_condition.left_expr);
-        if (OB_FAIL(rc)) {
-          return rc;
-        }
-      }
-      if (condition.right_expr != nullptr) {
-        RC rc = copy_rewrite_view_expr(*condition.right_expr, view, true, base_condition.right_expr);
-        if (OB_FAIL(rc)) {
-          return rc;
-        }
-      }
-      base_update.conditions.emplace_back(std::move(base_condition));
-    }
-
     Stmt *base_stmt = nullptr;
     RC rc = create_table_update_stmt(db, base_update, base_table, base_stmt);
     if (OB_FAIL(rc)) {
@@ -146,6 +127,24 @@ static RC create_view_update_stmt(Db *db, const UpdateSqlNode &update, const Vie
         mirror_update_stmt->take_expressions(),
         mirror_update_stmt->release_filter_stmt());
     delete mirror_update_stmt;
+
+    vector<const FieldMeta *> base_match_fields;
+    vector<const FieldMeta *> mirror_match_fields;
+    for (const ViewColumnMapping &column : view.columns) {
+      const FieldMeta *base_field = base_table->table_meta().field(column.base_column.c_str());
+      const FieldMeta *view_field = view_table->table_meta().field(column.view_column.c_str());
+      if (base_field == nullptr || view_field == nullptr) {
+        delete base_update_stmt;
+        return RC::SCHEMA_FIELD_NOT_EXIST;
+      }
+      base_match_fields.push_back(base_field);
+      mirror_match_fields.push_back(view_field);
+    }
+    if (base_match_fields.empty()) {
+      delete base_update_stmt;
+      return RC::INVALID_ARGUMENT;
+    }
+    base_update_stmt->set_base_update_match_fields(std::move(base_match_fields), std::move(mirror_match_fields));
 
     stmt = base_update_stmt;
     return RC::SUCCESS;
@@ -244,6 +243,13 @@ void UpdateStmt::set_mirror_update(
   mirror_field_metas_ = std::move(field_metas);
   mirror_expressions_ = std::move(expressions);
   mirror_filter_stmt_ = filter_stmt;
+}
+
+void UpdateStmt::set_base_update_match_fields(
+    vector<const FieldMeta *> &&base_field_metas, vector<const FieldMeta *> &&mirror_field_metas)
+{
+  base_match_field_metas_   = std::move(base_field_metas);
+  mirror_match_field_metas_ = std::move(mirror_field_metas);
 }
 
 static RC create_table_update_stmt(Db *db, const UpdateSqlNode &update, Table *table, Stmt *&stmt)

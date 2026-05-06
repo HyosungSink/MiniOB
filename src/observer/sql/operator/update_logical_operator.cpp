@@ -23,3 +23,10 @@ void UpdateLogicalOperator::set_mirror_update(
   mirror_field_metas_ = std::move(field_metas);
   mirror_expressions_ = std::move(expressions);
 }
+
+void UpdateLogicalOperator::set_base_update_match_fields(
+    vector<const FieldMeta *> &&base_field_metas, vector<const FieldMeta *> &&mirror_field_metas)
+{
+  base_match_field_metas_   = std::move(base_field_metas);
+  mirror_match_field_metas_ = std::move(mirror_field_metas);
+}

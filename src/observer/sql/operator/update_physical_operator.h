@@ -33,7 +33,9 @@ public:
       vector<unique_ptr<Expression>> &&expressions,
       Table *mirror_table,
       const vector<const FieldMeta *> &mirror_field_metas,
-      vector<unique_ptr<Expression>> &&mirror_expressions);
+      vector<unique_ptr<Expression>> &&mirror_expressions,
+      const vector<const FieldMeta *> &base_match_field_metas = {},
+      const vector<const FieldMeta *> &mirror_match_field_metas = {});
   ~UpdatePhysicalOperator() override = default;
 
   PhysicalOperatorType type() const override { return PhysicalOperatorType::UPDATE; }
@@ -55,7 +57,14 @@ private:
       const vector<const FieldMeta *> &field_metas,
       const vector<unique_ptr<Expression>> &expressions,
       PhysicalOperator &child,
-      Trx *trx) const;
+      Trx *trx,
+      const vector<vector<Value>> *allowed_keys = nullptr,
+      const vector<const FieldMeta *> *match_field_metas = nullptr) const;
+  RC collect_match_keys(Table *table,
+      const vector<const FieldMeta *> &field_metas,
+      PhysicalOperator &child,
+      Trx *trx,
+      vector<vector<Value>> &keys) const;
 
 private:
   Table                    *table_ = nullptr;
@@ -64,4 +73,6 @@ private:
   Table                    *mirror_table_ = nullptr;
   vector<const FieldMeta *> mirror_field_metas_;
   vector<unique_ptr<Expression>> mirror_expressions_;
+  vector<const FieldMeta *> base_match_field_metas_;
+  vector<const FieldMeta *> mirror_match_field_metas_;
 };

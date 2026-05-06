@@ -59,11 +59,15 @@ public:
   }
   void set_mirror_update(
       Table *table, vector<const FieldMeta *> &&field_metas, vector<unique_ptr<Expression>> &&expressions, FilterStmt *filter_stmt);
+  void set_base_update_match_fields(
+      vector<const FieldMeta *> &&base_field_metas, vector<const FieldMeta *> &&mirror_field_metas);
   Table                         *mirror_table() const { return mirror_table_; }
   const vector<const FieldMeta *> &mirror_field_metas() const { return mirror_field_metas_; }
   vector<unique_ptr<Expression>> &mirror_expressions() { return mirror_expressions_; }
   const vector<unique_ptr<Expression>> &mirror_expressions() const { return mirror_expressions_; }
   FilterStmt                    *mirror_filter_stmt() const { return mirror_filter_stmt_; }
+  const vector<const FieldMeta *> &base_match_field_metas() const { return base_match_field_metas_; }
+  const vector<const FieldMeta *> &mirror_match_field_metas() const { return mirror_match_field_metas_; }
 
 private:
   Table                        *table_       = nullptr;
@@ -74,4 +78,6 @@ private:
   vector<const FieldMeta *>     mirror_field_metas_;
   vector<unique_ptr<Expression>> mirror_expressions_;
   FilterStmt                   *mirror_filter_stmt_ = nullptr;
+  vector<const FieldMeta *>     base_match_field_metas_;
+  vector<const FieldMeta *>     mirror_match_field_metas_;
 };
