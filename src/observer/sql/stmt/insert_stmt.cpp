@@ -229,7 +229,9 @@ static RC create_view_insert_stmt(Db *db, const InsertSqlNode &inserts, const Vi
       }
       if (implicit_full_view_row) {
         bool matched = false;
-        RC rc = view_has_mapped_row(base_table, mapped_base_fields, mapped_values, matched);
+        vector<const FieldMeta *> key_base_fields{mapped_base_fields.front()};
+        vector<Value>             key_values{mapped_values.front()};
+        RC rc = view_has_mapped_row(base_table, key_base_fields, key_values, matched);
         if (OB_FAIL(rc)) {
           return rc;
         }
