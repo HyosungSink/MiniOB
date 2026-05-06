@@ -265,6 +265,11 @@ static RC create_view_insert_stmt(Db *db, const InsertSqlNode &inserts, const Vi
   if (view_table == nullptr) {
     return RC::SCHEMA_TABLE_NOT_EXIST;
   }
+  const TableMeta &view_table_meta = view_table->table_meta();
+  const int        view_field_num  = view_table_meta.field_num() - view_table_meta.sys_field_num();
+  if (view_field_num != static_cast<int>(view.columns.size())) {
+    return RC::INVALID_ARGUMENT;
+  }
 
   vector<vector<Value>> single_row;
   const vector<vector<Value>> *value_rows = &inserts.value_rows;
@@ -275,8 +280,6 @@ static RC create_view_insert_stmt(Db *db, const InsertSqlNode &inserts, const Vi
 
   const TableMeta &table_meta = base_table->table_meta();
   const int        field_num  = table_meta.field_num() - table_meta.sys_field_num();
-  const TableMeta &view_table_meta = view_table->table_meta();
-  const int        view_field_num  = view_table_meta.field_num() - view_table_meta.sys_field_num();
   vector<string>   insert_columns = inserts.attribute_names;
   if (insert_columns.empty()) {
     for (const ViewColumnMapping &column : view.columns) {

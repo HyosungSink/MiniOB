@@ -51,6 +51,11 @@ static RC create_view_delete_stmt(Db *db, const DeleteSqlNode &delete_sql, const
   if (view_table == nullptr) {
     return RC::SCHEMA_TABLE_NOT_EXIST;
   }
+  const TableMeta &view_table_meta = view_table->table_meta();
+  const int        view_field_num  = view_table_meta.field_num() - view_table_meta.sys_field_num();
+  if (view_field_num != static_cast<int>(view.columns.size())) {
+    return RC::INVALID_ARGUMENT;
+  }
 
   DeleteSqlNode base_delete;
   base_delete.relation_name = view.base_table_name;

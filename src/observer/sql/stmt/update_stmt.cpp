@@ -155,6 +155,11 @@ static RC create_view_update_stmt(Db *db, const UpdateSqlNode &update, const Vie
   if (view_table == nullptr) {
     return RC::SCHEMA_TABLE_NOT_EXIST;
   }
+  const TableMeta &view_table_meta = view_table->table_meta();
+  const int        view_field_num  = view_table_meta.field_num() - view_table_meta.sys_field_num();
+  if (view_field_num != static_cast<int>(view.columns.size())) {
+    return RC::INVALID_ARGUMENT;
+  }
 
   UpdateSqlNode base_update;
   base_update.relation_name = view.base_table_name;
