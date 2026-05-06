@@ -128,15 +128,12 @@ static RC create_view_insert_stmt(Db *db, const InsertSqlNode &inserts, const Vi
     const TableMeta &base_table_meta = base_table->table_meta();
     const int        base_field_num  = base_table_meta.field_num() - base_table_meta.sys_field_num();
     const TableMeta &view_table_meta = view_table->table_meta();
-    const int        view_field_num  = view_table_meta.field_num() - view_table_meta.sys_field_num();
     vector<string>   insert_columns = inserts.attribute_names;
     if (insert_columns.empty()) {
       return RC::INVALID_ARGUMENT;
     }
     vector<vector<Value>> base_rows;
-    vector<vector<Value>> view_rows;
     base_rows.reserve(value_rows->size());
-    view_rows.reserve(value_rows->size());
     for (const vector<Value> &row : *value_rows) {
       if (insert_columns.size() != row.size()) {
         return RC::SCHEMA_FIELD_MISSING;
@@ -144,10 +141,6 @@ static RC create_view_insert_stmt(Db *db, const InsertSqlNode &inserts, const Vi
 
       vector<Value> base_row(base_field_num);
       for (Value &value : base_row) {
-        value.set_null();
-      }
-      vector<Value> view_row(view_field_num);
-      for (Value &value : view_row) {
         value.set_null();
       }
       vector<Value>             mapped_values;
@@ -162,7 +155,6 @@ static RC create_view_insert_stmt(Db *db, const InsertSqlNode &inserts, const Vi
         if (OB_FAIL(rc)) {
           return rc;
         }
-        view_row[view_index] = row[i];
 
         if (base_column == nullptr) {
           continue;
@@ -181,11 +173,9 @@ static RC create_view_insert_stmt(Db *db, const InsertSqlNode &inserts, const Vi
         return RC::SCHEMA_FIELD_MISSING;
       }
       base_rows.emplace_back(std::move(base_row));
-      view_rows.emplace_back(std::move(view_row));
     }
 
     auto insert_stmt = new InsertStmt(base_table, base_rows);
-    insert_stmt->set_mirror_insert(view_table, std::move(view_rows));
     stmt = insert_stmt;
     return RC::SUCCESS;
   }
