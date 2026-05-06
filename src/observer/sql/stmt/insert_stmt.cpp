@@ -16,10 +16,7 @@ See the Mulan PSL v2 for more details. */
 #include "common/log/log.h"
 #include "sql/expr/tuple.h"
 #include "storage/db/db.h"
-#include "storage/record/record_scanner.h"
 #include "storage/table/table.h"
-
-#include <strings.h>
 
 static RC field_index(const TableMeta &table_meta, const char *field_name, int &index)
 {
@@ -106,92 +103,6 @@ static RC project_base_row_to_view(
   return RC::SUCCESS;
 }
 
-static RC view_has_mapped_row(Table *view_table, const vector<const FieldMeta *> &fields, const vector<Value> &values, bool &matched)
-{
-  matched = false;
-
-  RecordScanner *scanner = nullptr;
-  RC rc = view_table->get_record_scanner(scanner, nullptr, ReadWriteMode::READ_ONLY);
-  if (OB_FAIL(rc)) {
-    return rc;
-  }
-
-  Record record;
-  while (OB_SUCC(rc = scanner->next(record))) {
-    bool row_matches = true;
-    for (size_t i = 0; i < fields.size(); i++) {
-      const FieldMeta *field = fields[i];
-      Value existing;
-      existing.set_type(field->type());
-      existing.set_data(record.data() + field->offset(), field->len());
-      if (existing.compare(values[i]) != 0) {
-        row_matches = false;
-        break;
-      }
-    }
-    if (row_matches) {
-      matched = true;
-      break;
-    }
-  }
-
-  RC close_rc = scanner->close_scan();
-  delete scanner;
-  if (rc == RC::RECORD_EOF || matched) {
-    rc = close_rc;
-  }
-  return rc;
-}
-
-static const Value *find_mapped_base_value(
-    const vector<const FieldMeta *> &mapped_base_fields, const vector<Value> &mapped_values, const string &base_column)
-{
-  for (size_t i = 0; i < mapped_base_fields.size(); i++) {
-    if (0 == strcasecmp(mapped_base_fields[i]->name(), base_column.c_str())) {
-      return &mapped_values[i];
-    }
-  }
-  return nullptr;
-}
-
-static RC reject_join_conflicts_on_full_view_insert(Db *db,
-    const ViewDefinition &view,
-    const vector<const FieldMeta *> &mapped_base_fields,
-    const vector<Value> &mapped_values)
-{
-  for (const ViewJoinConflictCheck &check : view.join_conflict_checks) {
-    const Value *base_value = find_mapped_base_value(mapped_base_fields, mapped_values, check.base_column);
-    if (base_value == nullptr) {
-      continue;
-    }
-
-    Table *conflict_table = db->find_table(check.conflict_table.c_str());
-    if (conflict_table == nullptr) {
-      return RC::SCHEMA_TABLE_NOT_EXIST;
-    }
-
-    const TableMeta &conflict_meta = conflict_table->table_meta();
-    int conflict_index = -1;
-    RC rc = field_index(conflict_meta, check.conflict_column.c_str(), conflict_index);
-    if (OB_FAIL(rc)) {
-      return rc;
-    }
-
-    const FieldMeta *conflict_field = conflict_meta.field(conflict_index + conflict_meta.sys_field_num());
-    bool matched = false;
-    vector<const FieldMeta *> fields{conflict_field};
-    vector<Value> values{*base_value};
-    rc = view_has_mapped_row(conflict_table, fields, values, matched);
-    if (OB_FAIL(rc)) {
-      return rc;
-    }
-    if (matched) {
-      return RC::INVALID_ARGUMENT;
-    }
-  }
-  return RC::SUCCESS;
-}
-
 static RC create_view_insert_stmt(Db *db, const InsertSqlNode &inserts, const ViewDefinition &view, Stmt *&stmt)
 {
   if (!view.updatable) {
@@ -219,11 +130,8 @@ static RC create_view_insert_stmt(Db *db, const InsertSqlNode &inserts, const Vi
     const TableMeta &view_table_meta = view_table->table_meta();
     const int        view_field_num  = view_table_meta.field_num() - view_table_meta.sys_field_num();
     vector<string>   insert_columns = inserts.attribute_names;
-    const bool        implicit_full_view_row = insert_columns.empty();
-    if (implicit_full_view_row) {
-      for (int i = view_table_meta.sys_field_num(); i < view_table_meta.field_num(); i++) {
-        insert_columns.emplace_back(view_table_meta.field(i)->name());
-      }
+    if (insert_columns.empty()) {
+      return RC::INVALID_ARGUMENT;
     }
     vector<vector<Value>> base_rows;
     vector<vector<Value>> view_rows;
@@ -242,12 +150,10 @@ static RC create_view_insert_stmt(Db *db, const InsertSqlNode &inserts, const Vi
       for (Value &value : view_row) {
         value.set_null();
       }
-      vector<const FieldMeta *> mapped_view_fields;
-      vector<const FieldMeta *> mapped_base_fields;
       vector<Value>             mapped_values;
       for (size_t i = 0; i < row.size(); i++) {
         const string *base_column = view.base_column_for(insert_columns[i]);
-        if (base_column == nullptr && !implicit_full_view_row) {
+        if (base_column == nullptr) {
           return RC::SCHEMA_FIELD_NOT_EXIST;
         }
 
@@ -269,39 +175,10 @@ static RC create_view_insert_stmt(Db *db, const InsertSqlNode &inserts, const Vi
         }
         base_row[base_index] = row[i];
 
-        const FieldMeta *view_field = view_table_meta.field(view_index + view_table_meta.sys_field_num());
-        const FieldMeta *base_field = base_table_meta.field(base_index + base_table_meta.sys_field_num());
-        mapped_view_fields.emplace_back(view_field);
-        mapped_base_fields.emplace_back(base_field);
         mapped_values.emplace_back(row[i]);
       }
       if (mapped_values.empty()) {
         return RC::SCHEMA_FIELD_MISSING;
-      }
-      if (implicit_full_view_row) {
-        bool matched = false;
-        vector<const FieldMeta *> key_base_fields{mapped_base_fields.front()};
-        vector<Value>             key_values{mapped_values.front()};
-        RC rc = view_has_mapped_row(base_table, key_base_fields, key_values, matched);
-        if (OB_FAIL(rc)) {
-          return rc;
-        }
-        if (matched) {
-          return RC::INVALID_ARGUMENT;
-        }
-
-        rc = view_has_mapped_row(view_table, mapped_view_fields, mapped_values, matched);
-        if (OB_FAIL(rc)) {
-          return rc;
-        }
-        if (matched) {
-          return RC::INVALID_ARGUMENT;
-        }
-
-        rc = reject_join_conflicts_on_full_view_insert(db, view, mapped_base_fields, mapped_values);
-        if (OB_FAIL(rc)) {
-          return rc;
-        }
       }
       base_rows.emplace_back(std::move(base_row));
       view_rows.emplace_back(std::move(view_row));
