@@ -19,6 +19,8 @@ See the Mulan PSL v2 for more details. */
 #include "storage/record/record_scanner.h"
 #include "storage/table/table.h"
 
+#include <strings.h>
+
 static RC field_index(const TableMeta &table_meta, const char *field_name, int &index)
 {
   for (int i = table_meta.sys_field_num(); i < table_meta.field_num(); i++) {
@@ -141,6 +143,55 @@ static RC view_has_mapped_row(Table *view_table, const vector<const FieldMeta *>
   return rc;
 }
 
+static const Value *find_mapped_base_value(
+    const vector<const FieldMeta *> &mapped_base_fields, const vector<Value> &mapped_values, const string &base_column)
+{
+  for (size_t i = 0; i < mapped_base_fields.size(); i++) {
+    if (0 == strcasecmp(mapped_base_fields[i]->name(), base_column.c_str())) {
+      return &mapped_values[i];
+    }
+  }
+  return nullptr;
+}
+
+static RC reject_join_conflicts_on_full_view_insert(Db *db,
+    const ViewDefinition &view,
+    const vector<const FieldMeta *> &mapped_base_fields,
+    const vector<Value> &mapped_values)
+{
+  for (const ViewJoinConflictCheck &check : view.join_conflict_checks) {
+    const Value *base_value = find_mapped_base_value(mapped_base_fields, mapped_values, check.base_column);
+    if (base_value == nullptr) {
+      continue;
+    }
+
+    Table *conflict_table = db->find_table(check.conflict_table.c_str());
+    if (conflict_table == nullptr) {
+      return RC::SCHEMA_TABLE_NOT_EXIST;
+    }
+
+    const TableMeta &conflict_meta = conflict_table->table_meta();
+    int conflict_index = -1;
+    RC rc = field_index(conflict_meta, check.conflict_column.c_str(), conflict_index);
+    if (OB_FAIL(rc)) {
+      return rc;
+    }
+
+    const FieldMeta *conflict_field = conflict_meta.field(conflict_index + conflict_meta.sys_field_num());
+    bool matched = false;
+    vector<const FieldMeta *> fields{conflict_field};
+    vector<Value> values{*base_value};
+    rc = view_has_mapped_row(conflict_table, fields, values, matched);
+    if (OB_FAIL(rc)) {
+      return rc;
+    }
+    if (matched) {
+      return RC::INVALID_ARGUMENT;
+    }
+  }
+  return RC::SUCCESS;
+}
+
 static RC create_view_insert_stmt(Db *db, const InsertSqlNode &inserts, const ViewDefinition &view, Stmt *&stmt)
 {
   if (!view.updatable) {
@@ -245,6 +296,11 @@ static RC create_view_insert_stmt(Db *db, const InsertSqlNode &inserts, const Vi
         }
         if (matched) {
           return RC::INVALID_ARGUMENT;
+        }
+
+        rc = reject_join_conflicts_on_full_view_insert(db, view, mapped_base_fields, mapped_values);
+        if (OB_FAIL(rc)) {
+          return rc;
         }
       }
       base_rows.emplace_back(std::move(base_row));

@@ -44,12 +44,20 @@ struct ViewPredicate
   unique_ptr<Expression> expression;
 };
 
+struct ViewJoinConflictCheck
+{
+  string base_column;
+  string conflict_table;
+  string conflict_column;
+};
+
 struct ViewDefinition
 {
   string                    view_name;
   string                    base_table_name;
   vector<ViewColumnMapping> columns;
   vector<ViewPredicate>     predicates;
+  vector<ViewJoinConflictCheck> join_conflict_checks;
   bool                      updatable = false;
   bool                      materialized_insertable = false;
   bool                      mirrors_base_table = false;

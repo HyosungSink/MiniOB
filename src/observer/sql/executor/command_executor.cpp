@@ -41,6 +41,8 @@ See the Mulan PSL v2 for more details. */
 #include "storage/table/table.h"
 #include "storage/trx/trx.h"
 
+#include <strings.h>
+
 static size_t view_attr_length(const Expression &expression)
 {
   int length = expression.value_length();
@@ -51,6 +53,20 @@ static size_t view_attr_length(const Expression &expression)
     return static_cast<size_t>(length) / sizeof(float);
   }
   return length > 0 ? static_cast<size_t>(length) : 4;
+}
+
+static void add_view_join_conflict_check(ViewDefinition &view, const FieldExpr &left, const FieldExpr &right)
+{
+  const bool left_is_base  = 0 == strcasecmp(view.base_table_name.c_str(), left.table_name());
+  const bool right_is_base = 0 == strcasecmp(view.base_table_name.c_str(), right.table_name());
+  if (left_is_base == right_is_base) {
+    return;
+  }
+
+  const FieldExpr &base_field     = left_is_base ? left : right;
+  const FieldExpr &conflict_field = left_is_base ? right : left;
+  view.join_conflict_checks.push_back(
+      {base_field.field_name(), conflict_field.table_name(), conflict_field.field_name()});
 }
 
 static ViewDefinition build_view_definition(const CreateViewStmt &create_view_stmt, SelectStmt &select_stmt)
@@ -85,6 +101,17 @@ static ViewDefinition build_view_definition(const CreateViewStmt &create_view_st
       predicate.expression = make_unique<ComparisonExpr>(
           unit->comp(), unit->left().expression->copy(), unit->right().expression->copy());
       view.predicates.emplace_back(std::move(predicate));
+    }
+  } else {
+    for (const FilterUnit *unit : select_stmt.filter_stmt()->filter_units()) {
+      if (unit->comp() != EQUAL_TO || unit->conjunction() == ConditionConjunction::OR ||
+          unit->left().expression->type() != ExprType::FIELD || unit->right().expression->type() != ExprType::FIELD) {
+        continue;
+      }
+
+      const FieldExpr *left  = static_cast<const FieldExpr *>(unit->left().expression.get());
+      const FieldExpr *right = static_cast<const FieldExpr *>(unit->right().expression.get());
+      add_view_join_conflict_check(view, *left, *right);
     }
   }
 
