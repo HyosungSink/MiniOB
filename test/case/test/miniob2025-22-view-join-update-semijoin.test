@@ -1,0 +1,11 @@
+-- echo miniob2025 create view join update semijoin
+create table create_view_join_update_t1(id int, age int, name char(10));
+create table create_view_join_update_t2(id int, age int, name char(10));
+insert into create_view_join_update_t1 values(1, 10, 'A');
+insert into create_view_join_update_t1 values(2, 20, 'B');
+insert into create_view_join_update_t2 values(1, 100, 'X');
+create view create_view_join_update_v as select t1.id as id, t1.age as age, t2.name as name from create_view_join_update_t1 t1, create_view_join_update_t2 t2 where t1.id=t2.id;
+update create_view_join_update_v set age=99 where id=2;
+select sum(age) from create_view_join_update_t1;
+update create_view_join_update_v set age=88 where id=1;
+select sum(age) from create_view_join_update_t1;
