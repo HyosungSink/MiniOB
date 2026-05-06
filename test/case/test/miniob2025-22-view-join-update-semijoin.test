@@ -9,3 +9,7 @@ update create_view_join_update_v set age=99 where id=2;
 select sum(age) from create_view_join_update_t1;
 update create_view_join_update_v set age=88 where id=1;
 select sum(age) from create_view_join_update_t1;
+insert into create_view_join_update_v(id, age) values(3, 30);
+select sum(age) from create_view_join_update_t1;
+update create_view_join_update_v set age=77 where id=3;
+select sum(age) from create_view_join_update_t1;
