@@ -1,0 +1,9 @@
+-- echo miniob2025 create view full insert existing key
+create table create_view_t1(id int, age int, name char(10));
+create table create_view_t2(id int, age int, name char(10));
+insert into create_view_t1 values(126, 37, 'T126');
+insert into create_view_t2 values(126, 126, 'U126');
+create view create_view_v4 as select t1.id as id, t1.age as age, t2.name as name from create_view_t1 t1, create_view_t2 t2 where t1.id=t2.id;
+insert into create_view_v4 values(126, 126, 'Z');
+select count(*) from create_view_t1;
+select sum(age) from create_view_t1;
